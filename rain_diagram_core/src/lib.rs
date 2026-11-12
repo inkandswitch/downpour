@@ -30,8 +30,9 @@
 //! | `label: (A)-[…]->(B)`             | Name a certificate (otherwise it's implicitly `a-b`)       |
 //! | `(B)=[[edit]]=>(S)`               | B uses its Edit authority on S                             |
 //! | `(A)-<revoke>-x[label]`           | A revokes the certificate `label`                          |
-//! | `>>> A: note` … `<<< A`           | A coloured, captioned region around the statements between |
-//! | `participant A, B`                | Fix column order                                           |
+//! | `… @60%`                          | Place the row's label 60% of the way along its arrow       |
+//! | `>>> A (P): note` … `<<< A`       | A captioned region, optionally in principal P's colour        |
+//! | `principals: A, B`                | Fix column order (`participant A, B` works too)            |
 //! | `title …`, `: note`, `%% comment` | Annotations                                                |
 //!
 //! Levels are `admin`, `edit`, `read`, and `relay` (or 👑 ✏️ 👀 📡).
@@ -71,6 +72,7 @@ extern crate alloc;
 pub mod ast;
 pub mod authority;
 pub mod diagram;
+pub mod edit;
 pub mod level;
 pub mod parser;
 

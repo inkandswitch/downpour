@@ -24,16 +24,14 @@ const REVOCATION: &str = "rain
 fn every_event_is_hooked_with_its_status() -> TestResult {
     let svg = parse(REVOCATION)?.to_svg();
 
-    assert_eq!(
-        tag_with(&svg, r#"data-cert="doc-alice""#),
-        Some(r#"<g class="event delegate valid" data-event="0" data-cert="doc-alice">"#)
-    );
-    assert_eq!(
-        tag_with(&svg, r#"data-cert="carol-dan""#),
-        Some(r#"<g class="event delegate revoked" data-event="4" data-cert="carol-dan">"#)
-    );
-    assert!(svg.contains(r#"<g class="event invoke valid" data-event="2">"#));
-    assert!(svg.contains(r#"<g class="event revoke valid" data-event="5">"#));
+    assert!(tag_with(&svg, r#"data-cert="doc-alice""#).is_some_and(|t| {
+        t.starts_with(r#"<g class="event delegate valid" data-event="0" data-cert="doc-alice""#)
+    }));
+    assert!(tag_with(&svg, r#"data-cert="carol-dan""#).is_some_and(|t| {
+        t.starts_with(r#"<g class="event delegate revoked" data-event="4" data-cert="carol-dan""#)
+    }));
+    assert!(svg.contains(r#"<g class="event invoke valid" data-event="2""#));
+    assert!(svg.contains(r#"<g class="event revoke valid" data-event="5""#));
     for key in ["doc", "alice", "bob", "carol", "dan"] {
         assert!(svg.contains(&format!(r#"<g class="principal" data-principal="{key}">"#)));
     }
@@ -92,8 +90,8 @@ fn void_and_unauthorized_are_marked() -> TestResult {
     )?
     .to_svg();
     assert!(svg.contains(r#"<g class="event delegate void" data-event="2""#));
-    assert!(svg.contains(r#"<g class="event invoke void" data-event="3">"#));
-    assert!(svg.contains(r#"<g class="event invoke unauthorized" data-event="5">"#));
+    assert!(svg.contains(r#"<g class="event invoke void" data-event="3""#));
+    assert!(svg.contains(r#"<g class="event invoke unauthorized" data-event="5""#));
     Ok(())
 }
 
@@ -154,7 +152,7 @@ fn certflow_has_the_same_hooks_without_invocations() -> TestResult {
     assert!(
         svg.contains(r#"<g class="event delegate revoked" data-event="4" data-cert="carol-dan">"#)
     );
-    assert!(svg.contains(r#"<g class="event revoke valid" data-event="5">"#));
+    assert!(svg.contains(r#"<g class="event revoke valid" data-event="5""#));
     assert!(
         !svg.contains(r#"class="event invoke"#),
         "certflow has no invocations"
@@ -206,7 +204,7 @@ fn regions_are_hooked_boxes_in_both_notations() -> TestResult {
          <<< A",
     )?;
     for svg in [d.to_rain_svg(), d.to_certflow_svg()] {
-        assert!(svg.contains(r#"<g class="region" data-region="A">"#));
+        assert!(svg.contains(r#"<g class="region" data-region="A""#));
         assert!(
             svg.contains(">Alice &lt;does&gt; stuff</text>"),
             "captions are escaped"
@@ -218,5 +216,48 @@ fn regions_are_hooked_boxes_in_both_notations() -> TestResult {
             .contains(r#"<g class="region" data-region="B">"#)
     );
     assert!(!d.to_certflow_svg().contains(r#"data-region="B""#));
+    Ok(())
+}
+
+#[test]
+fn regions_can_take_a_principals_colour() -> TestResult {
+    let d = parse(
+        "rain
+         (Doc)-[edit]->(Alice)
+         (Alice)-[edit]->(Bob)
+         >>> A (Bob): Bob does stuff
+         (Bob)=[[edit]]=>(Doc)
+         <<< A",
+    )?;
+    // Bob is the third principal: green
+    let svg = d.to_rain_svg();
+    let tag = svg
+        .find(r#"<rect class="region-box""#)
+        .and_then(|at| svg.get(at..at + svg[at..].find("/>")?));
+    assert!(
+        tag.is_some_and(|t| t.contains(r##"stroke="#3f9b5a""##)),
+        "{tag:?}"
+    );
+
+    assert!(matches!(
+        parse("rain\n(A)-[read]->(B)\n>>> A (Zed)\n(B)-[read]->(C)\n<<< A"),
+        Err(rain_diagram_core::Error::Resolve(e))
+            if matches!(e.kind(), rain_diagram_core::diagram::ResolveErrorKind::UnknownPrincipal(_))
+    ));
+    Ok(())
+}
+
+/// Inline SVG `<style>` is parsed as markup when a page inserts the SVG with
+/// `innerHTML`, so any `<` would cut the stylesheet short.
+#[test]
+fn stylesheet_survives_inline_parsing() -> TestResult {
+    let svg = parse("rain\n(A)-[read]->(B)")?.to_svg();
+    let css = svg
+        .split("<style>")
+        .nth(1)
+        .and_then(|rest| rest.split("</style>").next())
+        .unwrap_or_default();
+    assert!(!css.is_empty());
+    assert!(!css.contains('<'), "{css}");
     Ok(())
 }

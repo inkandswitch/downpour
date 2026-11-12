@@ -32,15 +32,16 @@ Principals get round brackets, certificates get square ones (like the shapes in 
 | `label: (A)-[…]->(B)`             | Label a certificate (otherwise it's implicitly `a-b`)       |
 | `(B)=[[edit]]=>(S)`               | B uses its Edit authority on S                              |
 | `(A)-<revoke>-x[label]`           | A revokes the certificate `label`                           |
-| `>>> A: note` … `<<< A`           | A coloured, captioned region around the statements between  |
-| `participant A, B`                | Fix column order                                            |
+| `… @60%`                          | Place the row's label 60% of the way along its arrow        |
+| `>>> A (P): note` … `<<< A`       | A captioned region; `(P)` takes principal P's colour        |
+| `principals: A, B`                | Fix column order (`participant A, B` works too)             |
 | `title …`, `: note`, `%% comment` | Annotations                                                 |
 
 Levels are `admin`, `edit`, `read`, and `relay` (or 👑 ✏️ 👀 📡).
 
 With no subject, `admin` is over the issuer itself (ownership, group membership: `(Team)-[admin]->(Alice)` adds Alice to Team), and anything else passes on the one subject the issuer holds. If it holds several, name the one you mean.
 
-Regions are closed by name, so they can nest or overlap. In the SVG they're tinted boxes with the note in a tab; in the text art, captioned brackets down the right of the grid. Powerlines in the SVG animate (dashes march in the direction authority flows) unless the viewer prefers reduced motion.
+Regions are closed by name, so they can nest or overlap. In the SVG they're tinted boxes with the note in a tab; in the text art, an outline in the notes column: the caption, then a `║` bar beside the rows it covers, with their notes indented. Powerlines in the SVG animate (dashes march in the direction authority flows) unless the viewer prefers reduced motion.
 
 Powerlines, attenuation, transitive handles, and revocation fallout are _derived_ from the certificates, not drawn by hand, so they can't be drawn wrong. Things that resolve but don't do what they look like (delegating without authority, claiming more than you hold, revoking from outside the chain) are reported as warnings rather than errors, since diagrams sometimes show them on purpose.
 

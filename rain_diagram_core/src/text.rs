@@ -152,16 +152,18 @@ impl<'a> Layout<'a> {
             self.powerlines(ix);
         }
 
-        let grid = self.canvas.rightmost(1);
-        let notes = self.regions(grid);
-        for (row, event) in (0..).zip(self.diagram.events()) {
+        let notes = self.canvas.rightmost(1) + 4;
+        self.regions(notes);
+        for (row, event) in self.diagram.events().iter().enumerate() {
             let note = match &event.node {
                 Event::Delegate(c) => c.note.as_ref(),
                 Event::Invoke(i) => i.note.as_ref(),
                 Event::Revoke(r) => r.note.as_ref(),
             };
             if let Some(note) = note {
-                self.canvas.text(notes, event_line(row), note.as_str());
+                let x = notes + 2 * self.depth(row);
+                self.canvas
+                    .text(x, event_line(to_isize(row)), note.as_str());
             }
         }
 
@@ -172,40 +174,47 @@ impl<'a> Layout<'a> {
         }
     }
 
-    /// Brackets down the right of the grid, one lane per overlapping
-    /// region, each captioned on its first line:
+    /// Regions live in the notes column, like an outline: the caption on
+    /// the first row's header line, then a double bar down every line the
+    /// region covers, with its rows' notes indented past it. The grid
+    /// itself is untouched.
     ///
     /// ```text
-    ///   │   ┌── A: Bob does stuff
-    ///   │   │
-    ///   │   └─
+    ///   │            │     Bob does stuff
+    ///   ├──[edit]───▶│     ║ Bob gives Carol Edit
+    ///   │            │     ║
+    ///   │◀═[[edit]]══╡     ║ Carol edits the Doc
+    ///   │            │     ║
     /// ```
-    ///
-    /// Returns the column the row notes start at.
-    fn regions(&mut self, grid: isize) -> isize {
+    fn regions(&mut self, notes: isize) {
         let lanes = self.diagram.region_lanes();
-        let Some(deepest) = lanes.iter().copied().max() else {
-            return grid + 4;
-        };
-        let deepest = to_isize(deepest);
-        let captions = grid + 3 + 2 * deepest + 3;
+        // Captions sharing a header line queue up along it
         let mut free: BTreeMap<isize, isize> = BTreeMap::new();
 
         for (region, &lane) in self.diagram.regions().iter().zip(&lanes) {
-            let x = grid + 3 + 2 * to_isize(lane);
-            let top = ROW * to_isize(region.first.index()) + 1;
-            let bottom = ROW * to_isize(region.last.index()) + 3;
-            self.canvas.path(
-                &[(captions - 2, top), (x, top), (x, bottom), (x + 1, bottom)],
-                Stroke::Solid,
-            );
-            // Regions starting on the same line queue up their captions
-            let at = free.entry(top).or_insert(captions);
-            self.canvas.text(*at, top, region.caption());
-            *at += width(region.caption()) + 3;
-        }
+            let x = notes + 2 * to_isize(lane);
+            let first = event_line(to_isize(region.first.index()));
+            let last = event_line(to_isize(region.last.index()));
+            self.canvas.path(&[(x, first), (x, last)], Stroke::Double);
 
-        captions + 1
+            let header = first - 1;
+            let at = free.entry(header).or_insert(x);
+            let start = (*at).max(x);
+            self.canvas.text(start, header, region.caption());
+            *at = start + width(region.caption()) + 2;
+        }
+    }
+
+    /// How many regions a row sits inside, counting overlapping lanes.
+    fn depth(&self, row: usize) -> isize {
+        self.diagram
+            .regions()
+            .iter()
+            .zip(self.diagram.region_lanes())
+            .filter(|(r, _)| r.first.index() <= row && row <= r.last.index())
+            .map(|(_, lane)| to_isize(lane) + 1)
+            .max()
+            .unwrap_or(0)
     }
 
     fn x(&self, principal: crate::diagram::PrincipalIx) -> isize {
@@ -234,12 +243,25 @@ impl<'a> Layout<'a> {
                     .authority
                     .route()
                     .and_then(|route| self.label(route.held()));
+                // Later revocations of earlier certificates draw their line
+                // up through this row; the box mustn't hide it
+                let crossing: Vec<isize> = self
+                    .diagram
+                    .event_ixs()
+                    .filter(|&later| later > ix)
+                    .filter_map(|later| match self.diagram.event(later) {
+                        Some(Event::Revoke(r)) if r.target < ix => self.label(r.target),
+                        _ => None,
+                    })
+                    .map(|target| target.input)
+                    .collect();
                 Some(self.invocation(
                     self.x(invoke.by),
                     self.x(invoke.on),
                     line,
                     &text,
                     powered_by,
+                    &crossing,
                 ))
             }
 
@@ -304,6 +326,7 @@ impl<'a> Layout<'a> {
         line: isize,
         text: &str,
         powered_by: Option<Label>,
+        crossing: &[isize],
     ) -> Label {
         let w = width(text);
         let (low, high, default) = match on.cmp(&by) {
@@ -312,7 +335,26 @@ impl<'a> Layout<'a> {
             Ordering::Equal => (by + 2, by + 2, by + 2),
         };
         let preferred = powered_by.map_or(default, |p| p.start + (p.width() - w).div_euclid(2));
-        let start = preferred.min(high).max(low);
+        let preferred = preferred.min(high).max(low);
+
+        // Slide clear of lines crossing this row (revocations, and the
+        // lifelines the double line passes over), nearest first
+        let lifelines: Vec<isize> = self
+            .lifelines
+            .iter()
+            .copied()
+            .filter(|&x| on.min(by) < x && x < on.max(by))
+            .collect();
+        let clear = |start: isize| {
+            !crossing
+                .iter()
+                .chain(&lifelines)
+                .any(|&x| start <= x && x < start + w)
+        };
+        let start = (0..=high.saturating_sub(low).max(0))
+            .flat_map(|d| [preferred - d, preferred + d])
+            .find(|&s| (low..=high).contains(&s) && clear(s))
+            .unwrap_or(preferred);
 
         match on.cmp(&by) {
             Ordering::Less => {
@@ -636,9 +678,10 @@ impl Cell {
 
         Some(match sides {
             (false, false, false, false) => ' ',
-            // Double lines are only ever horizontal (invocations)
+            // Vertical double lines are region bars; horizontal ones invocations
             (_, false, _, false) => match vertical {
-                Solid | Double => '│',
+                Solid => '│',
+                Double => '║',
                 Dashed | None => '┆',
             },
             (false, _, false, _) => match horizontal {

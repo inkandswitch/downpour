@@ -49,14 +49,41 @@ impl Diagram {
     /// Draw as a rain diagram (Keyhive notebook 08), whatever the header.
     #[must_use]
     pub fn to_rain_svg(&self) -> String {
-        rain::render(self)
+        self.to_rain_svg_at(self.events().len())
+    }
+
+    /// Draw as a rain diagram with the "now" line below the first `happened`
+    /// events: statuses are as of then, and later rows are faded.
+    ///
+    /// ```
+    /// let d = rain_diagram_core::parse(
+    ///     "rain
+    ///      (Doc)-[edit]->(Alice)
+    ///      (Doc)-<revoke>-x[doc-alice]",
+    /// )?;
+    /// // Before the revocation, the certificate is still valid
+    /// assert!(d.to_rain_svg_at(1).contains(r#"class="event delegate valid""#));
+    /// assert!(d.to_rain_svg_at(2).contains(r#"class="event delegate revoked""#));
+    /// # Ok::<(), rain_diagram_core::Error>(())
+    /// ```
+    #[must_use]
+    pub fn to_rain_svg_at(&self, happened: usize) -> String {
+        rain::render(self, happened)
     }
 
     /// Draw as a certflow snapshot (Keyhive notebook 07) of the moment after
     /// the last event, whatever the header.
     #[must_use]
     pub fn to_certflow_svg(&self) -> String {
-        certflow::render(self)
+        self.to_certflow_svg_at(self.events().len())
+    }
+
+    /// Draw as a certflow snapshot after the first `happened` events. The
+    /// layout comes from the whole diagram, so nodes stay put from one
+    /// moment to the next.
+    #[must_use]
+    pub fn to_certflow_svg_at(&self, happened: usize) -> String {
+        certflow::render(self, happened)
     }
 }
 
@@ -89,22 +116,31 @@ fn region(
     region: &Region,
     (left, top, right, bottom): (f64, f64, f64, f64),
 ) {
-    let colour = REGION_PALETTE
-        .get(n % REGION_PALETTE.len())
-        .copied()
-        .unwrap_or("#888");
+    let colour = region.colour.map_or_else(
+        || {
+            REGION_PALETTE
+                .get(n % REGION_PALETTE.len())
+                .copied()
+                .unwrap_or("#888")
+        },
+        colour,
+    );
     let caption = region.caption();
     let tab = text_width(caption) * 0.85 + 14.0;
     let _ = write!(
         out,
         concat!(
-            r#"<g class="region" data-region="{id}">"#,
+            r#"<g class="region" data-region="{id}"{note}>"#,
             r#"<rect class="region-box" x="{left:.1}" y="{top:.1}" width="{w:.1}" height="{h:.1}" rx="6" fill="{colour}" stroke="{colour}"/>"#,
             r#"<rect class="region-tab" x="{left:.1}" y="{top:.1}" width="{tab:.1}" height="18" rx="6" fill="{colour}"/>"#,
             r#"<text class="region-caption" x="{tx:.1}" y="{ty:.1}" dominant-baseline="central">{caption}</text>"#,
             "</g>"
         ),
         id = escape(region.id.as_str()),
+        note = region.note.as_ref().map_or_else(String::new, |n| format!(
+            r#" data-note="{}""#,
+            escape(n.as_str())
+        )),
         left = left,
         top = top,
         w = right - left,
@@ -184,19 +220,32 @@ const STYLE: &str = r"<style>
 .rain-diagram .diamond { fill: #fde8e8; stroke: #d33; stroke-width: 1.75; }
 .rain-diagram .revoke text { fill: #b3261e; font-size: 12px; }
 .rain-diagram .region-box { fill-opacity: 0.06; stroke-opacity: 0.6; stroke-width: 1.5; }
-.rain-diagram .region-caption { fill: #fff; font-size: 11px; font-weight: 600; }
-.rain-diagram .now { stroke: #9a958c; stroke-width: 1.5; stroke-dasharray: 1 5; stroke-linecap: round; }
+.rain-diagram .region text.region-caption { fill: #fff; font-size: 11px; font-weight: 600; }
+.rain-diagram .now-line { stroke: #9a958c; stroke-width: 1.5; stroke-dasharray: 1 5; stroke-linecap: round; }
+/* Invisible hit areas, so rows and the now line are easy to grab */
+.rain-diagram .hit { fill: transparent; }
+.rain-diagram .now-handle text { font-size: 16px; }
+.rain-diagram .future { opacity: 0.18; }
 .rain-diagram .revoked, .rain-diagram .void { opacity: 0.4; }
 .rain-diagram .revoked .tint { stroke-dasharray: 3 2; }
 .rain-diagram .unauthorized .tint { stroke: #d33; stroke-dasharray: 2 2; }
+/* Dark: follows the system unless a host page adds a `light` or `dark` class
+   to the root element (the preview's theme toggle does). No angle brackets
+   in here: inline SVG styles are parsed as markup, not raw text */
 @media (prefers-color-scheme: dark) {
-  .rain-diagram text { fill: #ecebe8; }
-  .rain-diagram .notes text { fill: #9a958c; }
-  .rain-diagram .head, .rain-diagram .node, .rain-diagram .pill, .rain-diagram .handle, .rain-diagram .root { fill: #1f1e1c; }
-  .rain-diagram .event line.double-inner { stroke: #1f1e1c; }
-  .rain-diagram .diamond { fill: #3a1f1f; }
-  .rain-diagram .revoke text { fill: #f2867c; }
+  .rain-diagram:not(.light) text { fill: #ecebe8; }
+  .rain-diagram:not(.light) .notes text { fill: #9a958c; }
+  .rain-diagram:not(.light) :is(.head, .node, .pill, .handle, .root) { fill: #1f1e1c; }
+  .rain-diagram:not(.light) .event line.double-inner { stroke: #1f1e1c; }
+  .rain-diagram:not(.light) .diamond { fill: #3a1f1f; }
+  .rain-diagram:not(.light) .revoke text { fill: #f2867c; }
 }
+.rain-diagram.dark text { fill: #ecebe8; }
+.rain-diagram.dark .notes text { fill: #9a958c; }
+.rain-diagram.dark :is(.head, .node, .pill, .handle, .root) { fill: #1f1e1c; }
+.rain-diagram.dark .event line.double-inner { stroke: #1f1e1c; }
+.rain-diagram.dark .diamond { fill: #3a1f1f; }
+.rain-diagram.dark .revoke text { fill: #f2867c; }
 </style>";
 
 fn note(event: &Event) -> Option<&str> {

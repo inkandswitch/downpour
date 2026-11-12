@@ -718,3 +718,121 @@ fn certflow_is_well_formed() {
         );
     });
 }
+
+/// Dragging a row anywhere `movable` allows rewrites the source so that
+/// exactly that statement moves, or fails only because the result wouldn't
+/// parse (an emptied region).
+#[test]
+fn moves_within_range_rearrange_the_source() {
+    use rain_diagram_core::edit::{MoveError, move_statement};
+
+    check!().with_type::<Vec<u8>>().for_each(|bytes| {
+        let Some(scenario) = common::arbitrary::<Scenario>(bytes) else {
+            return;
+        };
+        let (source, d) = scenario.diagram();
+        let lines = |d: &Diagram, source: &str| -> Vec<String> {
+            d.events()
+                .iter()
+                .map(|e| source[e.span.start..e.span.end].to_string())
+                .collect()
+        };
+        let before = lines(&d, &source);
+
+        for from in d.event_ixs() {
+            let range = d.movable(from);
+            assert!(range.contains(&from.index()), "{source}");
+            for to in [*range.start(), *range.end()] {
+                match move_statement(&source, from.index(), to) {
+                    Ok(moved) => {
+                        let after = parse(&moved).expect("moves are checked");
+                        let mut expected = before.clone();
+                        let line = expected.remove(from.index());
+                        expected.insert(to, line);
+                        assert_eq!(lines(&after, &moved), expected, "{source}\n→\n{moved}");
+                    }
+                    Err(MoveError::Result(_)) => {}
+                    Err(e) => panic!("{e}\n{source}"),
+                }
+            }
+        }
+    });
+}
+
+/// At every moment, exactly the rows from that moment on are still to
+/// come, and the certflow snapshot of that moment is well-formed.
+#[test]
+fn every_moment_renders() {
+    check!().with_type::<Vec<u8>>().for_each(|bytes| {
+        let Some(scenario) = common::arbitrary::<Scenario>(bytes) else {
+            return;
+        };
+        let (source, d) = scenario.diagram();
+        let n = d.events().len();
+        for happened in 0..=n {
+            let rain = d.to_rain_svg_at(happened);
+            assert_eq!(
+                rain.matches(" future\" data-event=").count(),
+                n - happened,
+                "{source}"
+            );
+            assert!(
+                rain.contains(&format!(r#"data-moment="{happened}""#)),
+                "{source}"
+            );
+
+            let certflow = d.to_certflow_svg_at(happened);
+            let drawing = certflow.split("</style>").nth(1).unwrap_or_default();
+            assert!(
+                !drawing.contains("NaN") && !drawing.contains("inf"),
+                "{source}"
+            );
+            assert_eq!(
+                certflow.matches("<g").count(),
+                certflow.matches("</g>").count(),
+                "{source}"
+            );
+        }
+    });
+}
+
+/// Dragging a region's edges to any rows either works, leaving exactly
+/// those rows inside, or is refused because the result wouldn't parse.
+#[test]
+fn regions_can_cover_any_rows() {
+    use rain_diagram_core::edit::{RegionError, set_region_rows};
+
+    check!().with_type::<Vec<u8>>().for_each(|bytes| {
+        let Some(scenario) = common::arbitrary::<Scenario>(bytes) else {
+            return;
+        };
+        let (source, d) = scenario.diagram();
+        let n = d.events().len();
+        let Some(region) = d.regions().first() else {
+            return;
+        };
+        let id = region.id.as_str().to_string();
+        let seed = usize::from(scenario.swap);
+        let first = seed % n;
+        let last = first + (seed / 7) % (n - first);
+
+        match set_region_rows(&source, &id, first, last) {
+            Ok(moved) => {
+                let after = parse(&moved).expect("checked");
+                let region = after
+                    .regions()
+                    .iter()
+                    .find(|r| r.id.as_str() == id)
+                    .expect("kept");
+                assert_eq!(
+                    (region.first.index(), region.last.index()),
+                    (first, last),
+                    "{moved}"
+                );
+                assert_eq!(after.events().len(), n, "{moved}");
+            }
+            Err(RegionError::Result(_)) => {}
+            Err(e) => panic!("{e}\n{source}"),
+        }
+    });
+}

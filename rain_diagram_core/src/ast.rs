@@ -71,7 +71,7 @@ impl fmt::Display for Document {
         }
 
         if !self.participants.is_empty() {
-            f.write_str("participant ")?;
+            f.write_str("principals: ")?;
             write_list(f, self.participants.iter().map(|p| &p.node))?;
             writeln!(f)?;
         }
@@ -95,10 +95,14 @@ impl fmt::Display for Document {
 
             for region in self.regions.iter().map(|r| &r.node) {
                 if region.statements.start == at && at < len {
-                    match &region.note {
-                        Some(note) => writeln!(f, ">>> {}: {note}", region.id)?,
-                        None => writeln!(f, ">>> {}", region.id)?,
+                    write!(f, ">>> {}", region.id)?;
+                    if let Some(colour) = &region.colour {
+                        write!(f, " ({colour})")?;
                     }
+                    if let Some(note) = &region.note {
+                        write!(f, ": {note}")?;
+                    }
+                    writeln!(f)?;
                 }
             }
 
@@ -123,6 +127,9 @@ impl fmt::Display for Document {
 pub struct Region {
     /// The name that opens and closes it. Same rules as certificate labels.
     pub id: CertId,
+
+    /// A principal whose colour it takes: `>>> A (Bob): note`.
+    pub colour: Option<Name>,
 
     /// What it's about, if anything.
     pub note: Option<Text>,
@@ -178,6 +185,9 @@ pub struct Delegation {
     /// Who receives the certificate.
     pub audience: Name,
 
+    /// Where its label sits along the arrow (`@60%`), if not the default.
+    pub at: Option<Percent>,
+
     /// A trailing `: note`.
     pub note: Option<Text>,
 }
@@ -200,7 +210,7 @@ impl fmt::Display for Delegation {
         }
 
         write!(f, "]->({})", self.audience)?;
-        write_note(f, self.note.as_ref())
+        write_tail(f, self.at, self.note.as_ref())
     }
 }
 
@@ -217,6 +227,9 @@ pub struct Invocation {
     /// What is acted on.
     pub on: Name,
 
+    /// Where its label sits along the arrow (`@60%`), if not the default.
+    pub at: Option<Percent>,
+
     /// A trailing `: note`.
     pub note: Option<Text>,
 }
@@ -224,7 +237,7 @@ pub struct Invocation {
 impl fmt::Display for Invocation {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "({})=[[{}]]=>({})", self.by, self.level, self.on)?;
-        write_note(f, self.note.as_ref())
+        write_tail(f, self.at, self.note.as_ref())
     }
 }
 
@@ -238,6 +251,9 @@ pub struct Revocation {
     /// The certificate being revoked.
     pub target: CertId,
 
+    /// Where its label sits along the arrow (`@60%`), if not the default.
+    pub at: Option<Percent>,
+
     /// A trailing `: note`.
     pub note: Option<Text>,
 }
@@ -245,7 +261,7 @@ pub struct Revocation {
 impl fmt::Display for Revocation {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "({})-<revoke>-x[{}]", self.by, self.target)?;
-        write_note(f, self.note.as_ref())
+        write_tail(f, self.at, self.note.as_ref())
     }
 }
 
@@ -489,13 +505,60 @@ fn write_list<T: fmt::Display, I: IntoIterator<Item = T>>(
     })
 }
 
-fn write_note(f: &mut fmt::Formatter<'_>, note: Option<&Text>) -> fmt::Result {
+/// A statement's optional ` @60%` and ` : note`.
+fn write_tail(f: &mut fmt::Formatter<'_>, at: Option<Percent>, note: Option<&Text>) -> fmt::Result {
+    if let Some(at) = at {
+        write!(f, " @{at}")?;
+    }
     note.map_or(Ok(()), |note| write!(f, " : {note}"))
 }
 
+/// How far along its arrow a row's label sits, from the issuer (`0%`) to
+/// the audience (`100%`), as in `(Alice)-[edit]->(Bob) @60%`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Percent(u8);
+
+impl Percent {
+    /// Check and wrap a percentage.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`InvalidPercent`] if it's over 100.
+    pub fn new(percent: u16) -> Result<Self, InvalidPercent> {
+        u8::try_from(percent)
+            .ok()
+            .filter(|&p| p <= 100)
+            .map(Self)
+            .ok_or(InvalidPercent(percent))
+    }
+
+    /// The percentage, 0 to 100.
+    #[must_use]
+    pub const fn get(self) -> u8 {
+        self.0
+    }
+
+    /// As a fraction, 0.0 to 1.0.
+    #[must_use]
+    pub fn fraction(self) -> f64 {
+        f64::from(self.0) / 100.0
+    }
+}
+
+impl fmt::Display for Percent {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}%", self.0)
+    }
+}
+
+/// A position past the end of the arrow.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
+#[error("{0}% is past the end of the arrow; use 0% to 100%")]
+pub struct InvalidPercent(u16);
+
 #[cfg(feature = "arbitrary")]
 mod arbitrary_impls {
-    use super::{CertId, Document, Kind, Name, Region, Span, Spanned, Statement, Text};
+    use super::{CertId, Document, Kind, Name, Percent, Region, Span, Spanned, Statement, Text};
     use alloc::{string::String, vec::Vec};
     use arbitrary::{Arbitrary, Result, Unstructured};
 
@@ -518,6 +581,12 @@ mod arbitrary_impls {
         fn arbitrary(u: &mut Unstructured<'a>) -> Result<Self> {
             const ALPHABET: &[char] = &['a', 'Z', '0', '9', '-', '_', '.', 'é'];
             Ok(Self(string_from(u, ALPHABET, 8)?))
+        }
+    }
+
+    impl<'a> Arbitrary<'a> for Percent {
+        fn arbitrary(u: &mut Unstructured<'a>) -> Result<Self> {
+            Ok(Self(u.int_in_range(0..=100)?))
         }
     }
 
@@ -573,6 +642,7 @@ mod arbitrary_impls {
                     .unwrap_or_else(|_| unreachable!("r0, r1, … are valid ids"));
                 self.regions.push(spanned(Region {
                     id,
+                    colour: Option::<Name>::arbitrary(u)?,
                     note: Option::<Text>::arbitrary(u)?,
                     statements: start..end,
                 }));

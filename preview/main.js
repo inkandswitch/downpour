@@ -3,16 +3,18 @@ import "./rain-diagram.js";
 import { splitter } from "./split.js";
 
 const EXAMPLE = `rain
-title Revoking two hops downstream
+title Revocation is retroactive
 
-(Doc)-[edit]->(Alice)            : The Doc grants Alice Edit
+(Doc)-[admin]->(Alice)           : The Doc grants Alice Admin
 (Alice)-[edit(Doc)]->(Bob)       : Alice passes Edit to Bob
->>> A: Bob does stuff
+>>> A (Bob): Bob does stuff
 (Bob)=[[edit]]=>(Doc)            : Bob edits the Doc
-(Bob)-[read]->(Carol)            : Bob gives Carol Read
+bc: (Bob)-[edit]->(Carol)        : Bob gives Carol Edit
+(Carol)=[[edit]]=>(Doc)          : Carol edits the Doc
 <<< A
-cd: (Carol)-[read]->(Dan)        : Carol shares Read with Dan
-(Alice)-<revoke>-x[cd]           : Alice revokes Carol→Dan
+(Carol)-[read]->(Dan)            : Carol shares Read with Dan
+(Dan)=[[read]]=>(Doc) @30%       : Dan reads the Doc
+(Alice)-<revoke>-x[bc]           : Alice revokes Bob→Carol, and all that relied on it
 `;
 
 const STORAGE = { format: "rain-preview:format", source: "rain-preview:source" };
@@ -129,6 +131,37 @@ splitter($("rows"), {
   max: () => pane.getBoundingClientRect().bottom - picture.getBoundingClientRect().top - 120,
   key: "rain-preview:picture-height",
 });
+
+// Dragging a row in the diagram rewrites the source
+picture.addEventListener("rain-edit", ({ detail }) => {
+  source.value = detail.source;
+  render();
+});
+
+picture.addEventListener("rain-edit-refused", ({ detail }) => {
+  status.className = "err";
+  status.textContent = `✗ ${detail.message}`;
+});
+
+// System, light, or dark. The page and the diagram both follow it.
+const theme = (choice) => {
+  save("rain-preview:theme", choice);
+  if (choice === "light" || choice === "dark") {
+    document.documentElement.dataset.theme = choice;
+    picture.setAttribute("theme", choice);
+  } else {
+    delete document.documentElement.dataset.theme;
+    picture.removeAttribute("theme");
+  }
+  for (const button of document.querySelectorAll("[data-theme-choice]")) {
+    button.setAttribute("aria-pressed", String(button.dataset.themeChoice === choice));
+  }
+};
+
+for (const button of document.querySelectorAll("[data-theme-choice]")) {
+  button.addEventListener("click", () => theme(button.dataset.themeChoice));
+}
+theme(load("rain-preview:theme", "system"));
 
 $("example").addEventListener("click", () => {
   source.value = EXAMPLE;

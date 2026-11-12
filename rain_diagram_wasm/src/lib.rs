@@ -54,6 +54,66 @@ pub fn render_text(source: &str) -> Result<String, JsError> {
     Ok(parse(source)?.to_text())
 }
 
+/// Change region `region`'s note (an empty note removes it), returning the
+/// rewritten source.
+///
+/// # Errors
+///
+/// Throws if there's no such region or the note isn't a valid one-liner.
+#[wasm_bindgen(js_name = setRegionNote)]
+pub fn set_region_note(source: &str, region: &str, note: &str) -> Result<String, JsError> {
+    rain_diagram_core::edit::set_region_note(source, region, note)
+        .map_err(|e| JsError::new(&e.to_string()))
+}
+
+/// Make region `region` cover statements `first..=last` (as when dragging
+/// its edges), returning the rewritten source.
+///
+/// # Errors
+///
+/// Throws if there's no such region, the range is invalid, or the result
+/// wouldn't parse.
+#[wasm_bindgen(js_name = setRegionRows)]
+pub fn set_region_rows(
+    source: &str,
+    region: &str,
+    first: usize,
+    last: usize,
+) -> Result<String, JsError> {
+    rain_diagram_core::edit::set_region_rows(source, region, first, last)
+        .map_err(|e| JsError::new(&e.to_string()))
+}
+
+/// Place statement `statement`'s label `percent` of the way along its arrow
+/// (or back to the default spot with `undefined`), returning the rewritten
+/// source.
+///
+/// # Errors
+///
+/// Throws if there's no such statement or `percent` is over 100.
+#[wasm_bindgen(js_name = setPosition)]
+pub fn set_position(
+    source: &str,
+    statement: usize,
+    percent: Option<u16>,
+) -> Result<String, JsError> {
+    rain_diagram_core::edit::set_position(source, statement, percent)
+        .map_err(|e| JsError::new(&e.to_string()))
+}
+
+/// Move the `from`th statement to be the `to`th (as when dragging a row),
+/// returning the rewritten source.
+///
+/// # Errors
+///
+/// Throws if `to` is above something the statement relies on or below
+/// something relying on it, or if the result wouldn't parse.
+#[wasm_bindgen(js_name = moveStatement)]
+pub fn move_statement(source: &str, from: usize, to: usize) -> Result<String, JsError> {
+    rain_diagram_core::edit::move_statement(source, from, to)
+        .map_err(|e| JsError::new(&e.to_string()))
+}
+
 /// Convert `source` to the lab notebook renderer's rain diagram JSON.
 ///
 /// # Errors
@@ -112,6 +172,34 @@ impl RainDiagram {
         self.diagram.to_rain_svg()
     }
 
+    /// The rain SVG with the "now" line below the first `happened` events.
+    #[must_use]
+    #[wasm_bindgen(js_name = rainSvgAt)]
+    pub fn rain_svg_at(&self, happened: usize) -> String {
+        self.diagram.to_rain_svg_at(happened)
+    }
+
+    /// The certflow snapshot after the first `happened` events.
+    #[must_use]
+    #[wasm_bindgen(js_name = certflowSvgAt)]
+    pub fn certflow_svg_at(&self, happened: usize) -> String {
+        self.diagram.to_certflow_svg_at(happened)
+    }
+
+    /// The notation the header names: `"rain"` or `"certflow"`.
+    #[must_use]
+    #[wasm_bindgen(getter)]
+    pub fn kind(&self) -> String {
+        self.diagram.kind().keyword().into()
+    }
+
+    /// How many events there are.
+    #[must_use]
+    #[wasm_bindgen(getter)]
+    pub fn events(&self) -> usize {
+        self.diagram.events().len()
+    }
+
     /// The SVG as a certflow snapshot of the last moment, whatever the
     /// header.
     #[must_use]
@@ -166,6 +254,19 @@ impl RainDiagram {
             subjects.join(","),
             events.join(",")
         )
+    }
+
+    /// The rows event `event` can be dragged to, as `[first, last]`: below
+    /// everything it relies on, above everything relying on it.
+    #[must_use]
+    pub fn movable(&self, event: usize) -> Vec<usize> {
+        self.diagram
+            .event_ix(event)
+            .map(|ix| {
+                let range = self.diagram.movable(ix);
+                Vec::from([*range.start(), *range.end()])
+            })
+            .unwrap_or_default()
     }
 
     /// Indices of the events that revoking event `event` would void (empty

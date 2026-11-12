@@ -20,8 +20,8 @@
 
 use crate::{
     ast::{
-        CertId, Delegation, Document, InvalidCertId, InvalidName, InvalidText, Invocation, Kind,
-        Name, Region, Revocation, Span, Spanned, Statement, Text,
+        CertId, Delegation, Document, InvalidCertId, InvalidName, InvalidPercent, InvalidText,
+        Invocation, Kind, Name, Percent, Region, Revocation, Span, Spanned, Statement, Text,
     },
     level::{Level, UnknownLevel},
 };
@@ -72,15 +72,7 @@ pub fn document(source: &str) -> Result<Document, ParseError> {
 
     for (span, line) in lines {
         if let Some(rest) = line.strip_prefix(">>>") {
-            let (id, note) = match rest.split_once(':') {
-                Some((id, note)) => (id, Some(note.trim())),
-                None => (rest, None),
-            };
-            let id = CertId::new(id.trim()).map_err(|e| ParseError::new(span, e.into()))?;
-            let note = note
-                .map(Text::new)
-                .transpose()
-                .map_err(|e| ParseError::new(span, e.into()))?;
+            let (id, colour, note) = region_open(&mut Cursor::new(rest, span.start + 3))?;
             if doc.regions.iter().any(|r| r.node.id == id) {
                 return Err(ParseError::new(span, ParseErrorKind::DuplicateRegion(id)));
             }
@@ -89,6 +81,7 @@ pub fn document(source: &str) -> Result<Document, ParseError> {
             doc.regions.push(Spanned {
                 node: Region {
                     id,
+                    colour,
                     note,
                     statements: at..at,
                 },
@@ -113,7 +106,7 @@ pub fn document(source: &str) -> Result<Document, ParseError> {
 
             let node = Text::new(rest.trim()).map_err(|e| ParseError::new(span, e.into()))?;
             doc.title = Some(Spanned { node, span });
-        } else if let Some(rest) = directive(line, "participant") {
+        } else if let Some(rest) = principals(line) {
             let mut offset = span.end - rest.len();
             for piece in rest.split(',') {
                 let leading = piece.len() - piece.trim_start().len();
@@ -173,9 +166,57 @@ fn lines(source: &str) -> impl Iterator<Item = (Span, &str)> {
 }
 
 /// The rest of the line if it starts with `keyword` followed by whitespace.
+/// The column-order directive: `principals: A, B` (also `participant` or
+/// `participants`, with or without the colon). The rest of the line.
+fn principals(line: &str) -> Option<&str> {
+    ["principals", "participants", "participant"]
+        .into_iter()
+        .find_map(|keyword| {
+            let rest = line.strip_prefix(keyword)?;
+            match rest.strip_prefix(':') {
+                // Not a statement labelled `principals:`
+                Some(list) if !list.trim_start().starts_with('(') => Some(list),
+                Some(_) => None,
+                None => rest.starts_with(char::is_whitespace).then_some(rest),
+            }
+        })
+}
+
 fn directive<'a>(line: &'a str, keyword: &str) -> Option<&'a str> {
     line.strip_prefix(keyword)
         .filter(|rest| rest.starts_with(char::is_whitespace))
+}
+
+/// After `>>>`: `A`, then optionally `(Principal)` for its colour, then
+/// optionally `: note`.
+fn region_open(c: &mut Cursor<'_>) -> Result<(CertId, Option<Name>, Option<Text>), ParseError> {
+    c.skip_ws();
+    let (raw, span) = c.take_while(CertId::is_id_char);
+    let id = CertId::new(raw).map_err(|e| ParseError::new(span, e.into()))?;
+
+    c.skip_ws();
+    let colour = if c.eat("(") {
+        let (raw, span) = c.take_while(|ch| ch != ')');
+        c.expect(")", "`)` after the region's colour")?;
+        Some(Name::new(raw.trim()).map_err(|e| ParseError::new(span, e.into()))?)
+    } else {
+        None
+    };
+
+    c.skip_ws();
+    let note = if c.eat(":") {
+        c.skip_ws();
+        let (raw, span) = c.take_while(|_| true);
+        Some(Text::new(raw.trim_end()).map_err(|e| ParseError::new(span, e.into()))?)
+    } else if c.rest().is_empty() {
+        None
+    } else {
+        return Err(c.error_here(ParseErrorKind::Expected(
+            "`(Principal)` for the region's colour, or `: note`",
+        )));
+    };
+
+    Ok((id, colour, note))
 }
 
 fn statement(c: &mut Cursor<'_>) -> Result<Statement, ParseError> {
@@ -216,6 +257,7 @@ fn statement(c: &mut Cursor<'_>) -> Result<Statement, ParseError> {
         c.expect("]", "`]` to close the certificate")?;
         c.expect("->", "`->` after the certificate")?;
         let audience = principal(c)?;
+        let (at, note) = tail(c)?;
 
         return Ok(Statement::Delegate(Delegation {
             id: id.map(|id| id.node),
@@ -224,7 +266,8 @@ fn statement(c: &mut Cursor<'_>) -> Result<Statement, ParseError> {
             subject,
             via,
             audience,
-            note: note(c)?,
+            at,
+            note,
         }));
     }
 
@@ -240,12 +283,14 @@ fn statement(c: &mut Cursor<'_>) -> Result<Statement, ParseError> {
         c.expect("]]", "`]]` to close the invocation")?;
         c.expect("=>", "`=>` after the invocation")?;
         let on = principal(c)?;
+        let (at, note) = tail(c)?;
 
         return Ok(Statement::Invoke(Invocation {
             by,
             level,
             on,
-            note: note(c)?,
+            at,
+            note,
         }));
     }
 
@@ -253,11 +298,13 @@ fn statement(c: &mut Cursor<'_>) -> Result<Statement, ParseError> {
         c.expect("[", "`[` before the revoked certificate's label")?;
         let target = cert_id(c)?;
         c.expect("]", "`]` after the revoked certificate's label")?;
+        let (at, note) = tail(c)?;
 
         return Ok(Statement::Revoke(Revocation {
             by,
             target,
-            note: note(c)?,
+            at,
+            note,
         }));
     }
 
@@ -284,6 +331,31 @@ fn cert_id(c: &mut Cursor<'_>) -> Result<CertId, ParseError> {
     CertId::new(raw).map_err(|e| ParseError::new(span, e.into()))
 }
 
+/// After a statement's body: an optional ` @60%`, then an optional note.
+fn tail(c: &mut Cursor<'_>) -> Result<(Option<Percent>, Option<Text>), ParseError> {
+    c.tail = Some(c.pos);
+    c.skip_ws();
+    let at = if c.eat("@") {
+        let (raw, span) = c.take_while(|ch| ch.is_ascii_digit());
+        c.expect("%", "`%` after the position, as in `@60%`")?;
+        let percent = raw.parse::<u16>().map_err(|_| {
+            ParseError::new(span, ParseErrorKind::Expected("a percentage, as in `@60%`"))
+        })?;
+        Some(Percent::new(percent).map_err(|e| ParseError::new(span, e.into()))?)
+    } else {
+        None
+    };
+    Ok((at, note(c)?))
+}
+
+/// Where a statement's tail (` @60% : note`) starts within `line`, for
+/// editing the position without disturbing the rest of the line.
+pub(crate) fn tail_start(line: &str) -> Option<usize> {
+    let mut c = Cursor::new(line, 0);
+    statement(&mut c).ok()?;
+    c.tail
+}
+
 fn note(c: &mut Cursor<'_>) -> Result<Option<Text>, ParseError> {
     if c.at_end() {
         return Ok(None);
@@ -301,6 +373,9 @@ struct Cursor<'a> {
     line: &'a str,
     offset: usize,
     pos: usize,
+
+    /// Where the statement body ended, once `tail` has run.
+    tail: Option<usize>,
 }
 
 impl<'a> Cursor<'a> {
@@ -309,6 +384,7 @@ impl<'a> Cursor<'a> {
             line,
             offset,
             pos: 0,
+            tail: None,
         }
     }
 
@@ -476,6 +552,10 @@ pub enum ParseErrorKind {
     #[error(transparent)]
     CertId(#[from] InvalidCertId),
 
+    /// A position past the end of the arrow.
+    #[error(transparent)]
+    Percent(#[from] InvalidPercent),
+
     /// A bad title or note.
     #[error(transparent)]
     Text(#[from] InvalidText),
@@ -517,6 +597,7 @@ mod tests {
                     subject: None,
                     via: Vec::new(),
                     audience: name("Alice"),
+                    at: None,
                     note: None,
                 }),
                 Statement::Delegate(Delegation {
@@ -526,6 +607,7 @@ mod tests {
                     subject: Some(name("Doc")),
                     via: Vec::new(),
                     audience: name("Dan"),
+                    at: None,
                     note: Some(Text::new("shares Read")?),
                 }),
                 Statement::Delegate(Delegation {
@@ -535,6 +617,7 @@ mod tests {
                     subject: Some(name("Doc")),
                     via: Vec::from([CertId::new("ta")?, CertId::new("x.1")?]),
                     audience: name("Bob"),
+                    at: None,
                     note: None,
                 }),
             ]
@@ -557,15 +640,68 @@ mod tests {
                     by: name("Bob"),
                     level: Level::Edit,
                     on: name("Doc"),
+                    at: None,
                     note: None,
                 }),
                 Statement::Revoke(Revocation {
                     by: name("Alice"),
                     target: CertId::new("carol-dan")?,
+                    at: None,
                     note: Some(Text::new("Alice revokes Carol→Dan")?),
                 }),
             ]
         );
+        Ok(())
+    }
+
+    #[test]
+    fn positions() -> TestResult {
+        let parsed = statements(
+            "rain\n(A)-[read]->(B) @60% : note\n(B)=[[read]]=>(A)@0%\n(A)-<revoke>-x[a-b] @100%",
+        )?;
+        let at: Vec<_> = parsed
+            .iter()
+            .map(|s| match s {
+                Statement::Delegate(d) => d.at,
+                Statement::Invoke(i) => i.at,
+                Statement::Revoke(r) => r.at,
+            })
+            .map(|at| at.map(Percent::get))
+            .collect();
+        assert_eq!(at, [Some(60), Some(0), Some(100)]);
+
+        for (source, problem) in [
+            ("rain\n(A)-[read]->(B) @101%", "101"),
+            ("rain\n(A)-[read]->(B) @60", ""),
+            ("rain\n(A)-[read]->(B) @x%", "x"),
+        ] {
+            let span = document(source).err().map(|e| e.span());
+            assert_eq!(
+                span.map(|s| covered(source, s)),
+                Some(problem),
+                "{source:?}"
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn principals_in_every_spelling() -> TestResult {
+        for header in [
+            "principals: Doc, Bob",
+            "principals Doc, Bob",
+            "participants: Doc, Bob",
+            "participant Doc, Bob",
+        ] {
+            let doc = document(&format!("rain\n{header}\n(Bob)-[read]->(Doc)"))?;
+            let order: Vec<_> = doc.participants.iter().map(|p| p.node.as_str()).collect();
+            assert_eq!(order, ["Doc", "Bob"], "{header}");
+        }
+
+        // A statement labelled `principals` is still a statement
+        let doc = document("rain\nprincipals: (Doc)-[read]->(Bob)")?;
+        assert!(doc.participants.is_empty());
+        assert_eq!(doc.statements.len(), 1);
         Ok(())
     }
 
@@ -670,6 +806,35 @@ mod tests {
                 .map(|r| &r.node)
                 .eq(doc.regions.iter().map(|r| &r.node))
         );
+        Ok(())
+    }
+
+    #[test]
+    fn region_colours() -> TestResult {
+        let doc = document(
+            "rain\n>>> A (Bob): Bob does stuff\n(A)-[read]->(Bob)\n<<< A\n>>> B (Comment Thread 1)\n(A)-[read]->(B)\n<<< B",
+        )?;
+        let regions: Vec<_> = doc
+            .regions
+            .iter()
+            .map(|r| {
+                (
+                    r.node.colour.as_ref().map(Name::as_str),
+                    r.node.note.as_ref().map(Text::as_str),
+                )
+            })
+            .collect();
+        assert_eq!(
+            regions,
+            [
+                (Some("Bob"), Some("Bob does stuff")),
+                (Some("Comment Thread 1"), None)
+            ]
+        );
+
+        let source = "rain\n>>> A then\n(A)-[read]->(B)\n<<< A";
+        let at = document(source).err().map(|e| covered(source, e.span()));
+        assert_eq!(at, Some("t"));
         Ok(())
     }
 

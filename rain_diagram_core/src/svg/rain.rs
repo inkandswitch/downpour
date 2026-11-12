@@ -30,9 +30,12 @@ use crate::{
 use alloc::{format, string::String, vec::Vec};
 use core::fmt::Write as _;
 
-/// Draw `diagram` as a rain diagram.
-pub(super) fn render(diagram: &Diagram) -> String {
-    Svg::new(diagram).draw()
+/// Draw `diagram` as a rain diagram, with the first `happened` events in the
+/// past (the "now" line sits below them) and the rest still to come.
+pub(super) fn render(diagram: &Diagram, happened: usize) -> String {
+    let mut svg = Svg::new(diagram);
+    svg.happened = happened.min(diagram.events().len());
+    svg.draw()
 }
 
 const HEADER: f64 = 64.0;
@@ -41,7 +44,7 @@ const ROW: f64 = 64.0;
 /// How far a powerline arches above the label it leaves.
 const ARCH: f64 = 34.0;
 const HANDLE: f64 = 5.0;
-const DIAMOND: (f64, f64) = (36.0, 13.0);
+const DIAMOND: (f64, f64) = (46.0, 14.0);
 
 struct Svg<'a> {
     diagram: &'a Diagram,
@@ -49,6 +52,9 @@ struct Svg<'a> {
     title: f64,
     out: String,
     labels: Vec<Option<Pill>>,
+
+    /// How many events are above the "now" line.
+    happened: usize,
 }
 
 /// Where an event's label (or diamond) landed.
@@ -91,6 +97,21 @@ impl<'a> Svg<'a> {
             title: if diagram.title().is_some() { 32.0 } else { 0.0 },
             out: String::new(),
             labels: Vec::new(),
+            happened: diagram.events().len(),
+        }
+    }
+
+    /// Whether `ix` is below the "now" line.
+    const fn future(&self, ix: EventIx) -> bool {
+        ix.index() >= self.happened
+    }
+
+    /// The powerline class for a line into `to`.
+    const fn powerline_class(&self, to: EventIx) -> &'static str {
+        if self.future(to) {
+            "powerline future"
+        } else {
+            "powerline"
         }
     }
 
@@ -121,7 +142,10 @@ impl<'a> Svg<'a> {
 
         let _ = write!(
             self.out,
-            r#"<svg xmlns="http://www.w3.org/2000/svg" class="rain-diagram" viewBox="0 0 {width:.0} {height:.0}" width="{width:.0}" height="{height:.0}" font-family="system-ui, sans-serif" font-size="{FONT}">"#
+            r#"<svg xmlns="http://www.w3.org/2000/svg" class="rain-diagram" data-rows-top="{rows_top:.1}" data-row-height="{ROW}" data-events="{events}" data-moment="{moment}" viewBox="0 0 {width:.0} {height:.0}" width="{width:.0}" height="{height:.0}" font-family="system-ui, sans-serif" font-size="{FONT}">"#,
+            rows_top = self.title + HEADER,
+            events = self.diagram.events().len(),
+            moment = self.happened,
         );
         self.out.push_str(STYLE);
         if let Some(title) = d.title() {
@@ -133,30 +157,33 @@ impl<'a> Svg<'a> {
             );
         }
 
-        let lanes = d.region_lanes();
-        for (n, (region, &lane)) in d.regions().iter().zip(&lanes).enumerate() {
-            let inset = 5.0 * index(lane);
-            let top = self.title + HEADER + ROW * index(region.first.index());
-            let bottom = self.title + HEADER + ROW * index(region.last.index() + 1);
-            super::region(
-                &mut self.out,
-                n,
-                region,
-                (
-                    MARGIN / 2.0 + inset,
-                    top + 3.0 + inset,
-                    width - MARGIN / 2.0 - inset,
-                    bottom - 3.0 - inset,
-                ),
-            );
-        }
-
+        // Lifelines first, then regions over them, so captions aren't crossed
+        // out (the box tint is translucent, so lifelines still show through)
         self.principals(bottom);
+
+        self.regions(width);
+
+        // "Now": everything above it has happened. Its handle opens a
+        // certflow snapshot of that moment (in the interactive embed)
         let _ = write!(
             self.out,
-            r#"<line class="now" x1="{MARGIN}" y1="{y:.1}" x2="{x2:.1}" y2="{y:.1}"/>"#,
-            y = bottom - 2.0,
-            x2 = notes_x - 8.0,
+            concat!(
+                r#"<g class="now" data-moment="{moment}">"#,
+                r#"<rect class="hit" x="{MARGIN}" y="{hy:.1}" width="{hw:.1}" height="20"/>"#,
+                r#"<line class="now-line" x1="{MARGIN}" y1="{y:.1}" x2="{x2:.1}" y2="{y:.1}"/>"#,
+                r#"<g class="now-handle"><circle class="hit" cx="{hx:.1}" cy="{y:.1}" r="11"/>"#,
+                r#"<text x="{hx:.1}" y="{y:.1}" text-anchor="middle" dominant-baseline="central">{clock}</text></g>"#,
+                "<title>Now: everything above this line has happened</title>",
+                "</g>"
+            ),
+            moment = self.happened,
+            MARGIN = MARGIN,
+            y = self.title + HEADER + ROW * index(self.happened) - 2.0,
+            x2 = notes_x - 32.0,
+            hx = notes_x - 18.0,
+            hy = self.title + HEADER + ROW * index(self.happened) - 12.0,
+            hw = notes_x - 32.0 - MARGIN,
+            clock = clock(self.happened),
         );
 
         // Labels first (later events need to know where earlier ones went),
@@ -191,6 +218,42 @@ impl<'a> Svg<'a> {
         self.out
     }
 
+    /// Region boxes over the lifelines, each with invisible grips on its top
+    /// and bottom edges for dragging them to other rows.
+    fn regions(&mut self, width: f64) {
+        let d = self.diagram;
+        let lanes = d.region_lanes();
+        for (n, (region, &lane)) in d.regions().iter().zip(&lanes).enumerate() {
+            let inset = 5.0 * index(lane);
+            let top = self.title + HEADER + ROW * index(region.first.index());
+            let bottom = self.title + HEADER + ROW * index(region.last.index() + 1);
+            super::region(
+                &mut self.out,
+                n,
+                region,
+                (
+                    MARGIN / 2.0 + inset,
+                    top + 3.0 + inset,
+                    width - MARGIN / 2.0 - inset,
+                    bottom - 3.0 - inset,
+                ),
+            );
+            // Invisible grips on the top and bottom edges, for dragging
+            // them to other rows in the interactive embed
+            for (edge, y) in [("top", top + 3.0 + inset), ("bottom", bottom - 3.0 - inset)] {
+                let _ = write!(
+                    self.out,
+                    r#"<rect class="hit region-edge" data-region="{id}" data-edge="{edge}" data-first="{first}" data-last="{last}" x="{x:.1}" y="{y:.1}" width="{w:.1}" height="10"/>"#,
+                    id = escape(region.id.as_str()),
+                    first = region.first.index(),
+                    last = region.last.index(),
+                    x = MARGIN / 2.0 + inset,
+                    y = y - 5.0,
+                    w = width - MARGIN - 2.0 * inset,
+                );
+            }
+        }
+    }
     fn principals(&mut self, bottom: f64) {
         let y = self.head();
         self.out.push_str(r#"<g class="principals">"#);
@@ -222,11 +285,17 @@ impl<'a> Svg<'a> {
     }
 
     fn event(&self, ix: EventIx, out: &mut String) -> Option<Pill> {
-        let status = self
-            .diagram
-            .now()
-            .and_then(|now| self.diagram.status(ix, now))
-            .map_or("valid", status_class);
+        // As of the "now" line; below it, nothing has happened yet
+        let now = self
+            .happened
+            .checked_sub(1)
+            .and_then(|i| self.diagram.event_ix(i));
+        let status = if self.future(ix) {
+            "future"
+        } else {
+            now.and_then(|now| self.diagram.status(ix, now))
+                .map_or("valid", status_class)
+        };
 
         match self.diagram.event(ix)? {
             Event::Delegate(cert) => Some(self.delegation(ix, cert, status, out)),
@@ -243,18 +312,20 @@ impl<'a> Svg<'a> {
         let half = text_width(text) / 2.0 + 10.0;
         let dir = if to < from { -1.0 } else { 1.0 };
         // Just off the issuer's lifeline, unless the arrow is too short
+        // Just off the issuer's lifeline (unless the arrow is too short), or
+        // where it was placed by hand, kept within the arrow
         let offset = (half + 16.0).min((to - from).abs() / 2.0);
-        let rect = Pill {
-            x: from + dir * offset,
-            y,
-            half,
-            dir,
+        let (low, high) = (from.min(to) + half + 4.0, from.max(to) - half - 4.0);
+        let x = match cert.at {
+            Some(p) if low <= high => (from + (to - from) * p.fraction()).clamp(low, high),
+            _ => from + dir * offset,
         };
+        let rect = Pill { x, y, half, dir };
 
         let _ = write!(
             out,
             concat!(
-                r#"<g class="event delegate {status}" data-event="{ix}" data-cert="{id}">"#,
+                r#"<g class="event delegate {status}" data-event="{ix}" data-cert="{id}" data-span="{from:.1} {to:.1}">{hit}"#,
                 r#"<line x1="{from:.1}" y1="{y:.1}" x2="{to:.1}" y2="{y:.1}" stroke="{colour}"/>"#,
                 "{head}{pill}",
                 "<title>{title}</title>",
@@ -262,6 +333,7 @@ impl<'a> Svg<'a> {
             ),
             status = status,
             ix = ix.index(),
+            hit = hit(from, to, y),
             id = escape(cert.id.as_str()),
             from = from,
             to = to,
@@ -284,11 +356,13 @@ impl<'a> Svg<'a> {
         // Right under the certificate that powers it, when that's between
         // the two lifelines
         let (low, high) = (by.min(on) + half + 10.0, by.max(on) - half - 10.0);
-        let preferred = invoke
+        let powered = invoke
             .authority
             .route()
             .and_then(|r| self.label(r.held()))
             .map_or(by + dir * (half + 16.0), |p| p.x);
+        // A hand-placed position wins over sitting under its power
+        let preferred = invoke.at.map_or(powered, |p| by + (on - by) * p.fraction());
         let x = if low <= high {
             preferred.clamp(low, high)
         } else {
@@ -300,7 +374,7 @@ impl<'a> Svg<'a> {
         let _ = write!(
             out,
             concat!(
-                r#"<g class="event invoke {status}" data-event="{ix}">"#,
+                r#"<g class="event invoke {status}" data-event="{ix}" data-span="{by:.1} {on:.1}">{hit}"#,
                 r#"<line class="double" x1="{by:.1}" y1="{y:.1}" x2="{on:.1}" y2="{y:.1}" stroke="{colour}"/>"#,
                 r#"<line class="double-inner" x1="{by:.1}" y1="{y:.1}" x2="{on:.1}" y2="{y:.1}"/>"#,
                 "{head}{pill}",
@@ -308,6 +382,7 @@ impl<'a> Svg<'a> {
             ),
             status = status,
             ix = ix.index(),
+            hit = hit(by, on, y),
             by = by,
             on = on,
             y = y,
@@ -329,35 +404,40 @@ impl<'a> Svg<'a> {
         let x = self.lifeline(revoke.by);
         let y = self.row(ix);
         let (rx, ry) = DIAMOND;
-        let (cx, near) = (
-            target.x,
-            if x < target.x {
-                target.x - rx
-            } else {
-                target.x + rx
-            },
-        );
+        let tx = target.x;
+        // Right under the target, unless placed along the red line by hand
+        let cx = revoke.at.map_or(tx, |p| x + (tx - x) * p.fraction());
+        let near = if x < cx { cx - rx } else { cx + rx };
         let under = target.y + PILL / 2.0;
+        let up = under + 2.0;
+        let rest = if (cx - tx).abs() < 0.5 {
+            format!("M{cx:.1},{:.1} V{up:.1}", y - ry)
+        } else {
+            let far = if tx > cx { cx + rx } else { cx - rx };
+            format!("M{far:.1},{y:.1} H{tx:.1} V{up:.1}")
+        };
 
         let _ = write!(
             out,
             concat!(
-                r#"<g class="event revoke {status}" data-event="{ix}">"#,
-                r#"<path class="revocation" d="M{x:.1},{y:.1} H{near:.1} M{cx:.1},{dt:.1} V{up:.1}"/>"#,
+                r#"<g class="event revoke {status}" data-event="{ix}" data-span="{x:.1} {tx:.1}">{hit}"#,
+                r#"<path class="revocation" d="M{x:.1},{y:.1} H{near:.1} {rest}"/>"#,
                 r#"<path class="cross" d="M{a:.1},{b:.1} L{c:.1},{e:.1} M{a:.1},{e:.1} L{c:.1},{b:.1}"/>"#,
                 r#"<path class="diamond" d="M{cx:.1},{dt:.1} L{dr:.1},{y:.1} L{cx:.1},{db:.1} L{dl:.1},{y:.1} Z"/>"#,
-                r#"<text x="{cx:.1}" y="{y:.1}" text-anchor="middle" dominant-baseline="central">revoke</text>"#,
+                r#"<text x="{cx:.1}" y="{y:.1}" text-anchor="middle" dominant-baseline="central">✂️ Revoke</text>"#,
                 "</g>"
             ),
             status = status,
             ix = ix.index(),
+            hit = hit(x, tx, y),
             x = x,
             y = y,
             near = near,
+            rest = rest,
+            tx = tx,
             cx = cx,
-            up = under + 2.0,
-            a = cx - 6.0,
-            c = cx + 6.0,
+            a = tx - 6.0,
+            c = tx + 6.0,
             b = under + 2.0,
             e = under + 14.0,
             dt = y - ry,
@@ -474,8 +554,9 @@ impl<'a> Svg<'a> {
                 let k = 0.552_284_75;
                 let _ = write!(
                     self.out,
-                    r#"<path class="powerline" data-to="{to}" d="M{sx:.1},{sy:.1} C{c1x:.1},{sy:.1} {top_x:.1},{c2y:.1} {top_x:.1},{top_y:.1}" stroke="{colour}"/>"#,
+                    r#"<path class="{class}" data-to="{to}" d="M{sx:.1},{sy:.1} C{c1x:.1},{sy:.1} {top_x:.1},{c2y:.1} {top_x:.1},{top_y:.1}" stroke="{colour}"/>"#,
                     to = ix.index(),
+                    class = self.powerline_class(ix),
                     sx = start.0,
                     sy = start.1,
                     c1x = start.0 + k * (top_x - start.0),
@@ -500,8 +581,9 @@ impl<'a> Svg<'a> {
         let from = from.map_or_else(String::new, |f| format!(r#" data-from="{}""#, f.index()));
         let _ = write!(
             self.out,
-            r#"<path class="powerline"{from} data-to="{to}" d="M{x1:.1},{y1:.1} C{x1:.1},{peak:.1} {x2:.1},{peak:.1} {x2:.1},{y2:.1}" stroke="{colour}"/>"#,
-            to = to.index()
+            r#"<path class="{class}"{from} data-to="{to}" d="M{x1:.1},{y1:.1} C{x1:.1},{peak:.1} {x2:.1},{peak:.1} {x2:.1},{y2:.1}" stroke="{colour}"/>"#,
+            to = to.index(),
+            class = self.powerline_class(to),
         );
     }
 
@@ -516,8 +598,9 @@ impl<'a> Svg<'a> {
         let from = from.map_or_else(String::new, |f| format!(r#" data-from="{}""#, f.index()));
         let _ = write!(
             self.out,
-            r#"<path class="powerline"{from} data-to="{to}" d="M{x1:.1},{y1:.1} L{x2:.1},{y2:.1}" stroke="{colour}"/>"#,
-            to = to.index()
+            r#"<path class="{class}"{from} data-to="{to}" d="M{x1:.1},{y1:.1} L{x2:.1},{y2:.1}" stroke="{colour}"/>"#,
+            to = to.index(),
+            class = self.powerline_class(to),
         );
     }
 }
@@ -529,5 +612,26 @@ fn chevron(x: f64, y: f64, dir: f64, colour: &str) -> String {
         r#"<path class="chevron" d="M{back:.1},{:.1} L{x:.1},{y:.1} L{back:.1},{:.1}" stroke="{colour}"/>"#,
         y - 5.0,
         y + 5.0
+    )
+}
+
+/// A clock face for the "now" handle: the hands advance an hour per event,
+/// so dragging the line down winds the clock forward and up winds it back.
+fn clock(happened: usize) -> &'static str {
+    const FACES: [&str; 12] = [
+        "🕛", "🕐", "🕑", "🕒", "🕓", "🕔", "🕕", "🕖", "🕗", "🕘", "🕙", "🕚",
+    ];
+    FACES.get(happened % FACES.len()).copied().unwrap_or("🕒")
+}
+
+/// An invisible band over a row's arrow, so it's easy to grab with a
+/// trackpad rather than only on its strokes.
+fn hit(a: f64, b: f64, y: f64) -> String {
+    let (left, right) = (a.min(b) - 6.0, a.max(b) + 6.0);
+    format!(
+        r#"<rect class="hit" x="{left:.1}" y="{:.1}" width="{:.1}" height="{:.1}"/>"#,
+        y - ROW * 0.35,
+        right - left,
+        ROW * 0.7
     )
 }

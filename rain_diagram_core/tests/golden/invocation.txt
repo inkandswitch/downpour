@@ -11,8 +11,8 @@
    │     ┆      │    ┆       │    ┆       │
    │     ┆      │    ┆       ├──[edit]───▶│
    │     ┆      │    ┆       │    ✗       │
-   │     ┆      │    ┆       │    │       │
-   │◀════╪══════╪════╪═══════╪═[[edit]]═══╡   Carol edits (void after the revocation)
+   │     ┆      │    ┆   ╭┄┄┄┼┄┄┄┄┤       │
+   │◀════╪══════╪════[[edit]]╪════╪═══════╡   Carol edits (void after the revocation)
    │     ┆      │    ┆       │    │       │
    │     ┆      │    ┆       │    │       │
    │     ╰┄┄┄┄┄┄o────┼───────┼─<revoke>   │

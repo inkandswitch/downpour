@@ -4,6 +4,13 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Rain Preview</title>
+  <script>
+    // Before first paint, so a chosen theme doesn't flash the other one
+    try {
+      const theme = localStorage.getItem("rain-preview:theme");
+      if (theme === "light" || theme === "dark") document.documentElement.dataset.theme = theme;
+    } catch {}
+  </script>
   <style>
     :root {
       --bg: #fbfaf7;
@@ -17,8 +24,9 @@
       --mono: ui-monospace, "JetBrains Mono", "SF Mono", Menlo, monospace;
     }
 
+    /* Dark follows the system unless the theme toggle says otherwise */
     @media (prefers-color-scheme: dark) {
-      :root {
+      :root:not([data-theme="light"]) {
         --bg: #161514;
         --fg: #ecebe8;
         --muted: #9a958c;
@@ -29,6 +37,41 @@
         --warn: #e0b45a;
       }
     }
+
+    :root[data-theme="dark"] {
+      --bg: #161514;
+      --fg: #ecebe8;
+      --muted: #9a958c;
+      --panel: #1f1e1c;
+      --border: #34322e;
+      --ok: #6cc28f;
+      --err: #f2867c;
+      --warn: #e0b45a;
+    }
+
+    :root { color-scheme: light dark; }
+    :root[data-theme="light"] { color-scheme: light; }
+    :root[data-theme="dark"] { color-scheme: dark; }
+
+    #theme {
+      display: flex;
+      margin-left: auto;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      overflow: hidden;
+      align-self: center;
+    }
+    #theme button {
+      padding: 3px 10px;
+      border: 0;
+      background: var(--panel);
+      color: var(--muted);
+      font: 12px system-ui, sans-serif;
+      cursor: pointer;
+    }
+    #theme button + button { border-left: 1px solid var(--border); }
+    #theme button:hover { color: var(--fg); }
+    #theme button[aria-pressed="true"] { background: var(--bg); color: var(--fg); font-weight: 600; }
 
     * { box-sizing: border-box; }
 
@@ -109,7 +152,7 @@
     }
 
     h2.with-actions { display: flex; align-items: center; justify-content: space-between; padding-top: 5px; padding-bottom: 5px; }
-    h2 button { padding: 2px 8px; border: 1px solid var(--border); border-radius: 6px; background: transparent; color: var(--muted); font: 600 11px system-ui, sans-serif; letter-spacing: 0.04em; text-transform: uppercase; cursor: pointer; }
+    h2 button { padding: 2px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--muted); font: 12px system-ui, sans-serif; letter-spacing: normal; text-transform: none; cursor: pointer; }
     h2 button:hover { color: var(--fg); }
 
     #status { padding: 8px 12px; border-bottom: 1px solid var(--border); font: 13px var(--mono); }
@@ -146,11 +189,16 @@
   <header>
     <h1>Rain Preview</h1>
     <span>certflow &amp; rain diagrams · live from <code>rain_diagram_wasm</code></span>
+    <div id="theme" role="group" aria-label="Colour scheme">
+      <button type="button" data-theme-choice="system">◐ System</button>
+      <button type="button" data-theme-choice="light">☀ Light</button>
+      <button type="button" data-theme-choice="dark">☾ Dark</button>
+    </div>
   </header>
 
   <main>
     <section>
-      <h2 class="with-actions">Source <button id="example" title="Replace the source with the example">Example</button></h2>
+      <h2 class="with-actions">Source <button id="example" title="Replace the source with the example diagram">Load example</button></h2>
       <textarea id="source" spellcheck="false" aria-label="Diagram source"></textarea>
     </section>
 
@@ -163,7 +211,7 @@
         <button role="tab" data-notation="rain">Rain</button>
         <button role="tab" data-notation="certflow">Certflow</button>
       </div>
-      <rain-diagram id="picture" aria-label="Diagram"></rain-diagram>
+      <rain-diagram id="picture" editable aria-label="Diagram"></rain-diagram>
       <div class="splitter" id="rows" role="separator" aria-orientation="horizontal" aria-label="Resize diagram and export" tabindex="0"></div>
       <ul id="warnings" aria-label="Warnings"></ul>
       <div class="toolbar" role="tablist">

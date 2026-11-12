@@ -11,7 +11,7 @@
 //! what was valid, revoked, or reachable at any moment.
 
 use crate::{
-    ast::{CertId, Delegation, Document, Kind, Name, Span, Spanned, Statement, Text},
+    ast::{CertId, Delegation, Document, Kind, Name, Percent, Span, Spanned, Statement, Text},
     authority::{Authority, Diagnostic, Ledger, Reach, Status},
     level::Level,
 };
@@ -104,21 +104,39 @@ impl Diagram {
             events.push(Spanned { node, span });
         }
 
+        let regions = doc
+            .regions
+            .iter()
+            .map(|r| {
+                let colour = r
+                    .node
+                    .colour
+                    .as_ref()
+                    .map(|name| {
+                        resolver.by_name.get(name).copied().ok_or_else(|| {
+                            ResolveError::new(
+                                r.span,
+                                ResolveErrorKind::UnknownPrincipal(name.clone()),
+                            )
+                        })
+                    })
+                    .transpose()?;
+                Ok(Region {
+                    id: r.node.id.clone(),
+                    colour,
+                    note: r.node.note.clone(),
+                    first: EventIx(r.node.statements.start),
+                    last: EventIx(r.node.statements.end.saturating_sub(1)),
+                })
+            })
+            .collect::<Result<_, ResolveError>>()?;
+
         Ok(Self {
             kind: doc.kind,
             title: doc.title.as_ref().map(|t| t.node.clone()),
             principals: resolver.principals,
             events: resolver.events,
-            regions: doc
-                .regions
-                .iter()
-                .map(|r| Region {
-                    id: r.node.id.clone(),
-                    note: r.node.note.clone(),
-                    first: EventIx(r.node.statements.start),
-                    last: EventIx(r.node.statements.end.saturating_sub(1)),
-                })
-                .collect(),
+            regions,
             ledger: resolver.ledger,
             diagnostics: resolver.diagnostics,
         })
@@ -282,6 +300,9 @@ pub struct Region {
     /// Its name.
     pub id: CertId,
 
+    /// The principal whose colour it takes, if one was named.
+    pub colour: Option<PrincipalIx>,
+
     /// What it's about, if anything.
     pub note: Option<Text>,
 
@@ -409,6 +430,9 @@ pub struct Cert {
     /// How the issuer came to hold the subject.
     pub authority: Authority,
 
+    /// Where its label sits along the arrow, if placed by hand.
+    pub at: Option<Percent>,
+
     /// A note, if any.
     pub note: Option<Text>,
 }
@@ -428,6 +452,9 @@ pub struct Invoke {
     /// How the actor came to hold the subject.
     pub authority: Authority,
 
+    /// Where its label sits along the arrow, if placed by hand.
+    pub at: Option<Percent>,
+
     /// A note, if any.
     pub note: Option<Text>,
 }
@@ -443,6 +470,9 @@ pub struct Revoke {
 
     /// Where the revoker's power to revoke came from.
     pub authority: Authority,
+
+    /// Where its label sits along the arrow, if placed by hand.
+    pub at: Option<Percent>,
 
     /// A note, if any.
     pub note: Option<Text>,
@@ -504,6 +534,7 @@ impl Resolver {
                     level: i.level,
                     on: self.intern(&i.on),
                     authority: Authority::Unauthorized,
+                    at: i.at,
                     note: i.note.clone(),
                 }),
                 Vec::new(),
@@ -513,6 +544,7 @@ impl Resolver {
                     by: self.intern(&r.by),
                     target: self.lookup(&r.target)?,
                     authority: Authority::Unauthorized,
+                    at: r.at,
                     note: r.note.clone(),
                 }),
                 Vec::new(),
@@ -562,6 +594,7 @@ impl Resolver {
             subject,
             level: d.level,
             authority: Authority::Unauthorized,
+            at: d.at,
             note: d.note.clone(),
         };
         Ok((cert, via))
@@ -691,6 +724,10 @@ pub enum ResolveErrorKind {
     /// The same principal in `participant` twice.
     #[error("{0} is already a participant")]
     DuplicateParticipant(Name),
+
+    /// A region coloured after someone who isn't in the diagram.
+    #[error("{0} isn't in this diagram, so the region can't take their colour")]
+    UnknownPrincipal(Name),
 
     /// The same explicit label on two certificates.
     #[error("the label `{0}` is already used")]

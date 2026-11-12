@@ -30,8 +30,10 @@ use core::fmt::Write as _;
 use layout::{Point, sqrt, to_f64};
 
 /// Draw `diagram` as a certflow snapshot.
-pub(super) fn render(diagram: &Diagram) -> String {
-    Certflow::new(diagram).draw()
+pub(super) fn render(diagram: &Diagram, happened: usize) -> String {
+    let mut certflow = Certflow::new(diagram);
+    certflow.happened = happened.min(diagram.events().len());
+    certflow.draw()
 }
 
 /// Distance between a principal and its certificates.
@@ -86,6 +88,9 @@ struct Certflow<'a> {
 
     /// Extra margin for region boxes.
     frame: f64,
+
+    /// How many events the snapshot includes.
+    happened: usize,
     out: String,
 }
 
@@ -172,6 +177,7 @@ impl<'a> Certflow<'a> {
             of_event,
             title,
             frame,
+            happened: diagram.events().len(),
             out: String::new(),
         }
     }
@@ -206,6 +212,7 @@ impl<'a> Certflow<'a> {
         let deepest = lanes.iter().copied().max().unwrap_or(0);
         for (n, (region, &lane)) in self.diagram.regions().iter().zip(&lanes).enumerate() {
             let inside = (region.first.index()..=region.last.index())
+                .filter(|&i| i < self.happened)
                 .filter_map(|i| self.event_node(EventIx::new(i)))
                 .map(|node| (self.point(node), self.shape(node).radius()));
             let (l, t, r, b) = inside.fold(
@@ -251,6 +258,9 @@ impl<'a> Certflow<'a> {
         self.out.push_str(r#"<g class="principals">"#);
         for (i, principal) in self.diagram.principals().iter().enumerate() {
             let p = PrincipalIx::new(i);
+            if !self.appeared(p) {
+                continue;
+            }
             let node = self.principal_node(p);
             let ((x, y), r) = (self.point(node), self.shape(node).radius());
             let _ = write!(
@@ -275,6 +285,28 @@ impl<'a> Certflow<'a> {
 
     fn principal_node(&self, p: PrincipalIx) -> usize {
         self.of_principal.get(p.index()).copied().unwrap_or(0)
+    }
+
+    /// The last event in the snapshot.
+    fn now(&self) -> Option<EventIx> {
+        self.happened
+            .checked_sub(1)
+            .and_then(|i| self.diagram.event_ix(i))
+    }
+
+    /// Whether `p` is in the snapshot: everyone once everything has
+    /// happened, otherwise only those involved in what has.
+    fn appeared(&self, p: PrincipalIx) -> bool {
+        let d = self.diagram;
+        self.happened >= d.events().len()
+            || d.events()
+                .iter()
+                .take(self.happened)
+                .any(|e| match &e.node {
+                    Event::Delegate(c) => [c.issuer, c.audience, c.subject].contains(&p),
+                    Event::Invoke(i) => i.by == p || i.on == p,
+                    Event::Revoke(r) => r.by == p,
+                })
     }
 
     fn event_node(&self, ix: EventIx) -> Option<usize> {
@@ -309,7 +341,10 @@ impl<'a> Certflow<'a> {
         let (Some(event), Some(node)) = (d.event(ix), self.event_node(ix)) else {
             return;
         };
-        let status = d
+        if ix.index() >= self.happened {
+            return;
+        }
+        let status = self
             .now()
             .and_then(|now| d.status(ix, now))
             .map_or("valid", status_class);
@@ -422,6 +457,9 @@ impl<'a> Certflow<'a> {
         let (Some(event), Some(node)) = (d.event(ix), self.event_node(ix)) else {
             return;
         };
+        if ix.index() >= self.happened {
+            return;
+        }
         let stroke = match event {
             Event::Delegate(cert) => colour(cert.subject),
             Event::Revoke(_) => REVOKE,
