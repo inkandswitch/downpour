@@ -1,0 +1,5 @@
+[files]
+extend-exclude = ["*.lock", "*.svg", ".ignore/", "target/"]
+
+[default]
+check-filename = true

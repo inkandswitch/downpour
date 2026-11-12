@@ -1,0 +1,27 @@
+[package]
+name = "rain_diagram_wasm"
+version = "0.1.0"
+description = "Wasm/JavaScript bindings for certflow and rain diagrams"
+publish = false
+
+authors.workspace = true
+categories = ["visualization", "wasm"]
+edition.workspace = true
+keywords = ["capabilities", "diagrams", "mermaid", "wasm"]
+license.workspace = true
+readme = "../README.md"
+repository.workspace = true
+rust-version.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+rain_diagram_core = { workspace = true, features = ["serde", "std"] }
+wasm-bindgen = { workspace = true, features = ["std"] }
+
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = ["-Oz", "--enable-bulk-memory", "--enable-reference-types"]
+
+[lints]
+workspace = true

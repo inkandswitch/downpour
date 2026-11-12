@@ -1,0 +1,39 @@
+[package]
+name = "rain_diagram_core"
+version = "0.1.0"
+description = "Parser and authority model for certflow and rain capability diagrams"
+
+authors.workspace = true
+categories = ["no-std", "parser-implementations", "visualization"]
+edition.workspace = true
+keywords = ["capabilities", "diagrams", "keyhive", "mermaid"]
+license.workspace = true
+readme = "../README.md"
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+arbitrary = { workspace = true, optional = true, features = ["derive"] }
+bolero = { workspace = true, optional = true, features = ["arbitrary"] }
+serde = { workspace = true, optional = true, features = ["alloc", "derive"] }
+serde_json = { workspace = true, optional = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+bolero = { workspace = true, features = ["arbitrary"] }
+rain_diagram_core = { path = ".", features = ["bolero", "serde"] }
+testresult = { workspace = true }
+
+[features]
+default = ["std"]
+arbitrary = ["dep:arbitrary"]
+bolero = ["dep:bolero", "arbitrary", "std"]
+serde = ["dep:serde", "dep:serde_json"]
+std = [
+  "serde?/std",
+  "serde_json?/std",
+  "thiserror/std",
+]
+
+[lints]
+workspace = true

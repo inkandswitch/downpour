@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Rain Preview</title>
+  <style>
+    :root {
+      --bg: #fbfaf7;
+      --fg: #1d1c1a;
+      --muted: #6b6760;
+      --panel: #ffffff;
+      --border: #e2ded6;
+      --ok: #2f7a4f;
+      --err: #b3261e;
+      --mono: ui-monospace, "JetBrains Mono", "SF Mono", Menlo, monospace;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #161514;
+        --fg: #ecebe8;
+        --muted: #9a958c;
+        --panel: #1f1e1c;
+        --border: #34322e;
+        --ok: #6cc28f;
+        --err: #f2867c;
+      }
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--fg);
+      font: 15px/1.5 system-ui, sans-serif;
+    }
+
+    header {
+      display: flex;
+      align-items: baseline;
+      gap: 12px;
+      padding: 16px 20px 8px;
+    }
+
+    h1 { margin: 0; font-size: 18px; }
+    header span { color: var(--muted); font-size: 13px; }
+
+    main {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      gap: 16px;
+      padding: 8px 20px 20px;
+      height: calc(100vh - 56px);
+    }
+
+    @media (max-width: 800px) {
+      main { grid-template-columns: 1fr; height: auto; }
+      textarea { min-height: 50vh; }
+    }
+
+    section {
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    h2 {
+      margin: 0;
+      padding: 8px 12px;
+      border-bottom: 1px solid var(--border);
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    textarea, pre {
+      flex: 1;
+      margin: 0;
+      padding: 12px;
+      border: 0;
+      background: transparent;
+      color: inherit;
+      font: 13px/1.6 var(--mono);
+      tab-size: 2;
+      overflow: auto;
+      resize: none;
+      outline: none;
+      white-space: pre;
+    }
+
+    #status { padding: 8px 12px; border-bottom: 1px solid var(--border); font: 13px var(--mono); }
+    #status.ok { color: var(--ok); }
+    #status.err { color: var(--err); }
+
+    #diagram {
+      padding: 16px 12px;
+      border-bottom: 1px solid var(--border);
+      color: var(--muted);
+      font-size: 13px;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Rain Preview</h1>
+    <span>certflow &amp; rain diagrams · live from <code>rain_diagram_wasm</code></span>
+  </header>
+
+  <main>
+    <section>
+      <h2>Source</h2>
+      <textarea id="source" spellcheck="false" aria-label="Diagram source"></textarea>
+    </section>
+
+    <section>
+      <h2>Output</h2>
+      <div id="status">loading Wasm…</div>
+      <div id="diagram">The SVG renderer isn't built yet. Once it exists, the diagram will show here.</div>
+      <pre id="json" aria-label="Site JSON"></pre>
+    </section>
+  </main>
+
+  <script type="module" src="./main.js"></script>
+</body>
+</html>

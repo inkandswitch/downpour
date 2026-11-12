@@ -1,0 +1,25 @@
+# Cargo
+debug/
+target/
+**/*.rs.bk
+**/mutants.out*/
+
+# Nix
+.direnv
+/result
+
+# JS / Wasm packaging
+**/dist/
+**/node_modules/
+**/pkg/
+**/pkg-node/
+
+# Local agent/session artifacts
+.claude/
+.ignore/
+CLAUDE.md
+
+# Editors and OS
+.DS_Store
+.vscode/
+.zed/

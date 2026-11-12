@@ -1,0 +1,6 @@
+[toolchain]
+# Pinned to match the workspace `rust-version` in `Cargo.toml`. The Nix flake
+# reads this file, so the two cannot drift.
+channel = "1.91.0"
+components = ["clippy", "rust-src", "rustfmt"]
+targets = ["wasm32-unknown-unknown"]
