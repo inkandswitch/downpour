@@ -327,9 +327,9 @@ pub fn set_region_rows(
         .enumerate()
         .skip(open)
         .find(|(_, line)| {
-            let code = line
-                .split_once("%%")
-                .map_or(**line, |(code, _)| code)
+            let code = crate::ast::comment_start(line)
+                .and_then(|i| line.get(..i))
+                .unwrap_or(line)
                 .trim();
             code.strip_prefix("<<<")
                 .is_some_and(|id| id.trim() == region)
@@ -360,6 +360,99 @@ pub fn set_region_rows(
 
     crate::parse(&out).map_err(RegionError::Result)?;
     Ok(out)
+}
+
+/// Move the principal in column `from` to column `to`, as when dragging its
+/// lifeline, by writing the full column order into the `principals:` line
+/// (replacing one that's there, or adding one after the header and title).
+///
+/// ```
+/// use rain_diagram_core::edit::move_principal;
+///
+/// let source = "rain\n(Doc)-[edit]->(Alice)\n(Alice)-[edit]->(Bob)\n";
+/// assert_eq!(
+///     move_principal(source, 2, 0)?,
+///     "rain\nprincipals: Bob, Doc, Alice\n(Doc)-[edit]->(Alice)\n(Alice)-[edit]->(Bob)\n"
+/// );
+/// # Ok::<(), rain_diagram_core::edit::PrincipalError>(())
+/// ```
+///
+/// # Errors
+///
+/// [`PrincipalError::Source`] if `source` doesn't parse, and
+/// [`PrincipalError::NoSuchColumn`] if `from` or `to` is past the last column.
+pub fn move_principal(source: &str, from: usize, to: usize) -> Result<String, PrincipalError> {
+    let diagram = crate::parse(source).map_err(PrincipalError::Source)?;
+    let mut order: Vec<&str> = diagram
+        .principals()
+        .iter()
+        .map(|p| p.name().as_str())
+        .collect();
+    if from >= order.len() || to >= order.len() {
+        return Err(PrincipalError::NoSuchColumn(from.max(to)));
+    }
+    let moved = order.remove(from);
+    order.insert(to, moved);
+    let line = alloc::format!("principals: {}", order.join(", "));
+
+    let doc = crate::parser::document(source).map_err(|e| PrincipalError::Source(e.into()))?;
+    let line_start = |offset: usize| {
+        source
+            .get(..offset)
+            .and_then(|s| s.rfind('\n'))
+            .map_or(0, |i| i + 1)
+    };
+    let mut out = String::with_capacity(source.len() + line.len() + 1);
+
+    if let (Some(first), Some(last)) = (doc.participants.first(), doc.participants.last()) {
+        // Replace the directive's code, keeping indentation and any comment
+        let start = line_start(first.span.start);
+        let start = start
+            + source
+                .get(start..)
+                .map_or(0, |s| s.len() - s.trim_start().len());
+        let end = last.span.end;
+        out.push_str(source.get(..start).unwrap_or_default());
+        out.push_str(&line);
+        out.push_str(source.get(end..).unwrap_or_default());
+    } else {
+        // After the title if there is one, else after the header
+        let after = doc
+            .title
+            .as_ref()
+            .map(|t| t.span.end)
+            .or_else(|| {
+                let header = crate::parser::header_end(source)?;
+                Some(header)
+            })
+            .unwrap_or(0);
+        let at = source
+            .get(after..)
+            .and_then(|s| s.find('\n'))
+            .map_or(source.len(), |i| after + i + 1);
+        out.push_str(source.get(..at).unwrap_or_default());
+        if !out.ends_with('\n') && !out.is_empty() {
+            out.push('\n');
+        }
+        out.push_str(&line);
+        out.push('\n');
+        out.push_str(source.get(at..).unwrap_or_default());
+    }
+
+    crate::parse(&out).map_err(PrincipalError::Source)?;
+    Ok(out)
+}
+
+/// Why a principal couldn't move.
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+pub enum PrincipalError {
+    /// The source doesn't parse (before or after).
+    #[error("the source doesn't parse: {0}")]
+    Source(InvalidDiagram),
+
+    /// There's no such column.
+    #[error("there's no column {0}")]
+    NoSuchColumn(usize),
 }
 
 /// Why a region couldn't change which rows it covers.
@@ -494,6 +587,20 @@ mod tests {
 <<< A
 "
         );
+        Ok(())
+    }
+
+    #[test]
+    fn moving_principals_rewrites_the_order_in_place() -> TestResult {
+        let source = "rain\ntitle T\n  participant Doc, Alice  // order\n(Doc)-[edit]->(Alice)\n(Alice)-[edit]->(Bob)";
+        assert_eq!(
+            move_principal(source, 0, 2)?,
+            "rain\ntitle T\n  principals: Alice, Bob, Doc  // order\n(Doc)-[edit]->(Alice)\n(Alice)-[edit]->(Bob)"
+        );
+        assert!(matches!(
+            move_principal(source, 0, 9),
+            Err(PrincipalError::NoSuchColumn(9))
+        ));
         Ok(())
     }
 

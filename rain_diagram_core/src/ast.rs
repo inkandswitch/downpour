@@ -296,7 +296,7 @@ impl Name {
             return Err(InvalidName::Reserved(c));
         }
 
-        if name.contains("%%") {
+        if comment_start(name).is_some() {
             return Err(InvalidName::Comment);
         }
 
@@ -383,7 +383,7 @@ impl Text {
             return Err(InvalidText::Control(c));
         }
 
-        if text.contains("%%") {
+        if comment_start(text).is_some() {
             return Err(InvalidText::Comment);
         }
 
@@ -456,8 +456,8 @@ pub enum InvalidName {
     #[error("principal name contains reserved character {0:?}")]
     Reserved(char),
 
-    /// A `%%` comment marker.
-    #[error("principal name contains `%%`")]
+    /// A comment marker: `%%`, or `//` at the start or after a space.
+    #[error("principal name contains a comment marker (`%%`, or `//` after a space)")]
     Comment,
 }
 
@@ -488,8 +488,8 @@ pub enum InvalidText {
     #[error("text contains control character {0:?}")]
     Control(char),
 
-    /// A `%%` comment marker.
-    #[error("text contains `%%`")]
+    /// A comment marker: `%%`, or `//` at the start or after a space.
+    #[error("text contains a comment marker (`%%`, or `//` after a space)")]
     Comment,
 }
 
@@ -503,6 +503,22 @@ fn write_list<T: fmt::Display, I: IntoIterator<Item = T>>(
         }
         write!(f, "{item}")
     })
+}
+
+/// Where a comment starts in `line`, if it has one: `%%` anywhere (as in
+/// Mermaid), or `//` at the start of the line or after whitespace. The
+/// whitespace rule keeps URLs like `https://…` in notes intact.
+#[must_use]
+pub fn comment_start(line: &str) -> Option<usize> {
+    let percent = line.find("%%");
+    let slashes = line.match_indices("//").map(|(i, _)| i).find(|&i| {
+        line.get(..i)
+            .is_some_and(|before| before.is_empty() || before.ends_with(char::is_whitespace))
+    });
+    match (percent, slashes) {
+        (Some(a), Some(b)) => Some(a.min(b)),
+        (a, b) => a.or(b),
+    }
 }
 
 /// A statement's optional ` @60%` and ` : note`.
@@ -593,7 +609,7 @@ mod arbitrary_impls {
     impl<'a> Arbitrary<'a> for Text {
         fn arbitrary(u: &mut Unstructured<'a>) -> Result<Self> {
             const ALPHABET: &[char] = &[
-                'a', 'B', '1', ' ', '(', ')', '[', ']', ',', ':', '-', '>', '%', '→', '✏',
+                'a', 'B', '1', ' ', '(', ')', '[', ']', ',', ':', '-', '>', '%', '/', '→', '✏',
                 '\u{fe0f}',
             ];
             let raw = string_from(u, ALPHABET, 24)?;

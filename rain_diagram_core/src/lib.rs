@@ -33,7 +33,7 @@
 //! | `… @60%`                          | Place the row's label 60% of the way along its arrow       |
 //! | `>>> A (P): note` … `<<< A`       | A captioned region, optionally in principal P's colour        |
 //! | `principals: A, B`                | Fix column order (`participant A, B` works too)            |
-//! | `title …`, `: note`, `%% comment` | Annotations                                                |
+//! | `title …`, `: note`, `// comment` | Annotations (`%%` comments work too)                      |
 //!
 //! Levels are `admin`, `edit`, `read`, and `relay` (or 👑 ✏️ 👀 📡).
 //!

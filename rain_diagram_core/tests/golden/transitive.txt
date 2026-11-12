@@ -1,13 +1,13 @@
 Transitive authority through a group
 
  (Doc)       (Team)       (Alice)       (Bob)
-   │╰┄┄┄╮ ╭┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄╮ │            │
-   ├──[edit]───▶│          ┆ │            │   Doc grants Team Edit
-   │    ✗       │          ┆ │            │
-   │    │       │╰┄┄┄╮ ╭┄┄┄┼┄┼┄┄┄┄╮       │
-   │    │       ├──[admin]─o▶│    ┆       │   Alice joins Team
-   │    │       │            │    ┆       │
-   │    │       │            │    ┆       │
+   │╰┄┄┄╮ ╭┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄╮  │            │
+   ├──[edit]───▶│         ┆  │            │   Doc grants Team Edit
+   │    ✗       │         ┆  │            │
+   │    │       o┄┄┄┄╮    ┆  │            │
+   │    │       ├──[admin]o─▶│            │   Alice joins Team
+   │    │       │         ┆  │            │
+   │    │       │         ╰┄┄┼┄┄┄┄╮       │
    │    │       │            ├──[edit]───▶│   derived route: through Team
    │    │       │            │    ┆┆      │
    │    │       │            │    ┆┆      │

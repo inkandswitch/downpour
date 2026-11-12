@@ -1,0 +1,36 @@
+A Tour of Features
+
+ (Doc)       (Alice)       (Bob)       (Carol)       (Dan)       (Team)        (Eve)      (Server)
+   │╰┄┄┄╮ ╭┄┄┄┄┄┼┄┄┄┄╮       │            │            │            │            │            │
+   ├──[admin]──▶│    ┆       │            │            │            │            │            │   The Doc grants Alice Admin
+   │     ┆      │    ┆       │            │            │            │            │            │
+   │     ┆      │    ┆ ╭┄┄┄┄┄┼┄┄┄┄╮       │            │            │            │            │
+   │     ┆      ├──[edit]───▶│    ┆       │            │            │            │            │   Alice passes Edit to Bob
+   │     ┆      │    ┆       │    ┆       │            │            │            │            │
+   │     ┆      │    ┆       │    ┆       │            │            │            │            │   Bob does stuff
+   │◀════╪══════╪═[[edit]]═══╡    ┆       │            │            │            │            │   ║ Bob edits the Doc
+   │     ┆      │            │    ┆       │            │            │            │            │   ║
+   │     ┆      │            │    ┆ ╭┄┄┄┄┄┼┄┄┄┄╮       │            │            │            │   ║
+   │     ┆      │            ├──[edit]───▶│    ┆       │            │            │            │   ║ Bob gives Carol Edit
+   │     ┆      │            │    ✗       │    ┆       │            │            │            │   ║
+   │     ┆      │        ╭┄┄┄┼┄┄┄┄┤       │    ┆       │            │            │            │   ║
+   │◀════╪══════╪════[[edit]]╪════╪═══════╡    ┆       │            │            │            │   ║ Carol edits the Doc
+   │     ┆      │            │    │       │    ┆       │            │            │            │
+   │     ┆      │            │    │       │    ┆       │            │            │            │
+   │     ┆      │            │    │       ├──[read]───▶│            │            │            │   Carol shares Read with Dan
+   │     ┆      │            │    │       │    ┆       │            │            │            │
+   │     ┆      │            │    │       │    ┆       │            │            │            │
+   │◀════╪══════╪════════════╪════╪═══════╪═[[read]]═══╡            │            │            │   Dan reads the Doc
+   │     ┆      │            │    │       │            │            │            │            │
+   o┄┄┄┄╮┆╭┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┼┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄╮  │            │
+   ├──[read]────┼────────────┼────┼───────┼────────────┼───────────▶│         ┆  │            │   The Doc lets Team read it
+   │     ┆      │            │    │       │            │            │         ┆  │            │
+   │     ┆      │            │    │       │            │            o┄┄┄┄╮    ┆  │            │
+   │     ┆      │            │    │       │            │            ├──[admin]o─▶│            │   Eve joins Team
+   │     ┆      │            │    │       │            │            │         ┆  │            │
+   │     ┆      │            │    │       │            │            │         ╰┄┄┼┄┄┄┄╮       │
+   │     ┆      │            │    │       │            │            │            ├──[relay]──▶│   Eve lets a sync server relay it
+   │     ┆      │            │    │       │            │            │            │            │
+   │     ┆      │            │    │       │            │            │            │            │
+   │     ╰┄┄┄┄┄┄o────────────┼─<revoke>   │            │            │            │            │   Alice revokes Bob→Carol, and all that relied on it
+   │            │            │            │            │            │            │            │

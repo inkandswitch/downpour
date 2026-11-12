@@ -29,7 +29,14 @@
 // All logic lives in the Wasm (`RainDiagram`); this file only wires the
 // SVG's data-* hooks to it.
 
-import init, { RainDiagram, moveStatement, setPosition, setRegionNote, setRegionRows } from "./pkg/rain_diagram_wasm.js";
+import init, {
+  RainDiagram,
+  movePrincipal,
+  moveStatement,
+  setPosition,
+  setRegionNote,
+  setRegionRows,
+} from "./pkg/rain_diagram_wasm.js";
 
 const ready = init();
 
@@ -37,6 +44,7 @@ const STYLE = `
   :host { display: block; overflow-x: auto; position: relative; }
   svg .now { cursor: row-resize; }
   :host([editable]) svg .region-edge { cursor: row-resize; }
+  :host([editable]) svg[data-row-height] .principal .head, :host([editable]) svg[data-row-height] .principal text { cursor: grab; }
   svg .now-handle { cursor: pointer; }
   .snapshot {
     position: fixed;
@@ -74,6 +82,7 @@ const STYLE = `
   svg .struck line, svg .struck .head { stroke: #d33 !important; fill: #d33 !important; }
   :host([editable]) svg[data-row-height] .event { cursor: grab; }
   svg .dragging { filter: drop-shadow(0 4px 6px rgb(0 0 0 / 0.3)); }
+  svg .principal.dragging { opacity: 0.9; }
   :host([grabbing]), :host([grabbing]) * { cursor: grabbing !important; }
   svg .drag-range { fill: #3d7dd8; fill-opacity: 0.08; stroke: #3d7dd8; stroke-opacity: 0.4; stroke-dasharray: 4 3; }
   .error { color: #b3261e; font: 13px ui-monospace, monospace; white-space: pre-wrap; }
@@ -89,7 +98,7 @@ export class RainDiagramElement extends HTMLElement {
   #moment = null; // events above the "now" line; null means all of them
   #snapshot = false; // whether the certflow popover is open
 
-  static observedAttributes = ["notation", "src", "theme"];
+  static observedAttributes = ["notation", "src", "theme", "zoom"];
 
   constructor() {
     super();
@@ -106,7 +115,7 @@ export class RainDiagramElement extends HTMLElement {
 
   attributeChangedCallback(name) {
     if (!this.isConnected) return;
-    if (name === "theme") this.#theme();
+    if (name === "theme" || name === "zoom") this.#theme();
     else if (name === "notation") this.#redraw();
     else this.#load();
   }
@@ -163,8 +172,24 @@ export class RainDiagramElement extends HTMLElement {
     this.#popover();
   }
 
+  /** `zoom="1.5"` scales the picture (by its size, so it stays crisp). */
+  #zoom() {
+    const zoom = Number(this.getAttribute("zoom")) || 1;
+    const box = this.#svg?.viewBox?.baseVal;
+    if (!box || !box.width) return;
+    this.#svg.setAttribute("width", String(box.width * zoom));
+    this.#svg.setAttribute("height", String(box.height * zoom));
+  }
+
+  /** The picture's size at zoom 1, for fitting it to a container. */
+  get naturalSize() {
+    const box = this.#svg?.viewBox?.baseVal;
+    return box ? { width: box.width, height: box.height } : null;
+  }
+
   /** `theme="light"` or `theme="dark"` overrides the system's choice. */
   #theme() {
+    this.#zoom();
     const theme = this.getAttribute("theme");
     this.#svg?.classList.toggle("light", theme === "light");
     this.#svg?.classList.toggle("dark", theme === "dark");
@@ -254,8 +279,14 @@ export class RainDiagramElement extends HTMLElement {
       }
     }
 
-    // Region captions: double-click to edit in place. Region edges: drag
+    // Region captions: double-click to edit in place. Region edges: drag.
+    // Principal heads (rain): drag sideways to reorder the columns
     if (this.hasAttribute("editable")) {
+      if (svg.dataset.rowHeight) {
+        for (const head of svg.querySelectorAll(".principal[data-x] .head, .principal[data-x] text")) {
+          head.addEventListener("pointerdown", (e) => this.#dragPrincipal(head.closest(".principal"), e));
+        }
+      }
       for (const edge of svg.querySelectorAll(".region-edge")) {
         edge.addEventListener("pointerdown", (e) => this.#dragEdge(edge, e));
       }
@@ -331,6 +362,69 @@ export class RainDiagramElement extends HTMLElement {
     preview.free();
     this.#svg = this.shadowRoot.querySelector("svg");
     this.#theme();
+  }
+
+  /** Drag a principal's head sideways to another column; columns re-render live. */
+  #dragPrincipal(group, down) {
+    down.preventDefault();
+    down.stopPropagation();
+    const heads = [...this.#svg.querySelectorAll(".principal[data-x]")];
+    const xs = heads.map((h) => Number(h.dataset.x));
+    const from = heads.indexOf(group);
+    if (from === -1 || xs.length < 2) return;
+    const spacing = xs[1] - xs[0];
+    const box = this.#svg.getBoundingClientRect();
+    const scale = this.#svg.viewBox.baseVal.width / box.width;
+    let moved = false;
+    let to = from;
+    let candidate = null;
+    let dx = 0;
+
+    // Keep the held principal (head and lifeline) under the pointer,
+    // wherever its column now is; the others have already moved over
+    const hold = () => {
+      const held = this.#svg.querySelectorAll(".principal[data-x]")[to];
+      held?.classList.add("dragging");
+      held?.setAttribute("transform", `translate(${dx - (to - from) * spacing} 0)`);
+    };
+
+    this.setAttribute("grabbing", "");
+    const move = (e) => {
+      if (!moved && Math.abs(e.clientX - down.clientX) < 5) return; // a click
+      moved = true;
+      // Follow the pointer, but no further than the first or last column
+      dx = Math.min(Math.max((e.clientX - down.clientX) * scale, -from * spacing), (xs.length - 1 - from) * spacing);
+      const at = Math.round(from + dx / spacing);
+      if (at !== to) {
+        try {
+          candidate = at === from ? null : movePrincipal(this.#text, from, at);
+        } catch {
+          hold();
+          return;
+        }
+        to = at;
+        this.#paint(candidate ?? this.#text);
+      }
+      hold();
+    };
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", up);
+      this.removeAttribute("grabbing");
+      if (!moved) return;
+      this.#justDragged = true;
+      setTimeout(() => (this.#justDragged = false));
+      if (candidate === null) {
+        this.#redraw();
+        return;
+      }
+      this.source = candidate;
+      this.dispatchEvent(new CustomEvent("rain-edit", { bubbles: true, detail: { source: candidate } }));
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", up);
   }
 
   /** Drag a region's top or bottom edge to another row boundary. */

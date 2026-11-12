@@ -136,6 +136,47 @@
       text-transform: uppercase;
     }
 
+    /* The editor: highlighted text underneath, a transparent textarea on top
+       (same font, padding, and scroll), so the caret and selection are real */
+    .editor { position: relative; flex: 1; min-height: 0; display: flex; }
+    .editor pre, .editor textarea { position: absolute; inset: 0; }
+    .editor pre { pointer-events: none; overflow: hidden; }
+    .editor textarea { color: transparent; caret-color: var(--fg); }
+    .editor textarea::selection { background: rgb(61 125 216 / 0.25); color: transparent; }
+    .actions { display: flex; gap: 6px; }
+    .zoom { display: flex; gap: 2px; margin-right: 6px; }
+    #zoom-level { min-width: 52px; font-variant-numeric: tabular-nums; }
+
+    /* Maximize: one pane takes the whole page */
+    .maximize { padding: 2px 7px !important; font-size: 13px !important; line-height: 1; }
+    main[data-max] { grid-template-columns: 1fr; }
+    main[data-max] > .splitter { display: none; }
+    main[data-max="source"] > #output-pane { display: none; }
+    main[data-max="output"] > #source-pane,
+    main[data-max="diagram"] > #source-pane,
+    main[data-max="export"] > #source-pane { display: none; }
+    main[data-max="diagram"] #picture { flex: 1; height: auto; }
+    main[data-max="diagram"] :is(#rows, #warnings, #export-bar, #output) { display: none; }
+    main[data-max="export"] :is(#notation-bar, #picture, #rows) { display: none; }
+
+    .tok-comment { color: var(--muted); opacity: 0.75; font-style: italic; }
+    .tok-keyword { color: #8a5cc9; font-weight: 600; }
+    .tok-label { color: #2a7d78; }
+    .tok-position { color: #c94f8a; }
+    .tok-note { color: var(--muted); }
+    .tok-punct { color: var(--fg); }
+    .tok-region { color: #3f9b5a; }
+    .tok-revoke { color: var(--err); }
+
+    .err-line { background: rgb(211 51 51 / 0.12); text-decoration: underline wavy rgb(211 51 51 / 0.6); }
+
+    @media (prefers-color-scheme: dark) {
+      :root:not([data-theme="light"]) .tok-keyword { color: #b48ef0; }
+      :root:not([data-theme="light"]) .tok-label { color: #5cc4bd; }
+    }
+    :root[data-theme="dark"] .tok-keyword { color: #b48ef0; }
+    :root[data-theme="dark"] .tok-label { color: #5cc4bd; }
+
     textarea, pre {
       flex: 1;
       margin: 0;
@@ -197,30 +238,48 @@
   </header>
 
   <main>
-    <section>
-      <h2 class="with-actions">Source <button id="example" title="Replace the source with the example diagram">Load example</button></h2>
-      <textarea id="source" spellcheck="false" aria-label="Diagram source"></textarea>
+    <section id="source-pane">
+      <h2 class="with-actions">Source
+        <span class="actions">
+          <button id="example-basic" title="Replace the source with a short example">Basic example</button>
+          <button id="example-tour" title="Replace the source with a commented tour of every feature">Tour</button>
+          <button class="maximize" data-pane="source" title="Maximize">⤢</button>
+        </span>
+      </h2>
+      <div class="editor">
+        <pre id="highlight" aria-hidden="true"></pre>
+        <textarea id="source" spellcheck="false" aria-label="Diagram source"></textarea>
+      </div>
     </section>
 
     <div class="splitter" id="columns" role="separator" aria-orientation="vertical" aria-label="Resize source and output" tabindex="0"></div>
 
     <section id="output-pane">
-      <h2>Output</h2>
+      <h2 class="with-actions">Output <span class="actions"><button class="maximize" data-pane="output" title="Maximize">⤢</button></span></h2>
       <div id="status">loading Wasm…</div>
-      <div class="toolbar" role="tablist" aria-label="Notation">
+      <div class="toolbar" id="notation-bar" role="tablist" aria-label="Notation">
         <button role="tab" data-notation="rain">Rain</button>
         <button role="tab" data-notation="certflow">Certflow</button>
+        <span class="spacer"></span>
+        <span class="zoom" role="group" aria-label="Zoom">
+          <button id="zoom-out" title="Zoom out (Ctrl/⌘ + wheel)">−</button>
+          <button id="zoom-level" title="Reset to 100%">100%</button>
+          <button id="zoom-in" title="Zoom in (Ctrl/⌘ + wheel)">+</button>
+          <button id="zoom-fit" title="Fit the diagram to the pane">Fit</button>
+        </span>
+        <button class="maximize" data-pane="diagram" title="Maximize">⤢</button>
       </div>
       <rain-diagram id="picture" editable aria-label="Diagram"></rain-diagram>
       <div class="splitter" id="rows" role="separator" aria-orientation="horizontal" aria-label="Resize diagram and export" tabindex="0"></div>
       <ul id="warnings" aria-label="Warnings"></ul>
-      <div class="toolbar" role="tablist">
+      <div class="toolbar" id="export-bar" role="tablist">
         <button role="tab" data-format="text">Text</button>
         <button role="tab" data-format="svg">SVG</button>
         <button role="tab" data-format="json">Site JSON</button>
         <span class="spacer"></span>
         <button id="copy">Copy</button>
         <button id="download">Download</button>
+        <button class="maximize" data-pane="export" title="Maximize">⤢</button>
       </div>
       <pre id="output" aria-label="Output"></pre>
     </section>

@@ -33,7 +33,7 @@ fn every_event_is_hooked_with_its_status() -> TestResult {
     assert!(svg.contains(r#"<g class="event invoke valid" data-event="2""#));
     assert!(svg.contains(r#"<g class="event revoke valid" data-event="5""#));
     for key in ["doc", "alice", "bob", "carol", "dan"] {
-        assert!(svg.contains(&format!(r#"<g class="principal" data-principal="{key}">"#)));
+        assert!(svg.contains(&format!(r#"<g class="principal" data-principal="{key}""#)));
     }
     Ok(())
 }

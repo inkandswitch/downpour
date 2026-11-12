@@ -66,6 +66,18 @@ pub fn set_region_note(source: &str, region: &str, note: &str) -> Result<String,
         .map_err(|e| JsError::new(&e.to_string()))
 }
 
+/// Move the principal in column `from` to column `to` (as when dragging its
+/// head), returning the source with an updated `principals:` line.
+///
+/// # Errors
+///
+/// Throws if either column doesn't exist.
+#[wasm_bindgen(js_name = movePrincipal)]
+pub fn move_principal(source: &str, from: usize, to: usize) -> Result<String, JsError> {
+    rain_diagram_core::edit::move_principal(source, from, to)
+        .map_err(|e| JsError::new(&e.to_string()))
+}
+
 /// Make region `region` cover statements `first..=last` (as when dragging
 /// its edges), returning the rewritten source.
 ///

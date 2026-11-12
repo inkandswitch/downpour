@@ -53,6 +53,9 @@ struct Svg<'a> {
     out: String,
     labels: Vec<Option<Pill>>,
 
+    /// Transitive handles, drawn last so certificate boxes don't cover them.
+    handles: String,
+
     /// How many events are above the "now" line.
     happened: usize,
 }
@@ -77,9 +80,10 @@ impl Pill {
         (self.x, self.y + PILL / 2.0)
     }
 
-    /// Where a transitive handle sits on this certificate's arrow.
+    /// Where a transitive handle sits: on the certificate box itself, on the
+    /// edge facing the audience (as in the notebook's "Admin○→").
     fn handle(&self) -> (f64, f64) {
-        (self.x + self.dir * (self.half + 12.0), self.y)
+        (self.x + self.dir * self.half, self.y)
     }
 }
 
@@ -97,6 +101,7 @@ impl<'a> Svg<'a> {
             title: if diagram.title().is_some() { 32.0 } else { 0.0 },
             out: String::new(),
             labels: Vec::new(),
+            handles: String::new(),
             happened: diagram.events().len(),
         }
     }
@@ -202,6 +207,11 @@ impl<'a> Svg<'a> {
         }
         self.out.push_str("</g>");
         self.out.push_str(&events);
+        // Handles on top: they sit on certificate boxes
+        self.out.push_str(r#"<g class="handles">"#);
+        let handles = core::mem::take(&mut self.handles);
+        self.out.push_str(&handles);
+        self.out.push_str("</g>");
 
         self.out.push_str(r#"<g class="notes">"#);
         for ix in d.event_ixs() {
@@ -264,7 +274,7 @@ impl<'a> Svg<'a> {
             let _ = write!(
                 self.out,
                 concat!(
-                    r#"<g class="principal" data-principal="{key}">"#,
+                    r#"<g class="principal" data-principal="{key}" data-x="{x:.1}">"#,
                     r#"<line class="lifeline" x1="{x:.1}" y1="{top:.1}" x2="{x:.1}" y2="{bottom:.1}" stroke="{colour}"/>"#,
                     r#"<ellipse class="head" cx="{x:.1}" cy="{y:.1}" rx="{rx:.1}" ry="{HEAD_RY}" stroke="{colour}"/>"#,
                     r#"<text x="{x:.1}" y="{y:.1}" text-anchor="middle" dominant-baseline="central">{name}</text>"#,
@@ -502,7 +512,7 @@ impl<'a> Svg<'a> {
                     let (hx, hy) = h.handle();
                     self.arch(Some(from), handle, start, (hx, hy - HANDLE), colour);
                     let _ = write!(
-                        self.out,
+                        self.handles,
                         r#"<circle class="handle" cx="{hx:.1}" cy="{hy:.1}" r="{HANDLE}" stroke="{colour}" data-event="{}"/>"#,
                         handle.index()
                     );

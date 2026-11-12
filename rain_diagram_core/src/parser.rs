@@ -16,12 +16,14 @@
 //! principal   = "(" name ")"
 //! ```
 //!
-//! `%%` starts a comment that runs to the end of the line, as in Mermaid.
+//! Comments run to the end of the line: `//` (at the start of a line or
+//! after a space, so `https://` in a note is safe) or `%%`, as in Mermaid.
 
 use crate::{
     ast::{
         CertId, Delegation, Document, InvalidCertId, InvalidName, InvalidPercent, InvalidText,
         Invocation, Kind, Name, Percent, Region, Revocation, Span, Spanned, Statement, Text,
+        comment_start,
     },
     level::{Level, UnknownLevel},
 };
@@ -143,6 +145,11 @@ pub fn document(source: &str) -> Result<Document, ParseError> {
     Ok(doc)
 }
 
+/// Where the header line's code ends, for inserting directives after it.
+pub(crate) fn header_end(source: &str) -> Option<usize> {
+    lines(source).next().map(|(span, _)| span.end)
+}
+
 /// Non-blank lines with comments and surrounding whitespace removed.
 fn lines(source: &str) -> impl Iterator<Item = (Span, &str)> {
     let mut offset = 0;
@@ -150,7 +157,7 @@ fn lines(source: &str) -> impl Iterator<Item = (Span, &str)> {
         let start = offset;
         offset += raw.len();
 
-        let code = raw.split_once("%%").map_or(raw, |(code, _)| code);
+        let code = comment_start(raw).and_then(|i| raw.get(..i)).unwrap_or(raw);
         let trimmed = code.trim();
         let leading = code.len() - code.trim_start().len();
 
@@ -651,6 +658,38 @@ mod tests {
                 }),
             ]
         );
+        Ok(())
+    }
+
+    #[test]
+    fn comments() -> TestResult {
+        let doc = document(
+            "// a whole-line comment
+             rain   // after the header
+             %% Mermaid style works too
+             (A)-[read]->(B) : see https://example.com/x // but this is a comment
+             (B)-[read]->(C)//not a comment marker without a space, so this is a bad name",
+        );
+        assert!(
+            doc.is_err(),
+            "`(C)//…` isn't a comment, so the line is malformed"
+        );
+
+        let doc = document(
+            "// a whole-line comment
+             rain   // after the header
+             %% Mermaid style works too
+             (A)-[read]->(B) : see https://example.com/x // but this is a comment",
+        )?;
+        let note = match doc.statements.first().map(|s| &s.node) {
+            Some(Statement::Delegate(d)) => d.note.as_ref().map(Text::as_str),
+            _ => None,
+        };
+        assert_eq!(note, Some("see https://example.com/x"));
+
+        // Text the lexer would cut short isn't valid in the first place
+        assert_eq!(Text::new("a // b"), Err(InvalidText::Comment));
+        assert!(Text::new("https://example.com").is_ok());
         Ok(())
     }
 

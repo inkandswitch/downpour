@@ -1,0 +1,49 @@
+rain
+// A tour of the notation. Lines (or line ends) starting `//` are comments;
+// `%%` works too. In the preview you can also drag rows up and down, slide
+// labels sideways, hover a principal to see its reach, and click a
+// certificate to see what revoking it would void.
+//
+// The first line picks the default view: `rain` (time runs down the page)
+// or `certflow` (a snapshot). The Rain / Certflow tabs switch either way.
+title A Tour of Features
+
+// Optional: the order of the lifelines, left to right. Without it,
+// principals appear in the order they're first mentioned.
+principals: Doc, Alice, Bob, Carol, Dan, Team, Eve, Server
+
+// A delegation: (issuer)-[level(subject)]->(audience), then an optional
+// `: note` shown beside the row. Levels, most to least: admin 👑, edit ✏️,
+// read 👀, relay 📡. With no (subject), admin means "over myself" and any
+// other level passes on what the issuer already holds.
+(Doc)-[admin]->(Alice)           : The Doc grants Alice Admin
+(Alice)-[edit(Doc)]->(Bob)       : Alice passes Edit to Bob
+
+// Regions group rows: `>>> name (Principal): caption` … `<<< name`. The
+// (Principal) is optional and gives the region that principal's colour.
+// In the preview, double-click a caption to edit it; drag an edge to resize.
+>>> A (Bob): Bob does stuff
+// An invocation: someone using their authority, (actor)=[[level]]=>(subject).
+(Bob)=[[edit]]=>(Doc)            : Bob edits the Doc
+// `label:` names a certificate so revocations and `via` can refer to it.
+// Unlabelled ones are named issuer-audience, like `alice-bob`.
+bc: (Bob)-[edit]->(Carol)        : Bob gives Carol Edit
+(Carol)=[[edit]]=>(Doc)          : Carol edits the Doc
+<<< A
+
+(Carol)-[read]->(Dan)            : Carol shares Read with Dan
+// `@N%` places a row's label along its arrow: 0% at the actor, 100% at the
+// target. In the preview, drag a label sideways to set it.
+(Dan)=[[read]]=>(Doc) @30%       : Dan reads the Doc
+
+// Groups: authority flows through membership. Eve reaches the Doc through
+// Team; the small circle on Team→Eve is the transitive handle.
+(Doc)-[read]->(Team)             : The Doc lets Team read it
+(Team)-[admin]->(Eve)            : Eve joins Team
+// `via` names the route explicitly (it's normally worked out for you).
+(Eve)-[relay(Doc) via team-eve]->(Server) : Eve lets a sync server relay it
+
+// A revocation: (revoker)-<revoke>-x[label]. It's retroactive: everything
+// that relied on Bob→Carol goes void, even rows above this one. Drag the
+// dotted "now" line (or click its clock) to see any moment as certflow.
+(Alice)-<revoke>-x[bc]           : Alice revokes Bob→Carol, and all that relied on it

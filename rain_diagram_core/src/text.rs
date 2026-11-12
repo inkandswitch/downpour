@@ -424,45 +424,83 @@ impl<'a> Layout<'a> {
         match event.authority() {
             Authority::Route(route) => {
                 let mut from = route.source();
+                // The last handle the authority passed through, if any: what
+                // comes next is supplied from it, not from that certificate
+                let mut handle_at = None;
                 for &handle in route.through() {
                     if let Some(through) = self.label(handle) {
                         let x = if through.leftward {
-                            through.start - 2
+                            through.start - 1
                         } else {
-                            through.end + 2
+                            through.end + 1
                         };
-                        self.connect(
-                            from,
-                            Port::Above {
-                                x,
-                                line: through.line,
-                            },
-                        );
+                        match handle_at {
+                            Some((hx, hline)) => self.connect_point(
+                                (hx, hline),
+                                Port::Above {
+                                    x,
+                                    line: through.line,
+                                },
+                            ),
+                            None => self.connect(
+                                from,
+                                Port::Above {
+                                    x,
+                                    line: through.line,
+                                },
+                            ),
+                        }
                         self.canvas.text(x, through.line, "o");
+                        handle_at = Some((x, through.line));
                     }
                     from = handle;
                 }
-                self.connect(from, port);
+                match handle_at {
+                    Some(point) => self.connect_point(point, port),
+                    None => self.connect(from, port),
+                }
             }
 
-            // Authority over yourself peels straight off your own lifeline
+            // Authority over yourself starts on your own lifeline: off your
+            // head on the first row, from an `o` on the lifeline after that
+            // (like the SVG's circle)
             Authority::Root => {
                 if let (Event::Delegate(cert), Port::Above { x, line }) = (event, port) {
                     let lifeline = self.x(cert.issuer);
                     let header = line - 1;
-                    let (peel, glyph) = if x < lifeline {
-                        (lifeline - 1, "╯")
+                    if ix.index() == 0 {
+                        let (peel, glyph) = if x < lifeline {
+                            (lifeline - 1, "╯")
+                        } else {
+                            (lifeline + 1, "╰")
+                        };
+                        self.canvas
+                            .path(&[(peel, header), (x, header), (x, line)], Stroke::Dashed);
+                        self.canvas.text(peel, header, glyph);
                     } else {
-                        (lifeline + 1, "╰")
-                    };
-                    self.canvas
-                        .path(&[(peel, header), (x, header), (x, line)], Stroke::Dashed);
-                    self.canvas.text(peel, header, glyph);
+                        self.canvas.path(
+                            &[(lifeline, header), (x, header), (x, line)],
+                            Stroke::Dashed,
+                        );
+                        self.canvas.text(lifeline, header, "o");
+                    }
                 }
             }
 
             Authority::Unauthorized => {}
         }
+    }
+
+    /// A powerline out of a transitive handle's `o` at `(hx, hline)`: down
+    /// from it, then across and into wherever it's going.
+    fn connect_point(&mut self, (hx, hline): (isize, isize), to: Port) {
+        let path = match to {
+            Port::Above { x, line } | Port::Drop { x, line } => {
+                [(hx, hline), (hx, line - 1), (x, line - 1), (x, line)]
+            }
+            Port::Side { x, line } => [(hx, hline), (hx, line), (x, line), (x, line)],
+        };
+        self.canvas.path(&path, Stroke::Dashed);
     }
 
     fn connect(&mut self, from: EventIx, to: Port) {
