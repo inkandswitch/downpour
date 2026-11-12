@@ -219,7 +219,7 @@ const STYLE: &str = r"<style>
 .rain-diagram .revocation, .rain-diagram .cross { fill: none; stroke: #d33; stroke-width: 1.75; }
 .rain-diagram .diamond { fill: #fde8e8; stroke: #d33; stroke-width: 1.75; }
 .rain-diagram .revoke text { fill: #b3261e; font-size: 12px; }
-.rain-diagram .region-box { fill-opacity: 0.06; stroke-opacity: 0.6; stroke-width: 1.5; }
+.rain-diagram .region-box { fill-opacity: 0.06; stroke-opacity: 0.6; stroke-width: 1.5; pointer-events: none; }
 .rain-diagram .region text.region-caption { fill: #fff; font-size: 11px; font-weight: 600; }
 .rain-diagram .now-line { stroke: #9a958c; stroke-width: 1.5; stroke-dasharray: 1 5; stroke-linecap: round; }
 /* Invisible hit areas, so rows and the now line are easy to grab */

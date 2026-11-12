@@ -66,6 +66,66 @@ pub fn set_region_note(source: &str, region: &str, note: &str) -> Result<String,
         .map_err(|e| JsError::new(&e.to_string()))
 }
 
+/// Add `kind` (`"delegate"`, `"invoke"`, or `"revoke"`) as statement `at`,
+/// as when dragging between lifelines, returning the rewritten source. For
+/// a delegation or invocation, `from`/`to` are columns and `level` a level
+/// keyword; for a revocation, `from` is the revoker's column and `to` the
+/// revoked certificate's event index.
+///
+/// # Errors
+///
+/// Throws for an unknown kind or level, bad indices, or a result that
+/// wouldn't parse.
+#[wasm_bindgen(js_name = insertStatement)]
+pub fn insert_statement(
+    source: &str,
+    at: usize,
+    kind: &str,
+    from: usize,
+    to: usize,
+    level: &str,
+) -> Result<String, JsError> {
+    use rain_diagram_core::{edit::NewStatement, level::Level};
+    let level = || {
+        level
+            .parse::<Level>()
+            .map_err(|e| JsError::new(&e.to_string()))
+    };
+    let new = match kind {
+        "delegate" => NewStatement::Delegate {
+            issuer: from,
+            audience: to,
+            level: level()?,
+        },
+        "invoke" => NewStatement::Invoke {
+            by: from,
+            on: to,
+            level: level()?,
+        },
+        "revoke" => NewStatement::Revoke {
+            by: from,
+            target: to,
+        },
+        other => return Err(JsError::new(&format!("unknown statement kind {other:?}"))),
+    };
+    rain_diagram_core::edit::insert_statement(source, at, new)
+        .map(|(out, _)| out)
+        .map_err(|e| JsError::new(&e.to_string()))
+}
+
+/// Remove statement `statement` (and any region it leaves empty), returning
+/// the rewritten source.
+///
+/// # Errors
+///
+/// Throws if there's no such statement, a revocation still names it, or
+/// the result wouldn't parse.
+#[wasm_bindgen(js_name = deleteStatement)]
+pub fn delete_statement(source: &str, statement: usize) -> Result<String, JsError> {
+    rain_diagram_core::edit::delete_statement(source, statement)
+        .map_err(|e| JsError::new(&e.to_string()))
+}
+
 /// Move the principal in column `from` to column `to` (as when dragging its
 /// head), returning the source with an updated `principals:` line.
 ///

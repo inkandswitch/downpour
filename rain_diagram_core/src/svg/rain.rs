@@ -276,6 +276,7 @@ impl<'a> Svg<'a> {
                 concat!(
                     r#"<g class="principal" data-principal="{key}" data-x="{x:.1}">"#,
                     r#"<line class="lifeline" x1="{x:.1}" y1="{top:.1}" x2="{x:.1}" y2="{bottom:.1}" stroke="{colour}"/>"#,
+                    r#"<rect class="hit lifeline-hit" data-column="{i}" x="{hx:.1}" y="{top:.1}" width="18" height="{h:.1}"/>"#,
                     r#"<ellipse class="head" cx="{x:.1}" cy="{y:.1}" rx="{rx:.1}" ry="{HEAD_RY}" stroke="{colour}"/>"#,
                     r#"<text x="{x:.1}" y="{y:.1}" text-anchor="middle" dominant-baseline="central">{name}</text>"#,
                     "</g>"
@@ -288,6 +289,9 @@ impl<'a> Svg<'a> {
                 colour = colour,
                 rx = text_width(principal.name().as_str()) / 2.0 + 16.0,
                 HEAD_RY = HEAD_RY,
+                i = i,
+                hx = x - 9.0,
+                h = bottom - y - HEAD_RY,
                 name = escape(principal.name().as_str()),
             );
         }

@@ -306,36 +306,13 @@ pub fn set_region_rows(
 
     // Work line by line, on text ending in a newline
     let ends_with_newline = source.ends_with('\n');
-    let mut text = String::from(source);
-    if !ends_with_newline {
-        text.push('\n');
-    }
-    let mut starts = Vec::new();
-    let mut at = 0;
-    let lines: Vec<&str> = text
-        .split_inclusive('\n')
-        .inspect(|line| {
-            starts.push(at);
-            at += line.len();
-        })
-        .collect();
+    let text = with_newline(source);
+    let (lines, starts) = lines(&text);
     let line_of = |offset: usize| starts.iter().rposition(|&s| s <= offset).unwrap_or(0);
 
     let open = line_of(found.span.start);
-    let close = lines
-        .iter()
-        .enumerate()
-        .skip(open)
-        .find(|(_, line)| {
-            let code = crate::ast::comment_start(line)
-                .and_then(|i| line.get(..i))
-                .unwrap_or(line)
-                .trim();
-            code.strip_prefix("<<<")
-                .is_some_and(|id| id.trim() == region)
-        })
-        .map(|(i, _)| i)
-        .ok_or_else(|| RegionError::NoSuchRegion(region.into()))?;
+    let close =
+        close_line(&lines, open, region).ok_or_else(|| RegionError::NoSuchRegion(region.into()))?;
     let statement_line = |i: usize| doc.statements.get(i).map(|s| line_of(s.span.start));
     let (before, after) = statement_line(first)
         .zip(statement_line(last))
@@ -360,6 +337,327 @@ pub fn set_region_rows(
 
     crate::parse(&out).map_err(RegionError::Result)?;
     Ok(out)
+}
+
+/// Remove statement `n`, as when selecting it and pressing Delete. The
+/// whole line goes (note and trailing comment included); if it was the only
+/// statement in a region, the region's `>>>` and `<<<` lines go too.
+///
+/// What others route through just loses its effect (the diagram shows the
+/// fallout), but something that names the statement can't be left dangling:
+/// a revocation has to be deleted before the certificate it revokes.
+///
+/// ```
+/// use rain_diagram_core::edit::{DeleteError, delete_statement};
+///
+/// let source = "rain\n(Doc)-[edit]->(Alice)\n>>> A: gone soon\n(Doc)-<revoke>-x[doc-alice]\n<<< A\n";
+/// assert!(matches!(
+///     delete_statement(source, 0),
+///     Err(DeleteError::Revoked { by: 1, .. })
+/// ));
+/// assert_eq!(delete_statement(source, 1)?, "rain\n(Doc)-[edit]->(Alice)\n");
+/// # Ok::<(), DeleteError>(())
+/// ```
+///
+/// # Errors
+///
+/// - [`DeleteError::Source`] if `source` doesn't parse.
+/// - [`DeleteError::NoSuchStatement`] if there's no statement `n`.
+/// - [`DeleteError::Revoked`] if a revocation targets it.
+/// - [`DeleteError::Result`] if the result doesn't parse.
+pub fn delete_statement(source: &str, n: usize) -> Result<String, DeleteError> {
+    let doc = crate::parser::document(source).map_err(|e| DeleteError::Source(e.into()))?;
+    let d = crate::parse(source).map_err(DeleteError::Source)?;
+    let ix = d.event_ix(n).ok_or(DeleteError::NoSuchStatement(n))?;
+    // Labels are unambiguous, so only a revocation naming this one can dangle
+    let revoker = d
+        .event_ixs()
+        .find(|&j| matches!(d.event(j), Some(Event::Revoke(r)) if r.target == ix));
+    if let Some(by) = revoker {
+        return Err(DeleteError::Revoked {
+            statement: n,
+            by: by.index(),
+        });
+    }
+
+    let text = with_newline(source);
+    let (lines, starts) = lines(&text);
+    let line_of = |offset: usize| starts.iter().rposition(|&s| s <= offset).unwrap_or(0);
+    let mut gone = Vec::from([d
+        .events()
+        .get(n)
+        .map_or(usize::MAX, |e| line_of(e.span.start))]);
+    // A region holding only this statement would be left empty
+    let emptied = d
+        .regions()
+        .iter()
+        .filter(|r| r.first == ix && r.last == ix)
+        .filter_map(|r| doc.regions.iter().find(|s| s.node.id == r.id));
+    for region in emptied {
+        let open = line_of(region.span.start);
+        gone.push(open);
+        gone.extend(close_line(&lines, open, region.node.id.as_str()));
+    }
+
+    let mut out: String = lines
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| !gone.contains(i))
+        .map(|(_, line)| *line)
+        .collect();
+    if !source.ends_with('\n') {
+        out.pop();
+    }
+
+    crate::parse(&out).map_err(DeleteError::Result)?;
+    Ok(out)
+}
+
+/// `source`, ending in a newline so every line does.
+fn with_newline(source: &str) -> String {
+    let mut text = String::from(source);
+    if !text.ends_with('\n') {
+        text.push('\n');
+    }
+    text
+}
+
+/// `text`'s lines (newlines kept) and where each starts.
+fn lines(text: &str) -> (Vec<&str>, Vec<usize>) {
+    let mut at = 0;
+    text.split_inclusive('\n')
+        .map(|line| {
+            let start = at;
+            at += line.len();
+            (line, start)
+        })
+        .unzip()
+}
+
+/// The line closing region `id`, searching from line `open`.
+fn close_line(lines: &[&str], open: usize, id: &str) -> Option<usize> {
+    lines
+        .iter()
+        .enumerate()
+        .skip(open)
+        .find(|(_, line)| {
+            let code = crate::ast::comment_start(line)
+                .and_then(|i| line.get(..i))
+                .unwrap_or(line)
+                .trim();
+            code.strip_prefix("<<<")
+                .is_some_and(|rest| rest.trim() == id)
+        })
+        .map(|(i, _)| i)
+}
+
+/// A statement to add by direct manipulation (dragging between lifelines).
+/// Principals are columns; `target` is an event index.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NewStatement {
+    /// `issuer` delegates to `audience`, over what it holds at that moment.
+    Delegate {
+        /// The issuer's column.
+        issuer: usize,
+        /// The audience's column.
+        audience: usize,
+        /// The level granted.
+        level: crate::level::Level,
+    },
+
+    /// `by` uses its authority on `on`.
+    Invoke {
+        /// The actor's column.
+        by: usize,
+        /// The subject's column.
+        on: usize,
+        /// The level used.
+        level: crate::level::Level,
+    },
+
+    /// `by` revokes the certificate at event `target`.
+    Revoke {
+        /// The revoker's column.
+        by: usize,
+        /// The revoked certificate's event index.
+        target: usize,
+    },
+}
+
+/// Add a statement so it becomes statement `at` (a revocation goes no
+/// earlier than just after its target), returning the new source and where
+/// the statement landed.
+///
+/// A delegation is over the subject its issuer holds most strongly at that
+/// moment (or itself, if it holds nothing), written short (`[edit]`) when
+/// inference picks the same subject and in full (`[edit(Doc)]`) otherwise. A
+/// revocation names its target by label, first giving the target an
+/// explicit label if its implicit one is shared.
+///
+/// ```
+/// use rain_diagram_core::{edit::{NewStatement, insert_statement}, level::Level};
+///
+/// let source = "rain\nprincipals: Doc, Alice, Bob\n(Doc)-[edit]->(Alice)\n";
+/// // Alice drags to Bob: she passes on Read over the Doc she holds
+/// let (out, at) = insert_statement(
+///     source,
+///     1,
+///     NewStatement::Delegate { issuer: 1, audience: 2, level: Level::Read },
+/// )?;
+/// assert_eq!(at, 1);
+/// assert_eq!(
+///     out,
+///     "rain\nprincipals: Doc, Alice, Bob\n(Doc)-[edit]->(Alice)\n(Alice)-[read]->(Bob)\n"
+/// );
+/// # Ok::<(), rain_diagram_core::edit::InsertError>(())
+/// ```
+///
+/// # Errors
+///
+/// [`InsertError::Source`] if `source` doesn't parse,
+/// [`InsertError::NoSuchColumn`] / [`InsertError::NotACertificate`] for bad
+/// indices, and [`InsertError::Result`] if the result doesn't parse.
+pub fn insert_statement(
+    source: &str,
+    at: usize,
+    new: NewStatement,
+) -> Result<(String, usize), InsertError> {
+    let d = crate::parse(source).map_err(InsertError::Source)?;
+    let name = |column: usize| {
+        d.principals()
+            .get(column)
+            .map(|p| p.name().as_str())
+            .ok_or(InsertError::NoSuchColumn(column))
+    };
+    let at = at.min(d.events().len());
+
+    let mut text = String::from(source);
+    let (line, at) = match new {
+        NewStatement::Delegate {
+            issuer,
+            audience,
+            level,
+        } => {
+            let (from, to) = (name(issuer)?, name(audience)?);
+            // What the issuer holds most strongly just before this moment
+            let held = at
+                .checked_sub(1)
+                .and_then(|i| d.event_ix(i))
+                .map(|now| d.reach(crate::diagram::PrincipalIx::new(issuer), now))
+                .unwrap_or_default();
+            let subject = held
+                .iter()
+                .max_by_key(|r| (r.level, core::cmp::Reverse(r.subject)))
+                .and_then(|r| d.principal(r.subject))
+                .map(|p| p.name().as_str());
+
+            let short = alloc::format!("({from})-[{}]->({to})", level.keyword());
+            let line = match subject {
+                None => short,
+                Some(subject) => {
+                    // Short if inference lands on the same subject
+                    let full = alloc::format!("({from})-[{}({subject})]->({to})", level.keyword());
+                    let infers_same = crate::parse(&insert_line(&text, &d, at, &short))
+                        .ok()
+                        .and_then(|after| {
+                            let ix = after.event_ix(at)?;
+                            let cert = after.cert(ix)?;
+                            Some(after.principal(cert.subject)?.name().as_str() == subject)
+                        })
+                        .unwrap_or(false);
+                    if infers_same { short } else { full }
+                }
+            };
+            (line, at)
+        }
+
+        NewStatement::Invoke { by, on, level } => (
+            alloc::format!("({})=[[{}]]=>({})", name(by)?, level.keyword(), name(on)?),
+            at,
+        ),
+
+        NewStatement::Revoke { by, target } => {
+            let ix = d
+                .event_ix(target)
+                .ok_or(InsertError::NotACertificate(target))?;
+            let cert = d.cert(ix).ok_or(InsertError::NotACertificate(target))?;
+            let shared = d
+                .event_ixs()
+                .filter_map(|i| d.cert(i))
+                .filter(|c| c.id == cert.id)
+                .count()
+                > 1;
+            let label = if shared {
+                // Give the target a fresh explicit label first; one of the
+                // first n+1 names is free by pigeonhole
+                let fresh = (1..=d.events().len() + 1)
+                    .map(|n| alloc::format!("c{n}"))
+                    .find(|id| {
+                        d.event_ixs()
+                            .filter_map(|i| d.cert(i))
+                            .all(|c| c.id.as_str() != id)
+                    })
+                    .unwrap_or_else(|| "c".into());
+                let start = d.events().get(target).map_or(0, |e| e.span.start);
+                text.insert_str(start, &alloc::format!("{fresh}: "));
+                fresh
+            } else {
+                cert.id.as_str().into()
+            };
+            (
+                alloc::format!("({})-<revoke>-x[{label}]", name(by)?),
+                at.max(target + 1),
+            )
+        }
+    };
+
+    let d = crate::parse(&text).map_err(InsertError::Source)?;
+    let out = insert_line(&text, &d, at, &line);
+    crate::parse(&out).map_err(InsertError::Result)?;
+    Ok((out, at))
+}
+
+/// `line` as its own line, just before statement `at` (or after the last).
+fn insert_line(source: &str, d: &Diagram, at: usize, line: &str) -> String {
+    let line_start = |offset: usize| {
+        source
+            .get(..offset)
+            .and_then(|s| s.rfind('\n'))
+            .map_or(0, |i| i + 1)
+    };
+    let offset = match d.events().get(at) {
+        Some(e) => line_start(e.span.start),
+        None => source.len(),
+    };
+    let mut out = String::with_capacity(source.len() + line.len() + 2);
+    out.push_str(source.get(..offset).unwrap_or_default());
+    if !out.is_empty() && !out.ends_with('\n') {
+        out.push('\n');
+    }
+    out.push_str(line);
+    out.push('\n');
+    out.push_str(source.get(offset..).unwrap_or_default());
+    out
+}
+
+/// Why a statement couldn't be added.
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+pub enum InsertError {
+    /// The source doesn't parse.
+    #[error("the source doesn't parse: {0}")]
+    Source(InvalidDiagram),
+
+    /// There's no such column.
+    #[error("there's no column {0}")]
+    NoSuchColumn(usize),
+
+    /// The event to revoke isn't a certificate.
+    #[error("event {0} isn't a certificate")]
+    NotACertificate(usize),
+
+    /// The result doesn't parse.
+    #[error("that would break the diagram: {0}")]
+    Result(InvalidDiagram),
 }
 
 /// Move the principal in column `from` to column `to`, as when dragging its
@@ -497,6 +795,32 @@ pub enum NoteError {
     Note(#[from] crate::ast::InvalidText),
 }
 
+/// Why a statement couldn't be deleted.
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+pub enum DeleteError {
+    /// The source doesn't parse.
+    #[error("the source doesn't parse: {0}")]
+    Source(InvalidDiagram),
+
+    /// There's no statement with that index.
+    #[error("there's no statement {0}")]
+    NoSuchStatement(usize),
+
+    /// A revocation targets it.
+    #[error("statement {by} revokes statement {statement}; delete that first")]
+    Revoked {
+        /// The statement to delete.
+        statement: usize,
+
+        /// The revocation naming it.
+        by: usize,
+    },
+
+    /// The result doesn't parse.
+    #[error("that would break the diagram: {0}")]
+    Result(InvalidDiagram),
+}
+
 /// Why a statement couldn't move.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum MoveError {
@@ -591,6 +915,49 @@ mod tests {
     }
 
     #[test]
+    fn inserting_writes_whole_statements() -> TestResult {
+        use crate::level::Level;
+
+        // Alice holds two subjects, so the subject is written out
+        let source = "rain\nprincipals: Essay, Commenters, Alice, Bob\n(Essay)-[admin]->(Alice)\n(Commenters)-[edit]->(Alice)\n";
+        let (out, _) = insert_statement(
+            source,
+            2,
+            NewStatement::Delegate {
+                issuer: 2,
+                audience: 3,
+                level: Level::Read,
+            },
+        )?;
+        assert!(out.ends_with("(Alice)-[read(Essay)]->(Bob)\n"), "{out}");
+
+        // A revocation dropped above its target goes just below it, and a
+        // shared implicit label gets made explicit first
+        let source = "rain\n(Alice)-[read]->(Bob)\n(Alice)-[edit]->(Bob)\n";
+        let (out, at) = insert_statement(source, 0, NewStatement::Revoke { by: 0, target: 1 })?;
+        assert_eq!(at, 2);
+        assert_eq!(
+            out,
+            "rain\n(Alice)-[read]->(Bob)\nc1: (Alice)-[edit]->(Bob)\n(Alice)-<revoke>-x[c1]\n"
+        );
+
+        let (out, _) = insert_statement(
+            source,
+            1,
+            NewStatement::Invoke {
+                by: 1,
+                on: 0,
+                level: Level::Read,
+            },
+        )?;
+        assert_eq!(
+            out,
+            "rain\n(Alice)-[read]->(Bob)\n(Bob)=[[read]]=>(Alice)\n(Alice)-[edit]->(Bob)\n"
+        );
+        Ok(())
+    }
+
+    #[test]
     fn moving_principals_rewrites_the_order_in_place() -> TestResult {
         let source = "rain\ntitle T\n  participant Doc, Alice  // order\n(Doc)-[edit]->(Alice)\n(Alice)-[edit]->(Bob)";
         assert_eq!(
@@ -624,6 +991,47 @@ mod tests {
         assert!(matches!(
             move_statement(lonely, 1, 0),
             Err(MoveError::Result(_))
+        ));
+    }
+
+    #[test]
+    fn deleting_takes_lonely_regions_along() -> TestResult {
+        // Statement 3 is not alone in A; statement 2 would be once 3 is gone
+        assert_eq!(
+            delete_statement(SOURCE, 3)?,
+            SOURCE.replace("(Doc)-[read]->(Carol)            : 4\n", "")
+        );
+        let lonely = "rain\n(Doc)-[edit]->(Alice)\n  >>> A (Alice): hi  // note\n(Alice)-[read]->(Bob)\n<<< A\n(Doc)-[read]->(Bob)";
+        assert_eq!(
+            delete_statement(lonely, 1)?,
+            "rain\n(Doc)-[edit]->(Alice)\n(Doc)-[read]->(Bob)"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn deleting_refuses_to_leave_revocations_dangling() {
+        assert!(matches!(
+            delete_statement(SOURCE, 1),
+            Err(DeleteError::Revoked {
+                statement: 1,
+                by: 4
+            })
+        ));
+        assert!(matches!(
+            delete_statement(SOURCE, 9),
+            Err(DeleteError::NoSuchStatement(9))
+        ));
+        // Two certificates share `doc-alice`, so the second gets a label
+        // to be revoked by; the first can go, the second can't
+        let shared = "rain\n(Doc)-[read]->(Alice)\nc1: (Doc)-[edit]->(Alice)\n(Doc)-<revoke>-x[c1]";
+        assert_eq!(
+            delete_statement(shared, 0).as_deref(),
+            Ok("rain\nc1: (Doc)-[edit]->(Alice)\n(Doc)-<revoke>-x[c1]")
+        );
+        assert!(matches!(
+            delete_statement(shared, 1),
+            Err(DeleteError::Revoked { by: 2, .. })
         ));
     }
 }

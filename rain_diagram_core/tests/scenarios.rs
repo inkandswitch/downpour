@@ -759,6 +759,46 @@ fn moves_within_range_rearrange_the_source() {
     });
 }
 
+/// Deleting a statement removes exactly that statement, unless a
+/// revocation names it, and never changes what the other revocations
+/// target.
+#[test]
+fn deleting_removes_exactly_one_statement() {
+    use rain_diagram_core::edit::{DeleteError, delete_statement};
+
+    check!().with_type::<Vec<u8>>().for_each(|bytes| {
+        let Some(scenario) = common::arbitrary::<Scenario>(bytes) else {
+            return;
+        };
+        let (source, d) = scenario.diagram();
+        let lines = |d: &Diagram, source: &str| -> Vec<String> {
+            d.events()
+                .iter()
+                .map(|e| source[e.span.start..e.span.end].to_string())
+                .collect()
+        };
+        let before = lines(&d, &source);
+
+        for ix in d.event_ixs() {
+            let revoked = d
+                .event_ixs()
+                .any(|j| matches!(d.event(j), Some(Event::Revoke(r)) if r.target == ix));
+            match delete_statement(&source, ix.index()) {
+                Ok(out) => {
+                    assert!(!revoked, "{source}");
+                    let after = parse(&out).expect("deletions are checked");
+                    let mut expected = before.clone();
+                    expected.remove(ix.index());
+                    assert_eq!(lines(&after, &out), expected, "{source}\n→\n{out}");
+                }
+                Err(DeleteError::Revoked { .. }) => assert!(revoked, "{source}"),
+                Err(DeleteError::Result(_)) => {}
+                Err(e) => panic!("{e}\n{source}"),
+            }
+        }
+    });
+}
+
 /// At every moment, exactly the rows from that moment on are still to
 /// come, and the certflow snapshot of that moment is well-formed.
 #[test]

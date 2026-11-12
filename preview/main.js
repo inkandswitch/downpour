@@ -1,10 +1,11 @@
 import init, { diagnostics, renderSvg, renderText, toSiteJson } from "./pkg/rain_diagram_wasm.js";
 import "./rain-diagram.js";
 import { PALETTE, highlight } from "./highlight.js";
+import { History } from "./history.js";
 import { splitter } from "./split.js";
 
 const BASIC = `rain
-title Revocation is retroactive
+title Basic Example
 
 (Doc)-[admin]->(Alice)           : The Doc grants Alice Admin
 (Alice)-[edit(Doc)]->(Bob)       : Alice passes Edit to Bob
@@ -202,11 +203,70 @@ splitter($("rows"), {
   key: "rain-preview:picture-height",
 });
 
-// Dragging a row in the diagram rewrites the source
-picture.addEventListener("rain-edit", ({ detail }) => {
-  source.value = detail.source;
+// One history for typing, picture edits, and loading examples. It owns
+// undo everywhere (the textarea's own would lose track of picture edits).
+const history = new History();
+let recorded = ""; // the source as of the last recorded edit
+
+const syncHistory = () => {
+  $("undo").disabled = !history.canUndo;
+  $("redo").disabled = !history.canRedo;
+};
+
+/** Replace the source as one undoable step. */
+const edit = (text) => {
+  history.record(recorded, text);
+  recorded = text;
+  source.value = text;
+  syncHistory();
   render();
+};
+
+const travel = (step) => {
+  const to = step(source.value);
+  if (!to) return;
+  recorded = source.value = to.text;
+  source.setSelectionRange(to.caret, to.caret);
+  syncHistory();
+  render();
+};
+const undo = () => travel((text) => history.undo(text));
+const redo = () => travel((text) => history.redo(text));
+
+const mac = /Mac|iP(hone|ad)/.test(navigator.platform);
+$("undo").title = `Undo (${mac ? "⌘Z" : "Ctrl+Z"})`;
+$("redo").title = `Redo (${mac ? "⇧⌘Z" : "Ctrl+Y"})`;
+$("undo").addEventListener("click", undo);
+$("redo").addEventListener("click", redo);
+
+window.addEventListener("keydown", (e) => {
+  if (!(mac ? e.metaKey : e.ctrlKey) || e.altKey) return;
+  // Leave other text fields (say, a region caption being edited) alone
+  const target = e.composedPath()[0];
+  if (target !== source && target?.matches?.("input, textarea, [contenteditable]")) return;
+  const key = e.key.toLowerCase();
+  if (key === "z" || key === "y") {
+    e.preventDefault();
+    key === "z" && !e.shiftKey ? undo() : redo();
+  }
 });
+
+// Undo from the browser's Edit menu reaches the textarea this way
+source.addEventListener("beforeinput", (e) => {
+  if (e.inputType === "historyUndo" || e.inputType === "historyRedo") {
+    e.preventDefault();
+    e.inputType === "historyUndo" ? undo() : redo();
+  }
+});
+
+source.addEventListener("input", () => {
+  history.record(recorded, source.value, { typing: true });
+  recorded = source.value;
+  syncHistory();
+});
+
+// Editing the diagram rewrites the source
+picture.addEventListener("rain-edit", ({ detail }) => edit(detail.source));
 
 picture.addEventListener("rain-edit-refused", ({ detail }) => {
   status.className = "err";
@@ -302,9 +362,8 @@ for (const [id, text] of [
   ["example-tour", TOUR],
 ]) {
   $(id).addEventListener("click", () => {
-    source.value = text;
+    edit(text);
     source.scrollTop = 0;
-    render();
   });
 }
 
@@ -330,7 +389,7 @@ window.addEventListener("rain:build-error", ({ detail }) => {
 });
 
 await init();
-source.value = load(STORAGE.source, BASIC);
+source.value = recorded = load(STORAGE.source, BASIC);
 source.addEventListener("input", render);
 source.addEventListener("scroll", syncScroll);
 select(format);

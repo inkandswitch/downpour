@@ -144,6 +144,8 @@
     .editor textarea { color: transparent; caret-color: var(--fg); }
     .editor textarea::selection { background: rgb(61 125 216 / 0.25); color: transparent; }
     .actions { display: flex; gap: 6px; }
+    .actions button:disabled { opacity: 0.35; cursor: default; }
+    #redo { margin-right: 6px; }
     .zoom { display: flex; gap: 2px; margin-right: 6px; }
     #zoom-level { min-width: 52px; font-variant-numeric: tabular-nums; }
 
@@ -241,6 +243,8 @@
     <section id="source-pane">
       <h2 class="with-actions">Source
         <span class="actions">
+          <button id="undo" title="Undo" aria-label="Undo" disabled>↶</button>
+          <button id="redo" title="Redo" aria-label="Redo" disabled>↷</button>
           <button id="example-basic" title="Replace the source with a short example">Basic example</button>
           <button id="example-tour" title="Replace the source with a commented tour of every feature">Tour</button>
           <button class="maximize" data-pane="source" title="Maximize">⤢</button>

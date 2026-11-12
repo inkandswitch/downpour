@@ -24,13 +24,16 @@
 // (the band shows where). The diagram rearranges live as a row moves; rows
 // that would break it (say, by emptying a region) are skipped. Dropping
 // rewrites the source and fires `rain-edit` with `{ source, from, to }`;
-// Escape cancels.
+// Escape cancels. Click any statement to select it; Delete, Backspace, or
+// its 🗑 button removes it (a revocation must go before what it revokes).
 //
 // All logic lives in the Wasm (`RainDiagram`); this file only wires the
 // SVG's data-* hooks to it.
 
 import init, {
   RainDiagram,
+  deleteStatement,
+  insertStatement,
   movePrincipal,
   moveStatement,
   setPosition,
@@ -83,6 +86,29 @@ const STYLE = `
   :host([editable]) svg[data-row-height] .event { cursor: grab; }
   svg .dragging { filter: drop-shadow(0 4px 6px rgb(0 0 0 / 0.3)); }
   svg .principal.dragging { opacity: 0.9; }
+  :host([editable]) svg .lifeline-hit { cursor: crosshair; }
+  svg .draft { stroke: currentColor; stroke-width: 2; stroke-dasharray: 6 4; pointer-events: none; }
+  :host(:focus) { outline: none; }
+  svg .selected { filter: drop-shadow(0 0 3px #3d7dd8) drop-shadow(0 0 1px #3d7dd8); }
+  .menu.trash { padding: 3px; }
+  svg .aimed .pill, svg .aimed .head { stroke-width: 3; filter: drop-shadow(0 0 4px rgb(61 125 216 / 0.6)); }
+  .menu {
+    position: absolute;
+    z-index: 4;
+    display: grid;
+    gap: 4px;
+    padding: 6px;
+    border: 1px solid rgb(127 127 127 / 0.35);
+    border-radius: 8px;
+    background: Canvas;
+    color: CanvasText;
+    box-shadow: 0 8px 24px rgb(0 0 0 / 0.18);
+    font: 12px system-ui, sans-serif;
+  }
+  .menu-row { display: flex; align-items: center; gap: 4px; }
+  .menu-row span { width: 58px; opacity: 0.7; }
+  .menu button { padding: 3px 8px; border: 1px solid rgb(127 127 127 / 0.3); border-radius: 6px; background: transparent; color: inherit; font: inherit; cursor: pointer; }
+  .menu button:hover, .menu button:focus-visible { background: rgb(61 125 216 / 0.15); outline: none; }
   :host([grabbing]), :host([grabbing]) * { cursor: grabbing !important; }
   svg .drag-range { fill: #3d7dd8; fill-opacity: 0.08; stroke: #3d7dd8; stroke-opacity: 0.4; stroke-dasharray: 4 3; }
   .error { color: #b3261e; font: 13px ui-monospace, monospace; white-space: pre-wrap; }
@@ -103,13 +129,23 @@ export class RainDiagramElement extends HTMLElement {
   constructor() {
     super();
     this.attachShadow({ mode: "open" });
-    this.addEventListener("keydown", (e) => e.key === "Escape" && this.#clear());
+    this.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") this.#clear();
+      // Delete the selected statement, unless typing (say, in a caption)
+      const typing = e.composedPath()[0]?.matches?.("input, textarea");
+      if ((e.key === "Delete" || e.key === "Backspace") && !typing && this.#pinned !== null && this.hasAttribute("editable")) {
+        e.preventDefault();
+        this.#delete(this.#pinned);
+      }
+    });
     // The snapshot popover is fixed to the viewport; keep it by its handle
     this.addEventListener("scroll", () => this.#popover());
     window.addEventListener("resize", () => this.#popover());
   }
 
   connectedCallback() {
+    // Focusable, so Delete reaches the selected statement
+    if (this.hasAttribute("editable") && !this.hasAttribute("tabindex")) this.tabIndex = 0;
     this.#load();
   }
 
@@ -255,19 +291,27 @@ export class RainDiagramElement extends HTMLElement {
       });
     }
 
-    for (const cert of svg.querySelectorAll(".delegate[data-event]")) {
-      cert.addEventListener("click", (e) => {
+    // Click a certificate to see its fallout; when editable, clicking any
+    // statement also selects it for deleting
+    const editable = this.hasAttribute("editable") && svg.dataset.rowHeight;
+    for (const event of svg.querySelectorAll(editable ? ".event[data-event]" : ".delegate[data-event]")) {
+      event.addEventListener("click", (e) => {
         e.stopPropagation();
         if (this.#justDragged) {
           this.#justDragged = false;
           return;
         }
-        const ix = Number(cert.dataset.event);
+        const ix = Number(event.dataset.event);
         if (this.#pinned === ix) {
           this.#clear();
-        } else {
-          this.#showFallout(ix);
+          return;
         }
+        if (event.matches(".delegate")) this.#showFallout(ix);
+        else {
+          this.#clear();
+          this.#pinned = ix;
+        }
+        if (editable) this.#select(event, ix, e);
       });
     }
 
@@ -283,6 +327,9 @@ export class RainDiagramElement extends HTMLElement {
     // Principal heads (rain): drag sideways to reorder the columns
     if (this.hasAttribute("editable")) {
       if (svg.dataset.rowHeight) {
+        for (const hit of svg.querySelectorAll(".lifeline-hit")) {
+          hit.addEventListener("pointerdown", (e) => this.#drawFrom(hit, e));
+        }
         for (const head of svg.querySelectorAll(".principal[data-x] .head, .principal[data-x] text")) {
           head.addEventListener("pointerdown", (e) => this.#dragPrincipal(head.closest(".principal"), e));
         }
@@ -362,6 +409,147 @@ export class RainDiagramElement extends HTMLElement {
     preview.free();
     this.#svg = this.shadowRoot.querySelector("svg");
     this.#theme();
+  }
+
+  /**
+   * Drag from one lifeline to another to delegate or invoke at that moment,
+   * or onto a certificate to revoke it: a menu offers what fits on release.
+   */
+  #drawFrom(hit, down) {
+    down.preventDefault();
+    down.stopPropagation();
+    const svg = this.#svg;
+    const from = Number(hit.dataset.column);
+    const xs = [...svg.querySelectorAll(".principal[data-x]")].map((h) => Number(h.dataset.x));
+    const height = Number(svg.dataset.rowHeight);
+    const top = Number(svg.dataset.rowsTop);
+    const events = Number(svg.dataset.events);
+    const box = svg.getBoundingClientRect();
+    const sx = svg.viewBox.baseVal.width / box.width;
+    const sy = svg.viewBox.baseVal.height / box.height;
+    const point = (e) => ({ x: (e.clientX - box.left) * sx, y: (e.clientY - box.top) * sy });
+
+    // "At that moment": the row boundary nearest where the drag started
+    const at = Math.min(Math.max(Math.round((point(down).y - top) / height), 0), events);
+    const y = top + at * height;
+    const ns = "http://www.w3.org/2000/svg";
+    const draft = document.createElementNS(ns, "line");
+    draft.setAttribute("class", "draft");
+    draft.setAttribute("x1", String(xs[from]));
+    draft.setAttribute("y1", String(y));
+    draft.setAttribute("x2", String(xs[from]));
+    draft.setAttribute("y2", String(y));
+    svg.append(draft);
+
+    let target = null; // { kind: "lifeline", to } or { kind: "cert", to }
+    const aim = (e) => {
+      for (const el of svg.querySelectorAll(".aimed")) el.classList.remove("aimed");
+      // Revoke only when dropped on the certificate's box, not just its row
+      const under = this.shadowRoot.elementFromPoint(e.clientX, e.clientY);
+      const onBox = under?.matches(".pill, .tint, .event.delegate text");
+      const cert = onBox ? under.closest(".event.delegate[data-event]") : null;
+      if (cert) {
+        cert.classList.add("aimed");
+        return { kind: "cert", to: Number(cert.dataset.event) };
+      }
+      const x = point(e).x;
+      const nearest = xs.reduce((best, cx, i) => (Math.abs(cx - x) < Math.abs(xs[best] - x) ? i : best), 0);
+      if (nearest === from || Math.abs(xs[nearest] - x) > 30) return null;
+      svg.querySelectorAll(".principal[data-x]")[nearest]?.classList.add("aimed");
+      return { kind: "lifeline", to: nearest };
+    };
+
+    this.setAttribute("grabbing", "");
+    const move = (e) => {
+      target = aim(e);
+      const x = target?.kind === "lifeline" ? xs[target.to] : point(e).x;
+      draft.setAttribute("x2", String(x));
+      draft.setAttribute("y2", String(target?.kind === "cert" ? point(e).y : y));
+    };
+    const up = (e) => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", cancel);
+      this.removeAttribute("grabbing");
+      draft.remove();
+      for (const el of svg.querySelectorAll(".aimed")) el.classList.remove("aimed");
+      if (!target) return;
+      this.#justDragged = true;
+      setTimeout(() => (this.#justDragged = false));
+      this.#menu(e, at, from, target);
+    };
+    const cancel = () => {
+      target = null;
+      up(new PointerEvent("pointerup"));
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", cancel);
+  }
+
+  /** What dragging between lifelines can do, as a little menu at the pointer. */
+  #menu(e, at, from, target) {
+    this.shadowRoot.querySelector(".menu")?.remove();
+    const LEVELS = [
+      ["admin", "👑 Admin"],
+      ["edit", "✏️ Edit"],
+      ["read", "👀 Read"],
+      ["relay", "📡 Relay"],
+    ];
+    const menu = document.createElement("div");
+    menu.className = "menu";
+    menu.setAttribute("role", "menu");
+    const row = (title, options) => {
+      const line = document.createElement("div");
+      line.className = "menu-row";
+      line.append(Object.assign(document.createElement("span"), { textContent: title }));
+      for (const [label, run] of options) {
+        const button = Object.assign(document.createElement("button"), { textContent: label });
+        button.setAttribute("role", "menuitem");
+        button.addEventListener("click", () => {
+          close();
+          try {
+            const source = run();
+            this.source = source;
+            this.dispatchEvent(new CustomEvent("rain-edit", { bubbles: true, detail: { source } }));
+          } catch (err) {
+            this.dispatchEvent(new CustomEvent("rain-edit-refused", { bubbles: true, detail: { message: err.message ?? String(err) } }));
+          }
+        });
+        line.append(button);
+      }
+      menu.append(line);
+    };
+
+    if (target.kind === "cert") {
+      row("Revoke", [["✂️ Revoke", () => insertStatement(this.#text, at, "revoke", from, target.to, "")]]);
+    } else {
+      row("Delegate", LEVELS.map(([level, label]) => [label, () => insertStatement(this.#text, at, "delegate", from, target.to, level)]));
+      row("Invoke", LEVELS.map(([level, label]) => [label, () => insertStatement(this.#text, at, "invoke", from, target.to, level)]));
+    }
+
+    const host = this.getBoundingClientRect();
+    menu.style.left = `${e.clientX - host.left + this.scrollLeft + 8}px`;
+    menu.style.top = `${e.clientY - host.top + this.scrollTop + 8}px`;
+    this.shadowRoot.append(menu);
+    menu.querySelector("button")?.focus();
+
+    const close = () => {
+      menu.remove();
+      window.removeEventListener("pointerdown", outside, true);
+      window.removeEventListener("keydown", escape, true);
+    };
+    const outside = (ev) => {
+      if (!ev.composedPath().includes(menu)) close();
+    };
+    const escape = (ev) => {
+      if (ev.key === "Escape") {
+        ev.preventDefault();
+        close();
+      }
+    };
+    window.addEventListener("pointerdown", outside, true);
+    window.addEventListener("keydown", escape, true);
   }
 
   /** Drag a principal's head sideways to another column; columns re-render live. */
@@ -673,8 +861,35 @@ export class RainDiagramElement extends HTMLElement {
     }
   }
 
+  /** Mark a statement selected, with a 🗑 button by the pointer. */
+  #select(event, ix, e) {
+    event.classList.add("selected");
+    const trash = Object.assign(document.createElement("button"), { textContent: "🗑 Delete", title: "Delete (⌫)" });
+    trash.addEventListener("click", () => this.#delete(ix));
+    const menu = Object.assign(document.createElement("div"), { className: "menu trash" });
+    menu.append(trash);
+    const host = this.getBoundingClientRect();
+    menu.style.left = `${e.clientX - host.left + this.scrollLeft + 8}px`;
+    menu.style.top = `${e.clientY - host.top + this.scrollTop + 8}px`;
+    this.shadowRoot.append(menu);
+    this.focus({ preventScroll: true });
+  }
+
+  /** Delete statement `ix` from the source, or say why not. */
+  #delete(ix) {
+    try {
+      const source = deleteStatement(this.#text, ix);
+      this.source = source;
+      this.dispatchEvent(new CustomEvent("rain-edit", { bubbles: true, detail: { source } }));
+    } catch (err) {
+      this.dispatchEvent(new CustomEvent("rain-edit-refused", { bubbles: true, detail: { message: err.message ?? String(err) } }));
+    }
+  }
+
   #clear() {
     this.#pinned = null;
+    this.shadowRoot.querySelector(".trash")?.remove();
+    for (const el of this.#svg?.querySelectorAll(".selected") ?? []) el.classList.remove("selected");
     this.#svg?.classList.remove("focus");
     for (const el of this.#svg?.querySelectorAll(".lit, .fallout, .struck") ?? []) {
       el.classList.remove("lit", "fallout", "struck");
