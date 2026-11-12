@@ -63,6 +63,17 @@ impl Level {
             Self::Admin => "👑",
         }
     }
+
+    /// The capitalised name, as in diagram labels: `Admin`, `Edit`, …
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Relay => "Relay",
+            Self::Read => "Read",
+            Self::Edit => "Edit",
+            Self::Admin => "Admin",
+        }
+    }
 }
 
 impl fmt::Display for Level {

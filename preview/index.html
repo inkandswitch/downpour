@@ -13,6 +13,7 @@
       --border: #e2ded6;
       --ok: #2f7a4f;
       --err: #b3261e;
+      --warn: #8a5a00;
       --mono: ui-monospace, "JetBrains Mono", "SF Mono", Menlo, monospace;
     }
 
@@ -25,6 +26,7 @@
         --border: #34322e;
         --ok: #6cc28f;
         --err: #f2867c;
+        --warn: #e0b45a;
       }
     }
 
@@ -49,14 +51,24 @@
 
     main {
       display: grid;
-      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-      gap: 16px;
+      grid-template-columns: minmax(200px, var(--source-width, 1fr)) 16px minmax(240px, 1fr);
       padding: 8px 20px 20px;
       height: calc(100vh - 56px);
     }
 
+    /* Drag handles: a thin grip on a wider hit area */
+    .splitter { position: relative; touch-action: none; outline: none; }
+    .splitter::after { content: ""; position: absolute; border-radius: 2px; background: var(--border); transition: background 120ms; }
+    .splitter:hover::after, .splitter:focus-visible::after, .splitter.dragging::after { background: var(--muted); }
+    .splitter[aria-orientation="vertical"] { cursor: col-resize; }
+    .splitter[aria-orientation="vertical"]::after { top: 50%; left: 6px; width: 4px; height: 48px; margin-top: -24px; }
+    .splitter[aria-orientation="horizontal"] { flex: none; height: 12px; cursor: row-resize; border-bottom: 1px solid var(--border); }
+    .splitter[aria-orientation="horizontal"]::after { left: 50%; top: 4px; height: 4px; width: 48px; margin-left: -24px; }
+    body.resizing { user-select: none; }
+
     @media (max-width: 800px) {
-      main { grid-template-columns: 1fr; height: auto; }
+      main { grid-template-columns: 1fr; height: auto; gap: 16px; }
+      main > .splitter { display: none; }
       textarea { min-height: 50vh; }
     }
 
@@ -96,16 +108,38 @@
       white-space: pre;
     }
 
+    h2.with-actions { display: flex; align-items: center; justify-content: space-between; padding-top: 5px; padding-bottom: 5px; }
+    h2 button { padding: 2px 8px; border: 1px solid var(--border); border-radius: 6px; background: transparent; color: var(--muted); font: 600 11px system-ui, sans-serif; letter-spacing: 0.04em; text-transform: uppercase; cursor: pointer; }
+    h2 button:hover { color: var(--fg); }
+
     #status { padding: 8px 12px; border-bottom: 1px solid var(--border); font: 13px var(--mono); }
     #status.ok { color: var(--ok); }
     #status.err { color: var(--err); }
 
-    #diagram {
-      padding: 16px 12px;
-      border-bottom: 1px solid var(--border);
+    #warnings { margin: 0; padding: 0 12px; list-style: none; color: var(--warn); font: 12px/1.5 var(--mono); }
+    #warnings li { padding: 4px 0; }
+    #warnings li::before { content: "⚠ "; }
+    #warnings:not(:empty) { padding: 6px 12px; border-bottom: 1px solid var(--border); }
+
+    .toolbar { display: flex; gap: 4px; align-items: center; padding: 6px 8px; border-bottom: 1px solid var(--border); }
+    .toolbar .spacer { flex: 1; }
+    .toolbar button {
+      padding: 3px 10px;
+      border: 1px solid transparent;
+      border-radius: 6px;
+      background: transparent;
       color: var(--muted);
-      font-size: 13px;
+      font: 12px system-ui, sans-serif;
+      cursor: pointer;
     }
+    .toolbar button:hover { color: var(--fg); border-color: var(--border); }
+    .toolbar button[aria-selected="true"] { color: var(--fg); background: var(--bg); border-color: var(--border); }
+
+    #picture { flex: none; height: var(--picture-height, 55%); min-height: 60px; overflow: auto; padding: 12px; }
+
+
+    /* Tight enough that box-drawing verticals join up */
+    #output { line-height: 1.2; }
   </style>
 </head>
 <body>
@@ -116,15 +150,31 @@
 
   <main>
     <section>
-      <h2>Source</h2>
+      <h2 class="with-actions">Source <button id="example" title="Replace the source with the example">Example</button></h2>
       <textarea id="source" spellcheck="false" aria-label="Diagram source"></textarea>
     </section>
 
-    <section>
+    <div class="splitter" id="columns" role="separator" aria-orientation="vertical" aria-label="Resize source and output" tabindex="0"></div>
+
+    <section id="output-pane">
       <h2>Output</h2>
       <div id="status">loading Wasm…</div>
-      <div id="diagram">The SVG renderer isn't built yet. Once it exists, the diagram will show here.</div>
-      <pre id="json" aria-label="Site JSON"></pre>
+      <div class="toolbar" role="tablist" aria-label="Notation">
+        <button role="tab" data-notation="rain">Rain</button>
+        <button role="tab" data-notation="certflow">Certflow</button>
+      </div>
+      <rain-diagram id="picture" aria-label="Diagram"></rain-diagram>
+      <div class="splitter" id="rows" role="separator" aria-orientation="horizontal" aria-label="Resize diagram and export" tabindex="0"></div>
+      <ul id="warnings" aria-label="Warnings"></ul>
+      <div class="toolbar" role="tablist">
+        <button role="tab" data-format="text">Text</button>
+        <button role="tab" data-format="svg">SVG</button>
+        <button role="tab" data-format="json">Site JSON</button>
+        <span class="spacer"></span>
+        <button id="copy">Copy</button>
+        <button id="download">Download</button>
+      </div>
+      <pre id="output" aria-label="Output"></pre>
     </section>
   </main>
 

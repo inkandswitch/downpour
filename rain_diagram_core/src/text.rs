@@ -1,0 +1,701 @@
+//! Unicode text art for rain diagrams, for code comments and READMEs.
+//!
+//! The layout follows the plain-text example in Keyhive notebook 08. Every
+//! event takes three lines: a header line where powerlines cross over, the
+//! event itself, and a spacer.
+//!
+//! ```text
+//!  (Doc)       (Alice)       (Bob)
+//!    │╰┄┄┄╮ ╭┄┄┄┄┄┼┄┄┄┄╮       │
+//!    ├──[edit]───▶│    ┆       │   The Doc grants Alice Edit
+//!    │            │    ┆       │
+//!    │            │    ┆       │
+//!    │            ├──[edit]───▶│   Alice passes it to Bob
+//!    │            │            │
+//! ```
+//!
+//! Powerlines (`┆`) carry authority into a certificate's label from above.
+//! The source certificate sends it over the top when the next holder's
+//! lane is beyond its arrow, and out of the bottom otherwise, for example
+//! to a revoker's `o` handle. Invocations sit under the certificate that
+//! powers them. A revocation's line ends under its target, and a `✗` marks
+//! the target.
+
+use crate::{
+    authority::Authority,
+    diagram::{Diagram, Event, EventIx},
+};
+use alloc::{collections::BTreeMap, format, string::String, vec::Vec};
+use core::cmp::Ordering;
+
+impl Diagram {
+    /// Draw as Unicode text art.
+    ///
+    /// ```
+    /// let diagram = rain_diagram_core::parse("rain\n(Doc)-[edit]->(Alice)")?;
+    /// assert_eq!(
+    ///     diagram.to_text(),
+    ///     " (Doc)       (Alice)
+    ///    │╰┄┄┄╮       │
+    ///    ├──[edit]───▶│
+    ///    │            │
+    /// "
+    /// );
+    /// # Ok::<(), rain_diagram_core::Error>(())
+    /// ```
+    #[must_use]
+    pub fn to_text(&self) -> String {
+        Layout::new(self).draw()
+    }
+}
+
+/// Minimum distance between lifelines; fits `├──[admin]──▶│`.
+const MIN_SPACING: isize = 13;
+
+/// Lines per event: header, event, spacer.
+const ROW: isize = 3;
+
+struct Layout<'a> {
+    diagram: &'a Diagram,
+    lifelines: Vec<isize>,
+    labels: Vec<Option<Label>>,
+    canvas: Canvas,
+}
+
+/// Where an event's label (or box) landed.
+#[derive(Debug, Clone, Copy)]
+struct Label {
+    start: isize,
+    end: isize,
+    line: isize,
+
+    /// Where a powerline enters from above.
+    input: isize,
+
+    /// Out of the bottom, for powerlines heading back across the arrow.
+    bottom: isize,
+
+    /// The arrow's horizontal extent.
+    span: (isize, isize),
+
+    /// Whether the arrow points left, which mirrors the label's ports.
+    leftward: bool,
+}
+
+impl Label {
+    /// Over the top: just right or left of the input.
+    const fn top(&self, towards: isize) -> isize {
+        if towards > self.input {
+            self.input + 2
+        } else {
+            self.input - 2
+        }
+    }
+
+    const fn covers(&self, x: isize) -> bool {
+        self.start <= x && x <= self.end
+    }
+
+    const fn width(&self) -> isize {
+        self.end - self.start + 1
+    }
+}
+
+/// Where a powerline is headed.
+#[derive(Debug, Clone, Copy)]
+enum Port {
+    /// Into a label from above.
+    Above { x: isize, line: isize },
+
+    /// Into a lifeline handle from the side.
+    Side { x: isize, line: isize },
+
+    /// Straight down into an invocation box.
+    Drop { x: isize, line: isize },
+}
+
+impl<'a> Layout<'a> {
+    fn new(diagram: &'a Diagram) -> Self {
+        let widths: Vec<isize> = diagram
+            .principals()
+            .iter()
+            .map(|p| width(p.name().as_str()) + 2)
+            .collect();
+        let spacing = widths.iter().map(|w| w + 3).fold(MIN_SPACING, isize::max);
+        let first = widths.first().map_or(1, |w| w / 2 + 1);
+
+        Self {
+            diagram,
+            lifelines: (0..widths.len())
+                .map(|i| first + spacing * to_isize(i))
+                .collect(),
+            labels: Vec::with_capacity(diagram.events().len()),
+            canvas: Canvas::default(),
+        }
+    }
+
+    fn draw(mut self) -> String {
+        let last = ROW * to_isize(self.diagram.events().len());
+
+        for (principal, &x) in self.diagram.principals().iter().zip(&self.lifelines) {
+            let name = format!("({})", principal.name());
+            self.canvas.text(x - width(&name) / 2, 0, &name);
+            self.canvas.path(&[(x, 0), (x, last)], Stroke::Solid);
+        }
+
+        for ix in self.diagram.event_ixs() {
+            let label = self.event(ix);
+            self.labels.push(label);
+        }
+
+        for ix in self.diagram.event_ixs() {
+            self.powerlines(ix);
+        }
+
+        let grid = self.canvas.rightmost(1);
+        let notes = self.regions(grid);
+        for (row, event) in (0..).zip(self.diagram.events()) {
+            let note = match &event.node {
+                Event::Delegate(c) => c.note.as_ref(),
+                Event::Invoke(i) => i.note.as_ref(),
+                Event::Revoke(r) => r.note.as_ref(),
+            };
+            if let Some(note) = note {
+                self.canvas.text(notes, event_line(row), note.as_str());
+            }
+        }
+
+        let art = self.canvas.render();
+        match self.diagram.title() {
+            Some(title) => format!("{title}\n\n{art}"),
+            None => art,
+        }
+    }
+
+    /// Brackets down the right of the grid, one lane per overlapping
+    /// region, each captioned on its first line:
+    ///
+    /// ```text
+    ///   │   ┌── A: Bob does stuff
+    ///   │   │
+    ///   │   └─
+    /// ```
+    ///
+    /// Returns the column the row notes start at.
+    fn regions(&mut self, grid: isize) -> isize {
+        let lanes = self.diagram.region_lanes();
+        let Some(deepest) = lanes.iter().copied().max() else {
+            return grid + 4;
+        };
+        let deepest = to_isize(deepest);
+        let captions = grid + 3 + 2 * deepest + 3;
+        let mut free: BTreeMap<isize, isize> = BTreeMap::new();
+
+        for (region, &lane) in self.diagram.regions().iter().zip(&lanes) {
+            let x = grid + 3 + 2 * to_isize(lane);
+            let top = ROW * to_isize(region.first.index()) + 1;
+            let bottom = ROW * to_isize(region.last.index()) + 3;
+            self.canvas.path(
+                &[(captions - 2, top), (x, top), (x, bottom), (x + 1, bottom)],
+                Stroke::Solid,
+            );
+            // Regions starting on the same line queue up their captions
+            let at = free.entry(top).or_insert(captions);
+            self.canvas.text(*at, top, region.caption());
+            *at += width(region.caption()) + 3;
+        }
+
+        captions + 1
+    }
+
+    fn x(&self, principal: crate::diagram::PrincipalIx) -> isize {
+        self.lifelines
+            .get(principal.index())
+            .copied()
+            .unwrap_or_default()
+    }
+
+    fn label(&self, ix: EventIx) -> Option<Label> {
+        self.labels.get(ix.index()).copied().flatten()
+    }
+
+    /// Draw the event's own row, returning where its label went.
+    fn event(&mut self, ix: EventIx) -> Option<Label> {
+        let line = event_line(to_isize(ix.index()));
+        match self.diagram.event(ix)? {
+            Event::Delegate(cert) => {
+                let text = format!("[{}]", cert.level);
+                Some(self.arrow(self.x(cert.issuer), self.x(cert.audience), line, &text))
+            }
+
+            Event::Invoke(invoke) => {
+                let text = format!("[[{}]]", invoke.level);
+                let powered_by = invoke
+                    .authority
+                    .route()
+                    .and_then(|route| self.label(route.held()));
+                Some(self.invocation(
+                    self.x(invoke.by),
+                    self.x(invoke.on),
+                    line,
+                    &text,
+                    powered_by,
+                ))
+            }
+
+            Event::Revoke(revoke) => {
+                let target = self.label(revoke.target)?;
+                let x = self.x(revoke.by);
+                let start = target.input - 3;
+                let label = self.boxed(start, line, "<revoke>", (x.min(start), x.max(start)));
+
+                if x < label.start {
+                    self.canvas
+                        .path(&[(x, line), (label.start - 1, line)], Stroke::Solid);
+                } else if x > label.end {
+                    self.canvas
+                        .path(&[(label.end + 1, line), (x, line)], Stroke::Solid);
+                }
+                self.canvas.text(x, line, "o");
+
+                let under = target.line + 1;
+                self.canvas.path(
+                    &[(target.input, under), (target.input, line)],
+                    Stroke::Solid,
+                );
+                self.canvas.text(target.input, under, "✗");
+                Some(label)
+            }
+        }
+    }
+
+    /// A delegation arrow: `├──[edit]───▶│` or `│◀───[edit]──┤`.
+    fn arrow(&mut self, from: isize, to: isize, line: isize, text: &str) -> Label {
+        let w = width(text);
+        if to < from {
+            let end = from - 3;
+            self.canvas
+                .path(&[(to + 1, line), (from, line)], Stroke::Solid);
+            self.canvas.text(to + 1, line, "◀");
+            let label = self.boxed(end - w + 1, line, text, (to, from));
+            Label {
+                input: end - 2,
+                bottom: end - 3,
+                leftward: true,
+                ..label
+            }
+        } else {
+            let start = from + 3;
+            let tip = if to == from { start - 1 } else { to - 1 };
+            self.canvas
+                .path(&[(from, line), (tip, line)], Stroke::Solid);
+            if to != from {
+                self.canvas.text(tip, line, "▶");
+            }
+            self.boxed(start, line, text, (from, to))
+        }
+    }
+
+    /// An invocation: `│◀════[[edit]]═══╡`, centred under what powers it.
+    fn invocation(
+        &mut self,
+        by: isize,
+        on: isize,
+        line: isize,
+        text: &str,
+        powered_by: Option<Label>,
+    ) -> Label {
+        let w = width(text);
+        let (low, high, default) = match on.cmp(&by) {
+            Ordering::Less => (on + 3, by - 1 - w, by - 3 - w),
+            Ordering::Greater => (by + 2, on - 2 - w, by + 3),
+            Ordering::Equal => (by + 2, by + 2, by + 2),
+        };
+        let preferred = powered_by.map_or(default, |p| p.start + (p.width() - w).div_euclid(2));
+        let start = preferred.min(high).max(low);
+
+        match on.cmp(&by) {
+            Ordering::Less => {
+                self.canvas
+                    .path(&[(on + 1, line), (by, line)], Stroke::Double);
+                self.canvas.text(on + 1, line, "◀");
+            }
+            Ordering::Greater => {
+                self.canvas
+                    .path(&[(by, line), (on - 1, line)], Stroke::Double);
+                self.canvas.text(on - 1, line, "▶");
+            }
+            Ordering::Equal => {
+                self.canvas
+                    .path(&[(by, line), (start - 1, line)], Stroke::Double);
+            }
+        }
+
+        let mut label = self.boxed(start, line, text, (on.min(by), on.max(by)));
+        // Powerlines drop in where they left the powering label, if that's
+        // above the box
+        label.input = powered_by
+            .map(|p| p.input)
+            .filter(|&x| label.covers(x))
+            .unwrap_or(label.start + w / 2);
+        label
+    }
+
+    /// Write `text` and describe it as a left-to-right label.
+    fn boxed(&mut self, start: isize, line: isize, text: &str, span: (isize, isize)) -> Label {
+        let end = start + width(text) - 1;
+        self.canvas.text(start, line, text);
+        Label {
+            start,
+            end,
+            line,
+            input: start + 2,
+            bottom: start + 3,
+            span,
+            leftward: false,
+        }
+    }
+
+    fn powerlines(&mut self, ix: EventIx) {
+        let Some(event) = self.diagram.event(ix) else {
+            return;
+        };
+        let Some(label) = self.label(ix) else {
+            return;
+        };
+
+        let port = match event {
+            Event::Delegate(_) => Port::Above {
+                x: label.input,
+                line: label.line,
+            },
+            Event::Invoke(_) => Port::Drop {
+                x: label.input,
+                line: label.line,
+            },
+            Event::Revoke(revoke) => Port::Side {
+                x: self.x(revoke.by),
+                line: label.line,
+            },
+        };
+
+        match event.authority() {
+            Authority::Route(route) => {
+                let mut from = route.source();
+                for &handle in route.through() {
+                    if let Some(through) = self.label(handle) {
+                        let x = if through.leftward {
+                            through.start - 2
+                        } else {
+                            through.end + 2
+                        };
+                        self.connect(
+                            from,
+                            Port::Above {
+                                x,
+                                line: through.line,
+                            },
+                        );
+                        self.canvas.text(x, through.line, "o");
+                    }
+                    from = handle;
+                }
+                self.connect(from, port);
+            }
+
+            // Authority over yourself peels straight off your own lifeline
+            Authority::Root => {
+                if let (Event::Delegate(cert), Port::Above { x, line }) = (event, port) {
+                    let lifeline = self.x(cert.issuer);
+                    let header = line - 1;
+                    let (peel, glyph) = if x < lifeline {
+                        (lifeline - 1, "╯")
+                    } else {
+                        (lifeline + 1, "╰")
+                    };
+                    self.canvas
+                        .path(&[(peel, header), (x, header), (x, line)], Stroke::Dashed);
+                    self.canvas.text(peel, header, glyph);
+                }
+            }
+
+            Authority::Unauthorized => {}
+        }
+    }
+
+    fn connect(&mut self, from: EventIx, to: Port) {
+        let Some(source) = self.label(from) else {
+            return;
+        };
+        let line = source.line;
+
+        let path = match to {
+            Port::Above { x, line: target } if x < source.span.0 || x > source.span.1 => {
+                let exit = source.top(x);
+                [(exit, line), (exit, line - 1), (x, line - 1), (x, target)]
+            }
+            Port::Above { x, line: target } => {
+                let exit = source.bottom;
+                [
+                    (exit, line),
+                    (exit, target - 1),
+                    (x, target - 1),
+                    (x, target),
+                ]
+            }
+            Port::Drop { x, line: target } => {
+                let exit = source.input;
+                [
+                    (exit, line),
+                    (exit, target - 1),
+                    (x, target - 1),
+                    (x, target),
+                ]
+            }
+            Port::Side { x, line: target } => {
+                // Straight into the handle; its `o` covers the last cell
+                let exit = source.bottom;
+                [(exit, line), (exit, target), (x, target), (x, target)]
+            }
+        };
+        self.canvas.path(&path, Stroke::Dashed);
+    }
+}
+
+const fn event_line(row: isize) -> isize {
+    ROW * row + 2
+}
+
+fn to_isize(n: usize) -> isize {
+    isize::try_from(n).unwrap_or(isize::MAX)
+}
+
+/// How a cell side is drawn. Later variants win when strokes overlap.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord)]
+enum Stroke {
+    #[default]
+    None,
+    Dashed,
+    Double,
+    Solid,
+}
+
+#[derive(Debug, Clone, Default)]
+struct Cell {
+    north: Stroke,
+    east: Stroke,
+    south: Stroke,
+    west: Stroke,
+    ink: Ink,
+}
+
+#[derive(Debug, Clone, Default)]
+enum Ink {
+    /// Draw whatever lines meet here.
+    #[default]
+    Lines,
+
+    /// Text, with any zero-width characters that follow it.
+    Text(String),
+
+    /// The right half of a wide character.
+    Covered,
+}
+
+/// A sparse grid of cells, addressed `(x, line)`. Columns may go negative;
+/// rendering shifts everything right if they do.
+#[derive(Debug, Default)]
+struct Canvas {
+    cells: BTreeMap<(isize, isize), Cell>,
+}
+
+impl Canvas {
+    fn cell(&mut self, x: isize, line: isize) -> &mut Cell {
+        self.cells.entry((line, x)).or_default()
+    }
+
+    /// Connect each pair of consecutive points with a straight run. Points
+    /// must share a row or column.
+    fn path(&mut self, points: &[(isize, isize)], stroke: Stroke) {
+        for pair in points.windows(2) {
+            let [(x0, y0), (x1, y1)] = *pair else {
+                continue;
+            };
+            let (dx, dy) = ((x1 - x0).signum(), (y1 - y0).signum());
+            let (mut x, mut y) = (x0, y0);
+            while (x, y) != (x1, y1) {
+                let (nx, ny) = (x + dx, y + dy);
+                let here = self.cell(x, y);
+                let there_side = match (dx, dy) {
+                    (1, _) => {
+                        here.east = here.east.max(stroke);
+                        &mut self.cell(nx, ny).west
+                    }
+                    (-1, _) => {
+                        here.west = here.west.max(stroke);
+                        &mut self.cell(nx, ny).east
+                    }
+                    (_, 1) => {
+                        here.south = here.south.max(stroke);
+                        &mut self.cell(nx, ny).north
+                    }
+                    _ => {
+                        here.north = here.north.max(stroke);
+                        &mut self.cell(nx, ny).south
+                    }
+                };
+                *there_side = (*there_side).max(stroke);
+                (x, y) = (nx, ny);
+            }
+        }
+    }
+
+    fn text(&mut self, x: isize, line: isize, text: &str) {
+        let mut at = x;
+        for c in text.chars() {
+            match char_width(c) {
+                0 => {
+                    if let Some(Cell {
+                        ink: Ink::Text(s), ..
+                    }) = self.cells.get_mut(&(line, at - 1))
+                    {
+                        s.push(c);
+                    }
+                }
+                w => {
+                    self.cell(at, line).ink = Ink::Text(String::from(c));
+                    if w == 2 {
+                        self.cell(at + 1, line).ink = Ink::Covered;
+                    }
+                    at += w;
+                }
+            }
+        }
+    }
+
+    /// The rightmost column with anything visible, from `line` down.
+    fn rightmost(&self, line: isize) -> isize {
+        self.cells
+            .iter()
+            .filter(|((y, _), cell)| *y >= line && cell.glyph() != Some(' '))
+            .map(|((_, x), _)| *x)
+            .max()
+            .unwrap_or_default()
+    }
+
+    fn render(&self) -> String {
+        let shift = self
+            .cells
+            .keys()
+            .map(|&(_, x)| x)
+            .min()
+            .unwrap_or_default()
+            .min(0);
+
+        let mut out = String::new();
+        let mut lines = self.cells.iter().peekable();
+        while let Some(&(&(y, _), _)) = lines.peek() {
+            let mut row = String::new();
+            let mut column = shift;
+            while let Some(((_, x), cell)) = lines.next_if(|((line, _), _)| *line == y) {
+                for _ in column..*x {
+                    row.push(' ');
+                }
+                match &cell.ink {
+                    Ink::Text(s) => row.push_str(s),
+                    Ink::Covered => {}
+                    Ink::Lines => row.push(cell.glyph().unwrap_or(' ')),
+                }
+                column = x + 1;
+            }
+            out.push_str(row.trim_end());
+            out.push('\n');
+        }
+        out
+    }
+}
+
+impl Cell {
+    /// The box-drawing character for the lines meeting here, if this cell
+    /// is lines rather than text.
+    fn glyph(&self) -> Option<char> {
+        use Stroke::{Dashed, Double, None, Solid};
+
+        if !matches!(self.ink, Ink::Lines) {
+            return Option::None;
+        }
+
+        let vertical = self.north.max(self.south);
+        let horizontal = self.west.max(self.east);
+        let sides = (
+            self.north != None,
+            self.east != None,
+            self.south != None,
+            self.west != None,
+        );
+
+        Some(match sides {
+            (false, false, false, false) => ' ',
+            // Double lines are only ever horizontal (invocations)
+            (_, false, _, false) => match vertical {
+                Solid | Double => '│',
+                Dashed | None => '┆',
+            },
+            (false, _, false, _) => match horizontal {
+                Solid => '─',
+                Double => '═',
+                Dashed | None => '┄',
+            },
+            (false, true, true, false) => '╭',
+            (false, false, true, true) => '╮',
+            (true, true, false, false) => '╰',
+            (true, false, false, true) => '╯',
+            (true, true, true, true) => {
+                if horizontal == Double {
+                    '╪'
+                } else {
+                    '┼'
+                }
+            }
+            (true, true, true, false) => {
+                if horizontal == Double {
+                    '╞'
+                } else {
+                    '├'
+                }
+            }
+            (true, false, true, true) => {
+                if horizontal == Double {
+                    '╡'
+                } else {
+                    '┤'
+                }
+            }
+            (false, true, true, true) => '┬',
+            (true, true, false, true) => '┴',
+        })
+    }
+}
+
+/// Display width in a monospace terminal: a small approximation of East
+/// Asian Width that covers combining marks, CJK, and emoji.
+const fn char_width(c: char) -> isize {
+    match c as u32 {
+        0x0300..=0x036F | 0x200B..=0x200F | 0xFE00..=0xFE0F | 0xE0100..=0xE01EF => 0,
+        0x1100..=0x115F
+        | 0x2E80..=0xA4CF
+        | 0xAC00..=0xD7A3
+        | 0xF900..=0xFAFF
+        | 0xFE30..=0xFE4F
+        | 0xFF00..=0xFF60
+        | 0xFFE0..=0xFFE6
+        | 0x1F300..=0x1F64F
+        | 0x1F900..=0x1FAFF
+        | 0x20000..=0x3FFFD => 2,
+        _ => 1,
+    }
+}
+
+fn width(s: &str) -> isize {
+    s.chars().map(char_width).sum()
+}

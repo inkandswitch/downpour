@@ -1,0 +1,8 @@
+rain
+%% Keyhive notebook 08, "Plain Text". The .txt is copied from the post.
+(Doc)-[edit]->(Alice)            : 1. The Doc grants Alice Edit
+(Alice)-[edit]->(Bob)            : 2. Alice passes Edit to Bob
+(Bob)=[[edit]]=>(Doc)            : 3. Bob edits the Doc
+(Bob)-[read]->(Carol)            : 4. Bob gives Carol Read
+(Carol)-[read]->(Dan)            : 5. Carol shares Read with Dan
+(Alice)-<revoke>-x[carol-dan]    : 6. Alice revokes Carol→Dan

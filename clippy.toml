@@ -1,0 +1,3 @@
+# Tests may assert invariants with `expect("reason")`; library code may not
+allow-expect-in-tests = true
+allow-indexing-slicing-in-tests = true

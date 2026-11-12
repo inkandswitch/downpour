@@ -20,6 +20,7 @@ serde_json = { workspace = true, optional = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]
+arbitrary = { workspace = true, features = ["derive"] }
 bolero = { workspace = true, features = ["arbitrary"] }
 rain_diagram_core = { path = ".", features = ["bolero", "serde"] }
 testresult = { workspace = true }

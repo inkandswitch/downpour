@@ -1,0 +1,25 @@
+ (Ledger)       (Alice)     (Operators)     (東京)         (Doc)
+     │╰┄┄┄╮        │             │             │             │
+     ├──[admin]────┼────────────▶│             │             │
+     │    ✗┆       │             │             │             │
+     │    │╰┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄╮    │             │             │
+     │    │        │◀────[edit]──┤             │             │   over a long name
+     │    │        │        ✗    │             │             │
+     │    │        │        │    │        ╭┄┄┄╯│             │
+     │    │        │◀───────┼────┼─────[read]──┤             │   wide characters 📱 in names and notes
+     │    │        │        │    │             │             │
+     │    │        │        │    │             │             │
+     │◀───┼[edit]──┤        │    │             │             │   no authority over Doc: no powerline
+     │    │        │        │    │             │             │
+     │    │        │        │    │             │             │
+     │◀═[[admin]]══╡        │    │             │             │   more than Alice holds
+     │    │        │        │    │             │             │
+     │    │        │        │    │             │             │
+     ╞═[[edit]]    │        │    │             │             │   acting on yourself
+     │    │        │        │    │             │             │
+     │    │        │        │    │             │             │
+     │    │        │     <revoke>├─────────────o             │   not upstream, so no effect (revoker right of its target)
+     │    │        │             │             │             │
+     │    │        │             │             │             │
+     o─<revoke>    │             │             │             │   the root revokes Ledger→Operators
+     │             │             │             │             │

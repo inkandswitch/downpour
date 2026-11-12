@@ -1,0 +1,19 @@
+ (Doc)       (Alice)       (Bob)       (Carol)       (Dan)
+   │╰┄┄┄╮ ╭┄┄┄┄┄┼┄┄┄┄╮       │            │            │
+   ├──[edit]───▶│    ┆       │            │            │   1. The Doc grants Alice Edit
+   │     ┆      │    ┆       │            │            │
+   │     ┆      │    ┆ ╭┄┄┄┄┄┼┄┄┄┄╮       │            │
+   │     ┆      ├──[edit]───▶│    ┆       │            │   2. Alice passes Edit to Bob
+   │     ┆      │    ┆       │    ┆       │            │
+   │     ┆      │    ┆       │    ┆       │            │
+   │◀════╪══════╪═[[edit]]═══╡    ┆       │            │   3. Bob edits the Doc
+   │     ┆      │            │    ┆       │            │
+   │     ┆      │            │    ┆ ╭┄┄┄┄┄┼┄┄┄┄╮       │
+   │     ┆      │            ├──[read]───▶│    ┆       │   4. Bob gives Carol Read
+   │     ┆      │            │            │    ┆       │
+   │     ┆      │            │            │    ┆       │
+   │     ┆      │            │            ├──[read]───▶│   5. Carol shares Read with Dan
+   │     ┆      │            │            │    ✗       │
+   │     ┆      │            │            │    │       │
+   │     ╰┄┄┄┄┄┄o────────────┼────────────┼─<revoke>   │   6. Alice revokes Carol→Dan
+   │            │            │            │            │

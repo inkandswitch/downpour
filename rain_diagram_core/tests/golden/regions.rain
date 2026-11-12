@@ -1,0 +1,12 @@
+rain
+%% Regions: nested, captioned, brackets down the right of the grid
+(Doc)-[edit]->(Alice)            : The Doc grants Alice Edit
+(Alice)-[edit(Doc)]->(Bob)       : Alice passes Edit to Bob
+>>> A: Bob does stuff
+(Bob)=[[edit]]=>(Doc)            : Bob edits the Doc
+>>> B: Carol joins in
+(Bob)-[read]->(Carol)            : Bob gives Carol Read
+(Carol)=[[read]]=>(Doc)          : Carol reads the Doc
+<<< B
+<<< A
+(Alice)-<revoke>-x[bob-carol]    : Alice cuts Carol off

@@ -57,6 +57,9 @@ pub struct Document {
 
     /// Delegations, invocations, and revocations, in causal order.
     pub statements: Vec<Spanned<Statement>>,
+
+    /// Labelled regions (`>>> A: note` … `<<< A`), in the order they open.
+    pub regions: Vec<Spanned<Region>>,
 }
 
 impl fmt::Display for Document {
@@ -73,10 +76,59 @@ impl fmt::Display for Document {
             writeln!(f)?;
         }
 
-        self.statements
-            .iter()
-            .try_for_each(|statement| writeln!(f, "{}", statement.node))
+        // Regions are interleaved with the statements they cover: at each
+        // position, close what ends here (innermost first), then open what
+        // starts here (in order)
+        let len = self.statements.len();
+        for at in 0..=len {
+            let mut closing: Vec<&Region> = self
+                .regions
+                .iter()
+                .map(|r| &r.node)
+                .filter(|r| r.statements.end == at)
+                .collect();
+            closing.reverse();
+            closing.sort_by_key(|r| core::cmp::Reverse(r.statements.start));
+            for region in closing {
+                writeln!(f, "<<< {}", region.id)?;
+            }
+
+            for region in self.regions.iter().map(|r| &r.node) {
+                if region.statements.start == at && at < len {
+                    match &region.note {
+                        Some(note) => writeln!(f, ">>> {}: {note}", region.id)?,
+                        None => writeln!(f, ">>> {}", region.id)?,
+                    }
+                }
+            }
+
+            if let Some(statement) = self.statements.get(at) {
+                writeln!(f, "{}", statement.node)?;
+            }
+        }
+        Ok(())
     }
+}
+
+/// A labelled stretch of statements, drawn as a coloured box:
+///
+/// ```text
+/// >>> A: Bob does stuff
+/// (Bob)=[[edit]]=>(Doc)
+/// <<< A
+/// ```
+///
+/// Regions may nest or overlap, since each is closed by name.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Region {
+    /// The name that opens and closes it. Same rules as certificate labels.
+    pub id: CertId,
+
+    /// What it's about, if anything.
+    pub note: Option<Text>,
+
+    /// The statements it covers, by index. Never empty.
+    pub statements: core::ops::Range<usize>,
 }
 
 /// One line of the diagram.
@@ -363,12 +415,6 @@ impl Span {
     }
 }
 
-impl fmt::Display for Span {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}..{}", self.start, self.end)
-    }
-}
-
 /// A node and where it came from in the source.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Spanned<T> {
@@ -449,7 +495,7 @@ fn write_note(f: &mut fmt::Formatter<'_>, note: Option<&Text>) -> fmt::Result {
 
 #[cfg(feature = "arbitrary")]
 mod arbitrary_impls {
-    use super::{CertId, Document, Kind, Name, Span, Spanned, Statement, Text};
+    use super::{CertId, Document, Kind, Name, Region, Span, Spanned, Statement, Text};
     use alloc::{string::String, vec::Vec};
     use arbitrary::{Arbitrary, Result, Unstructured};
 
@@ -496,7 +542,7 @@ mod arbitrary_impls {
 
     impl<'a> Arbitrary<'a> for Document {
         fn arbitrary(u: &mut Unstructured<'a>) -> Result<Self> {
-            Ok(Self {
+            Self {
                 kind: Kind::arbitrary(u)?,
                 title: Option::<Text>::arbitrary(u)?.map(spanned),
                 participants: Vec::<Name>::arbitrary(u)?
@@ -507,7 +553,33 @@ mod arbitrary_impls {
                     .into_iter()
                     .map(spanned)
                     .collect(),
-            })
+                regions: Vec::new(),
+            }
+            .with_regions(u)
+        }
+    }
+
+    impl Document {
+        /// Add up to three non-empty regions with distinct ids.
+        fn with_regions(mut self, u: &mut Unstructured<'_>) -> Result<Self> {
+            let len = self.statements.len();
+            if len == 0 {
+                return Ok(self);
+            }
+            for n in 0..u.int_in_range(0..=3_usize)? {
+                let start = u.int_in_range(0..=len - 1)?;
+                let end = u.int_in_range(start + 1..=len)?;
+                let id = CertId::new(&alloc::format!("r{n}"))
+                    .unwrap_or_else(|_| unreachable!("r0, r1, … are valid ids"));
+                self.regions.push(spanned(Region {
+                    id,
+                    note: Option::<Text>::arbitrary(u)?,
+                    statements: start..end,
+                }));
+            }
+            // `regions` is in opening order, which is what parsing produces
+            self.regions.sort_by_key(|r| r.node.statements.start);
+            Ok(self)
         }
     }
 }

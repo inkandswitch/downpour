@@ -5,9 +5,14 @@
 //! subject is inferred, and every certificate reference (`via`, revocation
 //! targets) points at exactly one earlier certificate. A `Diagram` can only
 //! be built this way, so renderers never have to handle a dangling reference.
+//!
+//! Resolution also runs the [authority analysis](crate::authority): each
+//! event records the route its authority took, and the diagram can answer
+//! what was valid, revoked, or reachable at any moment.
 
 use crate::{
     ast::{CertId, Delegation, Document, Kind, Name, Span, Spanned, Statement, Text},
+    authority::{Authority, Diagnostic, Ledger, Reach, Status},
     level::Level,
 };
 use alloc::{
@@ -25,6 +30,9 @@ pub struct Diagram {
     title: Option<Text>,
     principals: Vec<Principal>,
     events: Vec<Spanned<Event>>,
+    regions: Vec<Region>,
+    ledger: Ledger,
+    diagnostics: Vec<Diagnostic>,
 }
 
 impl Diagram {
@@ -67,14 +75,33 @@ impl Diagram {
         }
 
         for statement in &doc.statements {
-            let node = resolver
+            let span = statement.span;
+            let (mut node, via) = resolver
                 .statement(&statement.node)
-                .map_err(|kind| ResolveError::new(statement.span, kind))?;
+                .map_err(|kind| ResolveError::new(span, kind))?;
 
-            resolver.events.push(Spanned {
-                node,
-                span: statement.span,
-            });
+            let Resolver {
+                principals,
+                events,
+                ledger,
+                diagnostics,
+                ..
+            } = &mut resolver;
+            let names = |ix: PrincipalIx| {
+                principals.get(ix.0).map_or_else(
+                    || unreachable!("indices come from intern"),
+                    |p| p.name.clone(),
+                )
+            };
+
+            let (authority, diagnostic) = match &node {
+                Event::Delegate(cert) => ledger.delegate(events, cert, &via, span, &names),
+                Event::Invoke(invoke) => ledger.invoke(events, invoke, span, &names),
+                Event::Revoke(revoke) => ledger.revoke(events, revoke, span, &names),
+            };
+            *node.authority_mut() = authority;
+            diagnostics.extend(diagnostic);
+            events.push(Spanned { node, span });
         }
 
         Ok(Self {
@@ -82,6 +109,18 @@ impl Diagram {
             title: doc.title.as_ref().map(|t| t.node.clone()),
             principals: resolver.principals,
             events: resolver.events,
+            regions: doc
+                .regions
+                .iter()
+                .map(|r| Region {
+                    id: r.node.id.clone(),
+                    note: r.node.note.clone(),
+                    first: EventIx(r.node.statements.start),
+                    last: EventIx(r.node.statements.end.saturating_sub(1)),
+                })
+                .collect(),
+            ledger: resolver.ledger,
+            diagnostics: resolver.diagnostics,
         })
     }
 
@@ -102,6 +141,15 @@ impl Diagram {
     #[must_use]
     pub fn principals(&self) -> &[Principal] {
         &self.principals
+    }
+
+    /// Find a principal by its [key](Principal::key).
+    #[must_use]
+    pub fn principal_by_key(&self, key: &str) -> Option<PrincipalIx> {
+        self.principals
+            .iter()
+            .position(|p| p.key == key)
+            .map(PrincipalIx)
     }
 
     /// Look up a principal.
@@ -131,9 +179,124 @@ impl Diagram {
         }
     }
 
+    /// The index of the `index`th event, if there is one.
+    #[must_use]
+    pub const fn event_ix(&self, index: usize) -> Option<EventIx> {
+        if index < self.events.len() {
+            Some(EventIx(index))
+        } else {
+            None
+        }
+    }
+
+    /// Every event index, in causal order.
+    pub fn event_ixs(&self) -> impl DoubleEndedIterator<Item = EventIx> + ExactSizeIterator {
+        (0..self.events.len()).map(EventIx)
+    }
+
+    /// The last event: the moment after everything has happened.
+    #[must_use]
+    pub const fn now(&self) -> Option<EventIx> {
+        match self.events.len() {
+            0 => None,
+            len => Some(EventIx(len - 1)),
+        }
+    }
+
+    /// An event's standing as of `now` (inclusive), or `None` if it hasn't
+    /// happened yet.
+    #[must_use]
+    pub fn status(&self, ix: EventIx, now: EventIx) -> Option<Status> {
+        self.ledger.status(&self.events, ix, now)
+    }
+
+    /// The level a certificate actually grants, after attenuation. `None`
+    /// for unauthorised certificates and non-certificate events.
+    #[must_use]
+    pub fn granted(&self, ix: EventIx) -> Option<Level> {
+        self.ledger.granted(ix)
+    }
+
+    /// Everything `holder` can act on as of `now`, at the highest level
+    /// available. Excludes the holder itself.
+    #[must_use]
+    pub fn reach(&self, holder: PrincipalIx, now: EventIx) -> Vec<Reach> {
+        self.ledger
+            .reach(&self.events, holder, self.principals.len(), now)
+    }
+
+    /// Events that rely on `cert`, which revoking it would void.
+    pub fn dependents(&self, cert: EventIx) -> impl Iterator<Item = EventIx> + '_ {
+        self.event_ixs()
+            .filter(move |&ix| ix != cert && self.ledger.relies_on(ix, cert))
+    }
+
+    /// Labelled regions, in the order they open.
+    #[must_use]
+    pub fn regions(&self) -> &[Region] {
+        &self.regions
+    }
+
+    /// A lane for each region, so regions that share rows never share a
+    /// lane: outer regions get lower lanes than the regions nested inside
+    /// them, and overlapping regions get different ones.
+    pub(crate) fn region_lanes(&self) -> Vec<usize> {
+        let mut order: Vec<(usize, &Region)> = self.regions.iter().enumerate().collect();
+        // Earlier first; for the same start, longer (outer) first
+        order.sort_by_key(|(_, r)| (r.first, core::cmp::Reverse(r.last)));
+
+        let mut placed: Vec<(usize, &Region, usize)> = Vec::with_capacity(order.len());
+        for (i, region) in order {
+            let taken: BTreeSet<usize> = placed
+                .iter()
+                .filter(|(_, other, _)| other.first <= region.last && region.first <= other.last)
+                .map(|&(_, _, lane)| lane)
+                .collect();
+            // n regions can take at most n lanes, so one of 0..=n is free
+            let lane = (0..=taken.len())
+                .find(|lane| !taken.contains(lane))
+                .unwrap_or(taken.len());
+            placed.push((i, region, lane));
+        }
+
+        placed.sort_by_key(|&(i, _, _)| i);
+        placed.into_iter().map(|(_, _, lane)| lane).collect()
+    }
+
+    /// Things that resolve but don't do what they look like they do.
+    #[must_use]
+    pub fn diagnostics(&self) -> &[Diagnostic] {
+        &self.diagnostics
+    }
+
     /// A principal's key, or `""` for an index from another diagram.
     pub(crate) fn key(&self, ix: PrincipalIx) -> &str {
         self.principal(ix).map_or("", |p| p.key.as_str())
+    }
+}
+
+/// A labelled stretch of events (`>>> A: note` … `<<< A`), drawn as a
+/// coloured box.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Region {
+    /// Its name.
+    pub id: CertId,
+
+    /// What it's about, if anything.
+    pub note: Option<Text>,
+
+    /// The first event inside it.
+    pub first: EventIx,
+
+    /// The last event inside it.
+    pub last: EventIx,
+}
+
+impl Region {
+    /// The note, or the id if there's no note.
+    #[must_use]
+    pub fn caption(&self) -> &str {
+        self.note.as_ref().map_or(self.id.as_str(), Text::as_str)
     }
 }
 
@@ -164,6 +327,10 @@ impl Principal {
 pub struct PrincipalIx(usize);
 
 impl PrincipalIx {
+    pub(crate) const fn new(index: usize) -> Self {
+        Self(index)
+    }
+
     /// The column index.
     #[must_use]
     pub const fn index(self) -> usize {
@@ -176,6 +343,10 @@ impl PrincipalIx {
 pub struct EventIx(usize);
 
 impl EventIx {
+    pub(crate) const fn new(index: usize) -> Self {
+        Self(index)
+    }
+
     /// The row index.
     #[must_use]
     pub const fn index(self) -> usize {
@@ -196,6 +367,26 @@ pub enum Event {
     Revoke(Revoke),
 }
 
+impl Event {
+    /// Why the event was allowed.
+    #[must_use]
+    pub const fn authority(&self) -> &Authority {
+        match self {
+            Self::Delegate(cert) => &cert.authority,
+            Self::Invoke(invoke) => &invoke.authority,
+            Self::Revoke(revoke) => &revoke.authority,
+        }
+    }
+
+    const fn authority_mut(&mut self) -> &mut Authority {
+        match self {
+            Self::Delegate(cert) => &mut cert.authority,
+            Self::Invoke(invoke) => &mut invoke.authority,
+            Self::Revoke(revoke) => &mut revoke.authority,
+        }
+    }
+}
+
 /// A resolved certificate.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Cert {
@@ -211,11 +402,12 @@ pub struct Cert {
     /// What it grants authority over.
     pub subject: PrincipalIx,
 
-    /// The level it claims. What actually flows may be less (attenuation).
+    /// The level it claims. What actually flows may be less: see
+    /// [`Diagram::granted`].
     pub level: Level,
 
-    /// Certificates carrying the subject's authority to the issuer.
-    pub via: Vec<EventIx>,
+    /// How the issuer came to hold the subject.
+    pub authority: Authority,
 
     /// A note, if any.
     pub note: Option<Text>,
@@ -233,6 +425,9 @@ pub struct Invoke {
     /// What is acted on.
     pub on: PrincipalIx,
 
+    /// How the actor came to hold the subject.
+    pub authority: Authority,
+
     /// A note, if any.
     pub note: Option<Text>,
 }
@@ -246,6 +441,9 @@ pub struct Revoke {
     /// The certificate revoked.
     pub target: EventIx,
 
+    /// Where the revoker's power to revoke came from.
+    pub authority: Authority,
+
     /// A note, if any.
     pub note: Option<Text>,
 }
@@ -257,6 +455,8 @@ struct Resolver {
     keys: BTreeSet<String>,
     labels: BTreeSet<CertId>,
     events: Vec<Spanned<Event>>,
+    ledger: Ledger,
+    diagnostics: Vec<Diagnostic>,
 }
 
 impl Resolver {
@@ -288,45 +488,62 @@ impl Resolver {
         ix
     }
 
-    fn statement(&mut self, statement: &Statement) -> Result<Event, ResolveErrorKind> {
+    /// Resolve names. Authority is filled in afterwards by the ledger; `via`
+    /// is returned alongside because it only constrains that analysis.
+    fn statement(
+        &mut self,
+        statement: &Statement,
+    ) -> Result<(Event, Vec<EventIx>), ResolveErrorKind> {
         match statement {
-            Statement::Delegate(d) => self.delegate(d).map(Event::Delegate),
-            Statement::Invoke(i) => Ok(Event::Invoke(Invoke {
-                by: self.intern(&i.by),
-                level: i.level,
-                on: self.intern(&i.on),
-                note: i.note.clone(),
-            })),
-            Statement::Revoke(r) => Ok(Event::Revoke(Revoke {
-                by: self.intern(&r.by),
-                target: self.lookup(&r.target)?,
-                note: r.note.clone(),
-            })),
+            Statement::Delegate(d) => self
+                .delegate(d)
+                .map(|(cert, via)| (Event::Delegate(cert), via)),
+            Statement::Invoke(i) => Ok((
+                Event::Invoke(Invoke {
+                    by: self.intern(&i.by),
+                    level: i.level,
+                    on: self.intern(&i.on),
+                    authority: Authority::Unauthorized,
+                    note: i.note.clone(),
+                }),
+                Vec::new(),
+            )),
+            Statement::Revoke(r) => Ok((
+                Event::Revoke(Revoke {
+                    by: self.intern(&r.by),
+                    target: self.lookup(&r.target)?,
+                    authority: Authority::Unauthorized,
+                    note: r.note.clone(),
+                }),
+                Vec::new(),
+            )),
         }
     }
 
-    fn delegate(&mut self, d: &Delegation) -> Result<Cert, ResolveErrorKind> {
+    fn delegate(&mut self, d: &Delegation) -> Result<(Cert, Vec<EventIx>), ResolveErrorKind> {
         let issuer = self.intern(&d.issuer);
         let audience = self.intern(&d.audience);
         let subject = match &d.subject {
             Some(subject) => self.intern(subject),
-            None => self.infer_subject(issuer)?,
+            None => self.infer_subject(issuer, d.level)?,
         };
 
-        let via = d
-            .via
-            .iter()
-            .map(|id| {
-                let ix = self.lookup(id)?;
-                match self.cert(ix) {
-                    Some(cert) if cert.audience == issuer => Ok(ix),
-                    Some(_) | None => Err(ResolveErrorKind::ViaNotHeldByIssuer {
-                        via: id.clone(),
-                        issuer: d.issuer.clone(),
-                    }),
-                }
-            })
-            .collect::<Result<_, _>>()?;
+        // `via` is a chain: the first is held by the issuer, and each next
+        // one by the previous one's subject
+        let mut via = Vec::with_capacity(d.via.len());
+        let mut holder = (issuer, &d.issuer);
+        for id in &d.via {
+            let ix = self.lookup(id)?;
+            let cert = self.cert(ix).filter(|cert| cert.audience == holder.0);
+            let Some(cert) = cert else {
+                return Err(ResolveErrorKind::ViaNotHeld {
+                    via: id.clone(),
+                    holder: holder.1.clone(),
+                });
+            };
+            via.push(ix);
+            holder = (cert.subject, self.name_ref(cert.subject));
+        }
 
         let id = match &d.id {
             Some(id) => {
@@ -338,20 +555,34 @@ impl Resolver {
             None => self.implicit_id(issuer, audience),
         };
 
-        Ok(Cert {
+        let cert = Cert {
             id,
             issuer,
             audience,
             subject,
             level: d.level,
-            via,
+            authority: Authority::Unauthorized,
             note: d.note.clone(),
-        })
+        };
+        Ok((cert, via))
     }
 
-    /// With no explicit subject, use the one other subject the issuer holds
-    /// authority over, or the issuer itself if it holds none.
-    fn infer_subject(&self, issuer: PrincipalIx) -> Result<PrincipalIx, ResolveErrorKind> {
+    /// With no explicit subject:
+    ///
+    /// - Admin is over the issuer itself. Granting Admin is almost always
+    ///   ownership or group membership: `(Team)-[admin]->(Alice)` adds Alice
+    ///   to Team, even if Team already holds a Doc.
+    /// - Anything else passes on the one other subject the issuer holds, as
+    ///   in `(Alice)-[edit]->(Bob)`, or is over the issuer if it holds none.
+    fn infer_subject(
+        &self,
+        issuer: PrincipalIx,
+        level: Level,
+    ) -> Result<PrincipalIx, ResolveErrorKind> {
+        if level == Level::Admin {
+            return Ok(issuer);
+        }
+
         let held: BTreeSet<PrincipalIx> = self
             .certs()
             .filter(|(_, cert)| cert.audience == issuer && cert.subject != issuer)
@@ -398,10 +629,13 @@ impl Resolver {
     }
 
     fn name(&self, ix: PrincipalIx) -> Name {
-        self.principals.get(ix.0).map_or_else(
-            || unreachable!("indices come from intern"),
-            |p| p.name.clone(),
-        )
+        self.name_ref(ix).clone()
+    }
+
+    fn name_ref(&self, ix: PrincipalIx) -> &Name {
+        self.principals
+            .get(ix.0)
+            .map_or_else(|| unreachable!("indices come from intern"), |p| &p.name)
     }
 
     fn implicit_id(&self, issuer: PrincipalIx, audience: PrincipalIx) -> CertId {
@@ -482,14 +716,15 @@ pub enum ResolveErrorKind {
         candidates: Vec<Name>,
     },
 
-    /// A `via` certificate isn't one the issuer received.
-    #[error("`{via}` is not a certificate to {issuer}, so it can't carry authority for them")]
-    ViaNotHeldByIssuer {
+    /// A `via` certificate isn't held by the issuer (for the first) or by
+    /// the previous one's subject (for the rest).
+    #[error("`{via}` is not a certificate to {holder}, so it can't carry authority for them")]
+    ViaNotHeld {
         /// The `via` label.
         via: CertId,
 
-        /// The issuer of the delegation.
-        issuer: Name,
+        /// Who should have held it.
+        holder: Name,
     },
 }
 
@@ -528,6 +763,23 @@ mod tests {
             keys(&d),
             ["bob", "comment-thread-1", "commenters", "bob-2", "p"]
         );
+        Ok(())
+    }
+
+    #[test]
+    fn colliding_keys_get_suffixes() -> TestResult {
+        let d = resolve("rain\n(A)-[read]->(a)\n(a!)-[read]->(Ä)")?;
+        assert_eq!(keys(&d), ["a", "a-2", "a-3", "ä"]);
+        Ok(())
+    }
+
+    #[test]
+    fn event_indices_are_checked() -> TestResult {
+        let d = resolve("rain\n(A)-[read]->(B)\n(B)=[[read]]=>(A)")?;
+        assert_eq!(d.event_ix(1), Some(EventIx(1)));
+        assert_eq!(d.event_ix(2), None);
+        assert_eq!(d.now(), Some(EventIx(1)));
+        assert_eq!(resolve("rain")?.now(), None);
         Ok(())
     }
 
@@ -625,8 +877,10 @@ mod tests {
              (Alice)-[edit(Doc) via ta]->(Bob)",
         )?;
         assert_eq!(
-            ok.cert(EventIx(2)).map(|c| c.via.clone()),
-            Some(Vec::from([EventIx(1)]))
+            ok.cert(EventIx(2))
+                .and_then(|c| c.authority.route())
+                .map(|r| (r.source(), r.through().to_vec())),
+            Some((EventIx(0), Vec::from([EventIx(1)])))
         );
 
         assert!(matches!(
@@ -635,7 +889,7 @@ mod tests {
                  dt: (Doc)-[edit]->(Team)
                  (Alice)-[edit(Doc) via dt]->(Bob)",
             ),
-            Some(ResolveErrorKind::ViaNotHeldByIssuer { .. })
+            Some(ResolveErrorKind::ViaNotHeld { .. })
         ));
         Ok(())
     }

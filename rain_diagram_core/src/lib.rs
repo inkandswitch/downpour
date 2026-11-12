@@ -22,23 +22,29 @@
 //! (Alice)-<revoke>-x[cd]                  : Alice revokes Carol→Dan
 //! ```
 //!
-//! | Form                                 | Meaning                                                    |
-//! |--------------------------------------|------------------------------------------------------------|
-//! | `(A)-[edit(S)]->(B)`                 | A delegates Edit over S to B                               |
-//! | `(A)-[edit]->(B)`                    | Same, with S inferred from what A holds                     |
-//! | `(A)-[edit(S) via ta]->(B)`          | A's authority over S arrives through certificate `ta`     |
-//! | `label: (A)-[…]->(B)`                | Name a certificate (otherwise it's implicitly `a-b`)       |
-//! | `(B)=[[edit]]=>(S)`                  | B uses its Edit authority on S                             |
-//! | `(A)-<revoke>-x[label]`              | A revokes the certificate `label`                          |
-//! | `participant A, B`                   | Fix column order                                           |
-//! | `title …`, `: note`, `%% comment`    | Annotations                                                |
+//! | Form                              | Meaning                                                    |
+//! |-----------------------------------|------------------------------------------------------------|
+//! | `(A)-[edit(S)]->(B)`              | A delegates Edit over S to B                               |
+//! | `(A)-[edit]->(B)`                 | Same, with S inferred (`admin`: A itself; else what A has) |
+//! | `(A)-[edit(S) via ta]->(B)`       | Route A's authority through certificate `ta`               |
+//! | `label: (A)-[…]->(B)`             | Name a certificate (otherwise it's implicitly `a-b`)       |
+//! | `(B)=[[edit]]=>(S)`               | B uses its Edit authority on S                             |
+//! | `(A)-<revoke>-x[label]`           | A revokes the certificate `label`                          |
+//! | `>>> A: note` … `<<< A`           | A coloured, captioned region around the statements between |
+//! | `participant A, B`                | Fix column order                                           |
+//! | `title …`, `: note`, `%% comment` | Annotations                                                |
 //!
 //! Levels are `admin`, `edit`, `read`, and `relay` (or 👑 ✏️ 👀 📡).
 //!
 //! # Pipeline
 //!
 //! ```text
-//! source ──parser::document──▶ ast::Document ──Diagram::resolve──▶ diagram::Diagram ──▶ renderers
+//! source ──parser::document──▶ ast::Document ──Diagram::resolve──▶ diagram::Diagram
+//!                                                  (names, then authority analysis)
+//!                                                                          │
+//!                         ┌────────────────────────────┬───────────────────┤
+//!                         ▼                            ▼                   ▼
+//!                 Diagram::to_text             Diagram::to_svg   Diagram::to_site_json
 //! ```
 //!
 //! [`parse`] runs both steps.
@@ -63,12 +69,16 @@
 extern crate alloc;
 
 pub mod ast;
+pub mod authority;
 pub mod diagram;
 pub mod level;
 pub mod parser;
 
 #[cfg(feature = "serde")]
 pub mod site_json;
+
+pub mod svg;
+pub mod text;
 
 use ast::Span;
 use diagram::{Diagram, ResolveError};

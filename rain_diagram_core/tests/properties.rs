@@ -1,12 +1,18 @@
 //! Property tests for the parser and resolver.
 
+mod common;
+
 use bolero::check;
 use rain_diagram_core::{ast::Document, parser};
 
 /// Printing a document and parsing it back gives the same document.
 #[test]
 fn display_parse_roundtrip() {
-    check!().with_arbitrary::<Document>().for_each(|doc| {
+    check!().with_type::<Vec<u8>>().for_each(|bytes| {
+        let Some(doc) = common::arbitrary::<Document>(bytes) else {
+            return;
+        };
+        let doc = &doc;
         let source = doc.to_string();
         let reparsed = parser::document(&source);
         assert!(
@@ -37,6 +43,14 @@ fn display_parse_roundtrip() {
                 .eq(doc.statements.iter().map(|s| &s.node)),
             "{source}"
         );
+        assert!(
+            reparsed
+                .regions
+                .iter()
+                .map(|r| &r.node)
+                .eq(doc.regions.iter().map(|r| &r.node)),
+            "{source}"
+        );
     });
 }
 
@@ -56,7 +70,11 @@ fn never_panics_and_spans_are_in_bounds() {
 /// Every span on a parsed statement covers exactly its source line.
 #[test]
 fn statement_spans_cover_their_lines() {
-    check!().with_arbitrary::<Document>().for_each(|doc| {
+    check!().with_type::<Vec<u8>>().for_each(|bytes| {
+        let Some(doc) = common::arbitrary::<Document>(bytes) else {
+            return;
+        };
+        let doc = &doc;
         let source = doc.to_string();
         if let Ok(reparsed) = parser::document(&source) {
             for (statement, original) in reparsed.statements.iter().zip(&doc.statements) {

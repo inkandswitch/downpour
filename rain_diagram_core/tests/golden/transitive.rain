@@ -1,0 +1,8 @@
+rain
+title Transitive authority through a group
+(Doc)-[edit]->(Team)             : Doc grants Team Edit
+(Team)-[admin]->(Alice)          : Alice joins Team
+(Alice)-[edit(Doc)]->(Bob)       : derived route: through Team
+(Bob)=[[edit]]=>(Doc)
+(Bob)-[read]->(Alice)            : leftward, powered from below
+(Doc)-<revoke>-x[doc-team]       : the root revokes; everything downstream is void

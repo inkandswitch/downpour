@@ -21,11 +21,11 @@
 use crate::{
     ast::{
         CertId, Delegation, Document, InvalidCertId, InvalidName, InvalidText, Invocation, Kind,
-        Name, Revocation, Span, Spanned, Statement, Text,
+        Name, Region, Revocation, Span, Spanned, Statement, Text,
     },
     level::{Level, UnknownLevel},
 };
-use alloc::{string::String, vec::Vec};
+use alloc::{collections::BTreeMap, string::String, vec::Vec};
 use thiserror::Error;
 
 /// Parse source text into a [`Document`].
@@ -65,10 +65,48 @@ pub fn document(source: &str) -> Result<Document, ParseError> {
         title: None,
         participants: Vec::new(),
         statements: Vec::new(),
+        regions: Vec::new(),
     };
+    // Open regions: id → index into `doc.regions`
+    let mut open: BTreeMap<CertId, usize> = BTreeMap::new();
 
     for (span, line) in lines {
-        if let Some(rest) = directive(line, "title") {
+        if let Some(rest) = line.strip_prefix(">>>") {
+            let (id, note) = match rest.split_once(':') {
+                Some((id, note)) => (id, Some(note.trim())),
+                None => (rest, None),
+            };
+            let id = CertId::new(id.trim()).map_err(|e| ParseError::new(span, e.into()))?;
+            let note = note
+                .map(Text::new)
+                .transpose()
+                .map_err(|e| ParseError::new(span, e.into()))?;
+            if doc.regions.iter().any(|r| r.node.id == id) {
+                return Err(ParseError::new(span, ParseErrorKind::DuplicateRegion(id)));
+            }
+            open.insert(id.clone(), doc.regions.len());
+            let at = doc.statements.len();
+            doc.regions.push(Spanned {
+                node: Region {
+                    id,
+                    note,
+                    statements: at..at,
+                },
+                span,
+            });
+        } else if let Some(rest) = line.strip_prefix("<<<") {
+            let id = CertId::new(rest.trim()).map_err(|e| ParseError::new(span, e.into()))?;
+            let Some(index) = open.remove(&id) else {
+                return Err(ParseError::new(span, ParseErrorKind::RegionNotOpen(id)));
+            };
+            let end = doc.statements.len();
+            if let Some(region) = doc.regions.get_mut(index) {
+                if region.node.statements.start == end {
+                    return Err(ParseError::new(span, ParseErrorKind::EmptyRegion(id)));
+                }
+                region.node.statements.end = end;
+            }
+        } else if let Some(rest) = directive(line, "title") {
             if doc.title.is_some() {
                 return Err(ParseError::new(span, ParseErrorKind::DuplicateTitle));
             }
@@ -78,11 +116,12 @@ pub fn document(source: &str) -> Result<Document, ParseError> {
         } else if let Some(rest) = directive(line, "participant") {
             let mut offset = span.end - rest.len();
             for piece in rest.split(',') {
+                let leading = piece.len() - piece.trim_start().len();
                 let piece_span = Span {
-                    start: offset,
-                    end: offset + piece.len(),
+                    start: offset + leading,
+                    end: offset + piece.trim_end().len(),
                 };
-                offset = piece_span.end + 1;
+                offset += piece.len() + 1;
 
                 let node =
                     Name::new(piece.trim()).map_err(|e| ParseError::new(piece_span, e.into()))?;
@@ -95,6 +134,17 @@ pub fn document(source: &str) -> Result<Document, ParseError> {
             let node = statement(&mut Cursor::new(line, span.start))?;
             doc.statements.push(Spanned { node, span });
         }
+    }
+
+    if let Some(region) = open
+        .values()
+        .filter_map(|&i| doc.regions.get(i))
+        .min_by_key(|r| r.span.start)
+    {
+        return Err(ParseError::new(
+            region.span,
+            ParseErrorKind::UnclosedRegion(region.node.id.clone()),
+        ));
     }
 
     Ok(doc)
@@ -398,6 +448,22 @@ pub enum ParseErrorKind {
     #[error("only delegations can be labelled")]
     LabelOnNonDelegation,
 
+    /// `>>> A` when a region `A` already exists.
+    #[error("there's already a region called `{0}`")]
+    DuplicateRegion(CertId),
+
+    /// `<<< A` with no open region `A`.
+    #[error("no region called `{0}` is open here")]
+    RegionNotOpen(CertId),
+
+    /// `>>> A` with no `<<< A`.
+    #[error("region `{0}` is never closed; add `<<< {0}`")]
+    UnclosedRegion(CertId),
+
+    /// A region with no statements in it.
+    #[error("region `{0}` doesn't contain any statements")]
+    EmptyRegion(CertId),
+
     /// A bad access level.
     #[error(transparent)]
     Level(#[from] UnknownLevel),
@@ -531,6 +597,107 @@ mod tests {
             ))
         );
         assert_eq!(err.map(|e| e.span().line_col(source)), Some((2, 8)));
+    }
+
+    /// The source text an error or node points at.
+    fn covered(source: &str, span: Span) -> &str {
+        source
+            .get(span.start..span.end)
+            .unwrap_or("<out of bounds>")
+    }
+
+    #[test]
+    fn spans_cover_exactly_the_problem() -> TestResult {
+        let cases = [
+            ("rain\n(Doc)-[write]->(Alice)", "write"),
+            ("rain\nparticipant Doc,  Bad(x , Ok\n", "Bad(x"),
+            ("rain\n(Doc)→(Alice)", "→"),
+            ("rain\n(Doc)-[edit]->(Alice) trailing", "t"),
+        ];
+        for (source, expected) in cases {
+            let span = document(source).err().map(|e| e.span());
+            assert_eq!(
+                span.map(|s| covered(source, s)),
+                Some(expected),
+                "{source:?}"
+            );
+        }
+
+        let source = "rain\nparticipant Doc,  Comment Thread 1 , Bob\n";
+        let doc = document(source)?;
+        let names: Vec<_> = doc
+            .participants
+            .iter()
+            .map(|p| covered(source, p.span))
+            .collect();
+        assert_eq!(names, ["Doc", "Comment Thread 1", "Bob"]);
+        Ok(())
+    }
+
+    #[test]
+    fn regions() -> TestResult {
+        let source = "rain
+>>> A: Bob does stuff
+(A)-[read]->(B)
+>>> B
+(B)=[[read]]=>(A)
+<<< A
+(B)-[read]->(C)
+<<< B";
+        let doc = document(source)?;
+        let regions: Vec<_> = doc
+            .regions
+            .iter()
+            .map(|r| {
+                (
+                    r.node.id.as_str(),
+                    r.node.note.as_ref().map(Text::as_str),
+                    r.node.statements.clone(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            regions,
+            [("A", Some("Bob does stuff"), 0..2), ("B", None, 1..3)]
+        );
+
+        // Printing interleaves them back
+        let reprinted = document(&doc.to_string())?;
+        assert!(
+            reprinted
+                .regions
+                .iter()
+                .map(|r| &r.node)
+                .eq(doc.regions.iter().map(|r| &r.node))
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn region_errors_point_at_the_line() {
+        let cases = [
+            ("rain\n>>> A\n(A)-[read]->(B)", ">>> A", "never closed"),
+            ("rain\n(A)-[read]->(B)\n<<< A", "<<< A", "no region called"),
+            (
+                "rain\n>>> A\n<<< A\n(A)-[read]->(B)",
+                "<<< A",
+                "doesn't contain",
+            ),
+            (
+                "rain\n>>> A\n(A)-[read]->(B)\n<<< A\n>>> A\n(A)-[read]->(C)\n<<< A",
+                ">>> A",
+                "already a region",
+            ),
+        ];
+        for (source, line, message) in cases {
+            let err = document(source).err();
+            let at = err.as_ref().map(|e| covered(source, e.span()));
+            assert_eq!(at, Some(line), "{source:?}");
+            assert!(
+                err.is_some_and(|e| e.to_string().contains(message)),
+                "{source:?}"
+            );
+        }
     }
 
     #[test]

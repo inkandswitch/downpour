@@ -283,6 +283,7 @@ name = "rain_diagram_wasm"
 version = "0.1.0"
 dependencies = [
  "rain_diagram_core",
+ "serde_json",
  "wasm-bindgen",
 ]
 

@@ -1,0 +1,8 @@
+# cargo-mutants (`cargo mutants -p rain_diagram_core`)
+
+# Test-only generators: a constant string still round-trips, so mutants
+# there are equivalent rather than untested
+exclude_re = ["arbitrary_impls"]
+
+# Property tests run for ~1 s each by default; keep mutant runs bounded
+timeout_multiplier = 3.0

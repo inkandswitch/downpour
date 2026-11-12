@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Rain Embed</title>
+  <style>
+    :root { --bg: #fbfaf7; --fg: #1d1c1a; --muted: #6b6760; }
+    @media (prefers-color-scheme: dark) { :root { --bg: #161514; --fg: #ecebe8; --muted: #9a958c; } }
+    body { margin: 0 auto; max-width: 980px; padding: 24px 16px; background: var(--bg); color: var(--fg); font: 16px/1.6 system-ui, sans-serif; }
+    p.hint { color: var(--muted); font-size: 14px; }
+    rain-diagram { margin: 24px 0 40px; }
+  </style>
+</head>
+<body>
+  <h1>Embedding rain diagrams</h1>
+  <p>Each diagram below is a <code>&lt;rain-diagram&gt;</code> element. Its source is a <code>&lt;script type="text/rain"&gt;</code> inside it (so HTML leaves <code>&lt;revoke&gt;</code> alone), its plain text, or a <code>src</code> URL.</p>
+  <p class="hint">Hover a principal to trace what it can reach. Click a certificate to see what revoking it would void.</p>
+
+  <h2>Revocation (notebook 08)</h2>
+  <rain-diagram><script type="text/rain">
+    rain
+    (Doc)-[edit]->(Alice)            : The Doc grants Alice Edit
+    (Alice)-[edit]->(Bob)            : Alice passes Edit to Bob
+    (Bob)=[[edit]]=>(Doc)            : Bob edits the Doc
+    (Bob)-[read]->(Carol)            : Bob gives Carol Read
+    (Carol)-[read]->(Dan)            : Carol shares Read with Dan
+    (Alice)-<revoke>-x[carol-dan]    : Alice revokes Carol→Dan
+  </script></rain-diagram>
+
+  <h2>An essay with comment threads (notebook 07)</h2>
+  <rain-diagram>
+    rain
+    (Thread 1)-[admin]->(Commenters)          : Thread 1 is created
+    (Commenters)-[admin]->(Alice)             : Alice creates Commenters
+    (Alice)-[edit(Commenters)]->(Carol)       : Alice adds Carol
+    (Alice)-[edit(Commenters)]->(Bob)         : Alice adds Bob
+    (Thread 2)-[admin]->(Commenters)          : Thread 2 is created
+    (Essay)-[admin]->(Alice)                  : The Essay grants Alice Admin
+    (Alice)-[read(Essay)]->(Commenters)       : Commenters may read the Essay
+  </rain-diagram>
+
+  <script type="module" src="./rain-diagram.js"></script>
+</body>
+</html>

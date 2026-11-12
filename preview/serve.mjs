@@ -30,6 +30,7 @@ const MIME = {
   js: "text/javascript",
   json: "application/json",
   mjs: "text/javascript",
+  rain: "text/plain; charset=utf-8",
   svg: "image/svg+xml",
   ts: "text/plain",
   wasm: "application/wasm",

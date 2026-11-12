@@ -1,0 +1,21 @@
+Transitive authority through a group
+
+ (Doc)       (Team)       (Alice)       (Bob)
+   │╰┄┄┄╮ ╭┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄╮ │            │
+   ├──[edit]───▶│          ┆ │            │   Doc grants Team Edit
+   │    ✗       │          ┆ │            │
+   │    │       │╰┄┄┄╮ ╭┄┄┄┼┄┼┄┄┄┄╮       │
+   │    │       ├──[admin]─o▶│    ┆       │   Alice joins Team
+   │    │       │            │    ┆       │
+   │    │       │            │    ┆       │
+   │    │       │            ├──[edit]───▶│   derived route: through Team
+   │    │       │            │    ┆┆      │
+   │    │       │            │    ┆┆      │
+   │◀═══╪═══════╪════════════╪═[[edit]]═══╡
+   │    │       │            │     ┆      │
+   │    │       │            │     ╰┄╮    │
+   │    │       │            │◀───[read]──┤   leftward, powered from below
+   │    │       │            │            │
+   │    │       │            │            │
+   o─<revoke>   │            │            │   the root revokes; everything downstream is void
+   │            │            │            │

@@ -1,0 +1,10 @@
+rain
+participant Ledger, Alice, Operators, 東京
+(Ledger)-[admin]->(Operators)
+(Operators)-[edit(Ledger)]->(Alice)   : over a long name
+(東京)-[read]->(Alice)                          : wide characters 📱 in names and notes
+(Alice)-[edit(Doc)]->(Ledger)                   : no authority over Doc: no powerline
+(Alice)=[[admin]]=>(Ledger)                     : more than Alice holds
+(Ledger)=[[edit]]=>(Ledger)                     : acting on yourself
+(東京)-<revoke>-x[operators-alice]     : not upstream, so no effect (revoker right of its target)
+(Ledger)-<revoke>-x[ledger-operators]  : the root revokes Ledger→Operators

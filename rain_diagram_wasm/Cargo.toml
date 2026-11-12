@@ -18,6 +18,7 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 rain_diagram_core = { workspace = true, features = ["serde", "std"] }
+serde_json = { workspace = true, features = ["std"] }
 wasm-bindgen = { workspace = true, features = ["std"] }
 
 [package.metadata.wasm-pack.profile.release]

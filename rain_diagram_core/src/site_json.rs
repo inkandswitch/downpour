@@ -6,6 +6,7 @@
 //! lets the existing renderer draw diagrams written in the textual notation.
 
 use crate::{
+    authority::Route,
     diagram::{Diagram, Event},
     level::Level,
 };
@@ -52,7 +53,10 @@ impl Diagram {
                         level: cert.level,
                         subject: (cert.subject != cert.issuer).then(|| self.key(cert.subject)),
                         transitive: cert
-                            .via
+                            .authority
+                            .route()
+                            .map(Route::through)
+                            .unwrap_or_default()
                             .iter()
                             .filter_map(|&ix| self.cert(ix).map(|c| c.id.as_str()))
                             .collect(),

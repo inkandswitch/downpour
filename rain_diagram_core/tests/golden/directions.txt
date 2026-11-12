@@ -1,0 +1,34 @@
+ (Doc)       (Alice)       (Bob)        (Zoé)
+   │            │       ╭┄┄┄┄┼┄┄┄┄┄╮ ╭┄┄┄╯│
+   │            │       ┆    │◀──[admin]──┤   leftward root
+   │            │       ┆    │      ┆     │
+   │     ╭┄┬┄┄┄┄┼┄┄┬┄┄╮ ┆    │      ┆     │
+   │     ┆ ┆    │◀─o─[edit]──┤      ┆     │   leftward feeding leftward: over the top
+   │     ┆ ┆    │      ┆┆    │      ┆     │
+   │     ┆ ┆    │      ┆┆    │      ┆     │
+   │     ┆ ┆    ╞═══[[edit]]═╪══════╪════▶│   rightward invocation
+   │     ┆ ┆    │      ┆     │      ┆     │
+   │     ┆ ┆    │      ┆     │      ┆     │
+   ╞══[[read]]══╪══════╪═════╪══════╪════▶│   unauthorised, so default placement
+   │     ┆ ┆    │      ┆     │      ┆     │
+   │     ┆ ┆    │      ┆     │      ┆╭┄┄┄╯│
+   │◀────┼─┼────┼──────┼─────┼────[read]──┤   a long leftward arrow
+   │     ┆ ┆    │      ┆     │      ┆┆    │
+   │     ┆ ┆    │      ┆     │      ┆┆    │
+   ╞═════╪═╪════╪══════╪═════╪══[[read]]═▶│   clamped: its power is labelled far away
+   │     ┆ ┆    │      ┆     │      ┆     │
+   │     ┆ ┆    │      ┆     │      ┆     │
+   │◀───[read]──┤      ┆     │      ┆     │   leftward again
+   │     ┆ ✗    │      ┆     │      ┆     │
+   │     ┆ │    │      ┆     │      ┆     │
+   │    <revoke>├──────┼─────o┄┄┄┄┄┄╯     │   power arrives from the right
+   │     ┆      │      ┆     │            │
+   │╰┄┄┄╮┆      │      ┆     │            │
+   ├──[read]────┼──────┼─────┼───────────▶│   rightward root
+   │            │      ┆     │            │
+   │            │      ┆     │       ╭┄┄┄╯│
+   │            │◀─────┼─────┼───[admin]──┤   Alice joins Zoé, leftward
+   │            │      ┆     │            │
+   │            │    ╭┄╯     │            │
+   │            ├──[read]───▶│            │   through a leftward handle; Zoé has a combining accent
+   │            │            │            │

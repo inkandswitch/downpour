@@ -1,0 +1,14 @@
+rain
+%% Directions and placements the notebook example never draws
+participant Doc, Alice, Bob, Zoé
+(Zoé)-[admin(Zoé)]->(Bob)        : leftward root
+(Bob)-[edit(Zoé)]->(Alice)         : leftward feeding leftward: over the top
+(Alice)=[[edit]]=>(Zoé)            : rightward invocation
+(Doc)=[[read]]=>(Zoé)              : unauthorised, so default placement
+(Zoé)-[read(Zoé)]->(Doc)         : a long leftward arrow
+(Doc)=[[read]]=>(Zoé)              : clamped: its power is labelled far away
+(Alice)-[read(Zoé)]->(Doc)         : leftward again
+(Bob)-<revoke>-x[alice-doc]          : power arrives from the right
+(Doc)-[read(Doc)]->(Zoé)           : rightward root
+(Zoé)-[admin(Zoé)]->(Alice)      : Alice joins Zoé, leftward
+(Alice)-[read(Doc)]->(Bob)           : through a leftward handle; Zoé has a combining accent
