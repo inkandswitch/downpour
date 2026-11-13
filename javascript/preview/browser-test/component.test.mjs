@@ -158,11 +158,18 @@ before(async () => {
   await until(() => document.readyState === "complete", "the first load");
 });
 
-after(() => {
+after(async () => {
   page?.close();
-  chromium?.kill();
   server?.close();
-  if (profile) fs.rmSync(profile, { recursive: true, force: true });
+  // Chromium (and its helper processes) keep writing to the profile for a
+  // moment after the signal, so wait for it to exit, then retry the removal
+  // while anything is still settling
+  if (chromium && chromium.exitCode === null && chromium.signalCode === null) {
+    const exited = new Promise((resolve) => chromium.once("exit", resolve));
+    chromium.kill();
+    await Promise.race([exited, new Promise((resolve) => setTimeout(resolve, 5_000))]);
+  }
+  if (profile) fs.rmSync(profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
 });
 
 describe("the preview's <rain-diagram>", () => {
