@@ -1,6 +1,6 @@
 //! Unicode text art for rain diagrams, for code comments and READMEs.
 //!
-//! The layout follows the plain-text example in [Keyhive Lab Note #8](https://www.inkandswitch.com/keyhive/notebook/08/). Every
+//! The layout grew from the plain-text example in [Keyhive Lab Note #8](https://www.inkandswitch.com/keyhive/notebook/08/). Every
 //! event takes three lines: a header line where powerlines cross over, the
 //! event itself, and a spacer.
 //!
@@ -19,8 +19,9 @@
 //! lane is beyond its arrow, and out of the bottom otherwise, for example
 //! to a revoker's `o` handle. Invocations sit under the certificate that
 //! powers them. Labels placed by hand (`(A)---[edit(S)]->(B)`) slide along
-//! their arrow instead, clear of the lifelines they cross. A revocation's
-//! line ends under its target, and a `✗` marks the target.
+//! their arrow instead, clear of the lifelines they cross. A revocation is
+//! drawn in heavy lines (`━`, `┃`), so it never reads as a lifeline or a
+//! powerline: it ends under its target, and a `✗` marks the target.
 
 use crate::{
     ast::Placement,
@@ -408,17 +409,17 @@ impl<'a> Layout<'a> {
                 let t = target.input;
                 if x < label.start {
                     self.canvas
-                        .path(&[(x, line), (label.start - 1, line)], Stroke::Solid);
+                        .path(&[(x, line), (label.start - 1, line)], Stroke::Heavy);
                     if t > label.end {
                         self.canvas
-                            .path(&[(label.end + 1, line), (t, line)], Stroke::Solid);
+                            .path(&[(label.end + 1, line), (t, line)], Stroke::Heavy);
                     }
                 } else if x > label.end {
                     self.canvas
-                        .path(&[(label.end + 1, line), (x, line)], Stroke::Solid);
+                        .path(&[(label.end + 1, line), (x, line)], Stroke::Heavy);
                     if t < label.start {
                         self.canvas
-                            .path(&[(t, line), (label.start - 1, line)], Stroke::Solid);
+                            .path(&[(t, line), (label.start - 1, line)], Stroke::Heavy);
                     }
                 }
                 // A revocation that has no effect (the revoker can't revoke
@@ -429,7 +430,7 @@ impl<'a> Layout<'a> {
                     let under = target.line + 1;
                     self.canvas.path(
                         &[(target.input, under), (target.input, line)],
-                        Stroke::Solid,
+                        Stroke::Heavy,
                     );
                     self.canvas.text(target.input, under, "✗");
                 }
@@ -795,7 +796,17 @@ enum Stroke {
     Dashed,
     Double,
     Solid,
+
+    /// Revocations: heavy, so they never read as lifelines or powerlines.
+    Heavy,
 }
+
+/// Every way light and heavy lines can meet in one cell, indexed by the
+/// weight of each arm (0 none, 1 light, 2 heavy) as base-3 digits in the
+/// order north, east, south, west. Generated from the Unicode names of the
+/// Box Drawing block.
+const LIGHT_AND_HEAVY: &str =
+    " ╴╸╷┐┑╻┒┓╶─╾┌┬┭┎┰┱╺╼━┍┮┯┏┲┳╵┘┙│┤┥╽┧┪└┴┵├┼┽┟╁╅┕┶┷┝┾┿┢╆╈╹┚┛╿┦┩┃┨┫┖┸┹┞╀╃┠╂╉┗┺┻┡╄╇┣╊╋";
 
 #[derive(Debug, Clone, Default)]
 struct Cell {
@@ -936,31 +947,52 @@ impl Cell {
     /// The box-drawing character for the lines meeting here, if this cell
     /// is lines rather than text.
     fn glyph(&self) -> Option<char> {
-        use Stroke::{Dashed, Double, None, Solid};
+        use Stroke::{Dashed, Double, Heavy, None, Solid};
 
         if !matches!(self.ink, Ink::Lines) {
             return Option::None;
         }
 
-        let vertical = self.north.max(self.south);
-        let horizontal = self.west.max(self.east);
-        let sides = (
-            self.north != None,
-            self.east != None,
-            self.south != None,
-            self.west != None,
-        );
+        let mut arms = [self.north, self.east, self.south, self.west];
+        if arms.contains(&Heavy) && !arms.contains(&Double) {
+            // A line ending here (into a label or a mark) is drawn whole,
+            // as light ones are, not as a half-cell stub
+            if let [only] = arms.iter().filter(|&&s| s != None).collect::<Vec<_>>()[..] {
+                let only = *only;
+                arms = match arms {
+                    [n, _, _, _] if n != None => [only, None, only, None],
+                    [_, e, _, _] if e != None => [None, only, None, only],
+                    [_, _, s, _] if s != None => [only, None, only, None],
+                    _ => [None, only, None, only],
+                };
+            }
+            let weight = |s: Stroke| match s {
+                None => 0,
+                Heavy => 2,
+                Dashed | Double | Solid => 1,
+            };
+            let index = arms.iter().fold(0, |i, &s| i * 3 + weight(s));
+            return LIGHT_AND_HEAVY.chars().nth(index);
+        }
+        // Unicode has no heavy-with-double glyphs: crossing an invocation,
+        // a heavy line is drawn as a light one
+        let light = |s: Stroke| if s == Heavy { Solid } else { s };
+        let [north, east, south, west] = arms.map(light);
+
+        let vertical = north.max(south);
+        let horizontal = west.max(east);
+        let sides = (north != None, east != None, south != None, west != None);
 
         Some(match sides {
             (false, false, false, false) => ' ',
             // Vertical double lines are region bars; horizontal ones invocations
             (_, false, _, false) => match vertical {
-                Solid => '│',
+                Solid | Heavy => '│',
                 Double => '║',
                 Dashed | None => '┆',
             },
             (false, _, false, _) => match horizontal {
-                Solid => '─',
+                Solid | Heavy => '─',
                 Double => '═',
                 Dashed | None => '┄',
             },

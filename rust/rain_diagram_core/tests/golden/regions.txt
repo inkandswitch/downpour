@@ -11,9 +11,9 @@
    │     ┆      │            │    ┆       │   ║ Carol joins in
    │     ┆      │            ├──[read]───▶│   ║ ║ Bob gives Carol Read
    │     ┆      │            │    ✗┆      │   ║ ║
-   │     ┆      │        ╭┄┄┄┼┄┄┄┄┼╯      │   ║ ║
+   │     ┆      │        ╭┄┄┄┼┄┄┄┄╂╯      │   ║ ║
    │◀════╪══════╪════[[read]]╪════╪═══════╡   ║ ║ Carol reads the Doc
-   │     ┆      │            │    │       │
-   │     ┆      │            │    │       │
-   │     ╰┄┄┄┄┄┄o────────────┼─<revoke>   │   Alice cuts Carol off
+   │     ┆      │            │    ┃       │
+   │     ┆      │            │    ┃       │
+   │     ╰┄┄┄┄┄┄o━━━━━━━━━━━━┿━<revoke>   │   Alice cuts Carol off
    │            │            │            │

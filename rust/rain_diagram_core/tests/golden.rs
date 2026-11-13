@@ -2,8 +2,9 @@
 //! `.txt` (and say the notation its extension does), and the README's
 //! picture must match the SVG renderer.
 //!
-//! `notebook-08.txt` is copied from [Keyhive Lab Note #8](https://www.inkandswitch.com/keyhive/notebook/08/); the rest were
-//! reviewed by hand when blessed. After an intended rendering change, check
+//! `notebook-08.txt` started as a copy of [Keyhive Lab Note #8](https://www.inkandswitch.com/keyhive/notebook/08/)'s text
+//! art, and has since moved on (revocations are drawn heavy); all of them
+//! were reviewed by hand when blessed. After an intended rendering change, check
 //! the diffs and re-bless with `BLESS=1 cargo test --test golden`.
 
 use std::{fs, path::Path};
@@ -76,6 +77,19 @@ fn readme_svg_is_current() -> Result<(), Box<dyn std::error::Error>> {
         fs::read_to_string(&path)?.trim_end() == svg,
         "{} is stale; re-bless with BLESS=1 cargo test --test golden",
         path.display()
+    );
+    Ok(())
+}
+
+/// The README shows `notebook-08.txt` as `to_text`'s output; keep it so.
+#[test]
+fn readme_text_is_current() -> Result<(), Box<dyn std::error::Error>> {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let text = fs::read_to_string(root.join("tests/golden/notebook-08.txt"))?;
+    let readme = fs::read_to_string(root.join("../../README.md"))?;
+    assert!(
+        readme.contains(&format!("```\n{text}```\n")),
+        "README.md's text-art example differs from tests/golden/notebook-08.txt; copy it over"
     );
     Ok(())
 }

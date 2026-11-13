@@ -130,7 +130,7 @@ docs/                    README pictures, checked by the golden tests
 | `rain_diagram_core`  | Working   | Parser, resolver, authority analysis, renderers              |
 | `rain_diagram_wasm`  | Working   | JS bindings (`renderSvg`, `renderText`, `toSiteJson`, …)     |
 | `rain_diagram_cli`   | Working   | `rain-diagram` CLI and `mdbook-rain-diagram` preprocessor    |
-| Text renderer        | Working   | Unicode art matching [Keyhive Lab Note #8][rain] exactly     |
+| Text renderer        | Working   | Unicode art, after the [Keyhive Lab Note #8][rain] example   |
 | SVG renderer         | Working   | Static export, with `data-*` hooks for the interactive embed |
 | certflow renderer    | Working   | Snapshot view with automatic (stress majorization) layout    |
 | Web component        | Prototype | `<rain-diagram>`: hover for reach, click for fallout         |
@@ -152,7 +152,7 @@ Here's the example from [Keyhive Lab Note #8][rain], drawn by `to_svg`:
 <!-- Regenerate with: BLESS=1 cargo test --test golden -->
 ![A rain diagram: the Doc grants Alice Edit, Alice passes it to Bob, Bob edits the Doc and gives Carol Read, Carol shares Read with Dan, and Alice revokes Carol→Dan, voiding it](docs/notebook-08.svg)
 
-And by `to_text`, matching the Lab Note's plain-text version character for character:
+And by `to_text`. The layout follows the Lab Note's plain-text version, with revocations drawn in heavy lines so they never read as lifelines or powerlines:
 
 ```
  (Doc)       (Alice)       (Bob)       (Carol)       (Dan)
@@ -171,8 +171,8 @@ And by `to_text`, matching the Lab Note's plain-text version character for chara
    │     ┆      │            │            │    ┆       │
    │     ┆      │            │            ├──[read]───▶│   5. Carol shares Read with Dan
    │     ┆      │            │            │    ✗       │
-   │     ┆      │            │            │    │       │
-   │     ╰┄┄┄┄┄┄o────────────┼────────────┼─<revoke>   │   6. Alice revokes Carol→Dan
+   │     ┆      │            │            │    ┃       │
+   │     ╰┄┄┄┄┄┄o━━━━━━━━━━━━┿━━━━━━━━━━━━┿━<revoke>   │   6. Alice revokes Carol→Dan
    │            │            │            │            │
 ```
 

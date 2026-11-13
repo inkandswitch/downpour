@@ -20,8 +20,8 @@
    │ ╰┄┄┄┄┄╮    │            │          ┆ │
    │◀───[read]──┤            │          ┆ │   leftward again
    │       ✗    │            │          ┆ │
-   │       │    │            │          ┆ │
-   │    <revoke>├────────────o┄┄┄┄┄┄┄┄┄┄╯ │   power arrives from the right
+   │       ┃    │            │          ┆ │
+   │    <revoke>┝━━━━━━━━━━━━o┄┄┄┄┄┄┄┄┄┄╯ │   power arrives from the right
    │            │            │            │
    o┄┄┄┄╮       │            │            │
    ├──[read]────┼────────────┼───────────▶│   rightward root

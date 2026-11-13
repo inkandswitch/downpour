@@ -37,7 +37,7 @@ Labels placed by hand, both ways
    │            │        ┆   │   ┆        │            │            │
    │            │◀──────[/]──┤   ┆        │            │            │   fed from a short leftward label
    │            │        ✗   │   ┆        │            │            │
-   │            │        │   │   ┆        │            │            │
+   │            │        ┃   │   ┆        │            │            │
    │            │    <revoke>o┄┄┄╯        │            │            │   Bob revokes it, powered by Carol→Bob
    │            │            │            │            │            │
    o┄┄┄┄╮       │            │            │            │            │

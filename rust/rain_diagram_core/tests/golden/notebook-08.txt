@@ -14,6 +14,6 @@
    │     ┆      │            │            │    ┆       │
    │     ┆      │            │            ├──[read]───▶│   5. Carol shares Read with Dan
    │     ┆      │            │            │    ✗       │
-   │     ┆      │            │            │    │       │
-   │     ╰┄┄┄┄┄┄o────────────┼────────────┼─<revoke>   │   6. Alice revokes Carol→Dan
+   │     ┆      │            │            │    ┃       │
+   │     ╰┄┄┄┄┄┄o━━━━━━━━━━━━┿━━━━━━━━━━━━┿━<revoke>   │   6. Alice revokes Carol→Dan
    │            │            │            │            │

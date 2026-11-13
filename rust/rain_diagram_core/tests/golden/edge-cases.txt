@@ -2,24 +2,24 @@
      │╰┄┄┄╮        │             │             │             │
      ├──[admin]────┼────────────▶│             │             │
      │    ✗┆       │             │             │             │
-     │    │╰┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄╮    │             │             │
-     │    │        │◀────[edit]──┤             │             │   over a long name
-     │    │        │             │             │             │
-     │    │        │             │        ╭┄┄┄┄o             │
-     │    │        │◀────────────┼─────[read]──┤             │   wide characters 📱 in names and notes
-     │    │        │             │             │             │
-     │    │        │             │             │             │
-     │◀───┼[edit]──┤             │             │             │   no authority over Doc: no powerline
-     │    │        │             │             │             │
-     │    │        │             │             │             │
+     │    ┃╰┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄╮    │             │             │
+     │    ┃        │◀────[edit]──┤             │             │   over a long name
+     │    ┃        │             │             │             │
+     │    ┃        │             │        ╭┄┄┄┄o             │
+     │    ┃        │◀────────────┼─────[read]──┤             │   wide characters 📱 in names and notes
+     │    ┃        │             │             │             │
+     │    ┃        │             │             │             │
+     │◀───╂[edit]──┤             │             │             │   no authority over Doc: no powerline
+     │    ┃        │             │             │             │
+     │    ┃        │             │             │             │
      │◀═[[admin]]══╡             │             │             │   more than Alice holds
-     │    │        │             │             │             │
-     │    │        │             │             │             │
+     │    ┃        │             │             │             │
+     │    ┃        │             │             │             │
      ╞═[[edit]]    │             │             │             │   acting on yourself
-     │    │        │             │             │             │
-     │    │        │             │             │             │
-     │    │        │     <revoke>├─────────────┤             │   not upstream, so no effect (revoker right of its target)
-     │    │        │             │             │             │
-     │    │        │             │             │             │
-     o─<revoke>    │             │             │             │   the root revokes Ledger→Operators
+     │    ┃        │             │             │             │
+     │    ┃        │             │             │             │
+     │    ┃        │     <revoke>┝━━━━━━━━━━━━━┥             │   not upstream, so no effect (revoker right of its target)
+     │    ┃        │             │             │             │
+     │    ┃        │             │             │             │
+     o━<revoke>    │             │             │             │   the root revokes Ledger→Operators
      │             │             │             │             │
