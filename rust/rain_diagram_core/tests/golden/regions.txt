@@ -12,7 +12,7 @@
    │     ┆      │            ├──[read]───▶│   ║ ║ Bob gives Carol Read
    │     ┆      │            │    ✗┆      │   ║ ║
    │     ┆      │        ╭┄┄┄┼┄┄┄┄╂╯      │   ║ ║
-   │◀════╪══════╪════[[read]]╪════╪═══════╡   ║ ║ Carol reads the Doc
+   │◀════╪══════╪════[[read]]╪════┃═══════╡   ║ ║ Carol reads the Doc
    │     ┆      │            │    ┃       │
    │     ┆      │            │    ┃       │
    │     ╰┄┄┄┄┄┄o━━━━━━━━━━━━┿━<revoke>   │   Alice cuts Carol off

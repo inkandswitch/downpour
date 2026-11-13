@@ -11,7 +11,7 @@ Transitive authority through a group
    │    ┃       │            ├──[edit]───▶│   derived route: through Team
    │    ┃       │            │    ┆╰┄┄┄╮  │
    │    ┃       │            │    ┆    ┆  │
-   │◀═══╪═══════╪════════════╪═[[edit]]╪══╡
+   │◀═══┃═══════╪════════════╪═[[edit]]╪══╡
    │    ┃       │            │         ┆  │
    │    ┃       │            │       ╭┄╯  │
    │    ┃       │            │◀───[read]──┤   leftward, powered from below

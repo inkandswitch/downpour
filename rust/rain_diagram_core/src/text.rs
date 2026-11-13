@@ -407,19 +407,20 @@ impl<'a> Layout<'a> {
                 // From the revoker to the label, then on past it to the
                 // target's column if the label was slid short of it
                 let t = target.input;
+                // (Lines run into the label's edge; its text covers that cell)
                 if x < label.start {
                     self.canvas
-                        .path(&[(x, line), (label.start - 1, line)], Stroke::Heavy);
+                        .path(&[(x, line), (label.start, line)], Stroke::Heavy);
                     if t > label.end {
                         self.canvas
-                            .path(&[(label.end + 1, line), (t, line)], Stroke::Heavy);
+                            .path(&[(label.end, line), (t, line)], Stroke::Heavy);
                     }
                 } else if x > label.end {
                     self.canvas
-                        .path(&[(label.end + 1, line), (x, line)], Stroke::Heavy);
+                        .path(&[(label.end, line), (x, line)], Stroke::Heavy);
                     if t < label.start {
                         self.canvas
-                            .path(&[(t, line), (label.start - 1, line)], Stroke::Heavy);
+                            .path(&[(t, line), (label.start, line)], Stroke::Heavy);
                     }
                 }
                 // A revocation that has no effect (the revoker can't revoke
@@ -954,17 +955,15 @@ impl Cell {
         }
 
         let mut arms = [self.north, self.east, self.south, self.west];
-        if arms.contains(&Heavy) && !arms.contains(&Double) {
-            // A line ending here (into a label or a mark) is drawn whole,
-            // as light ones are, not as a half-cell stub
-            if let [only] = arms.iter().filter(|&&s| s != None).collect::<Vec<_>>()[..] {
-                let only = *only;
-                arms = match arms {
-                    [n, _, _, _] if n != None => [only, None, only, None],
-                    [_, e, _, _] if e != None => [None, only, None, only],
-                    [_, _, s, _] if s != None => [only, None, only, None],
-                    _ => [None, only, None, only],
-                };
+        if arms.contains(&Heavy) {
+            // Unicode has no heavy-with-double glyphs: a heavy line crossing
+            // an invocation breaks through it (`═┃═`)
+            arms = arms.map(|s| if s == Double { None } else { s });
+            // A line ending here is drawn whole, as light ones are, rather
+            // than as a half-cell stub
+            if arms.iter().filter(|&&s| s != None).count() == 1 {
+                let [n, e, s, w] = arms;
+                arms = [n.max(s), e.max(w), n.max(s), e.max(w)];
             }
             let weight = |s: Stroke| match s {
                 None => 0,
@@ -974,10 +973,7 @@ impl Cell {
             let index = arms.iter().fold(0, |i, &s| i * 3 + weight(s));
             return LIGHT_AND_HEAVY.chars().nth(index);
         }
-        // Unicode has no heavy-with-double glyphs: crossing an invocation,
-        // a heavy line is drawn as a light one
-        let light = |s: Stroke| if s == Heavy { Solid } else { s };
-        let [north, east, south, west] = arms.map(light);
+        let [north, east, south, west] = arms;
 
         let vertical = north.max(south);
         let horizontal = west.max(east);

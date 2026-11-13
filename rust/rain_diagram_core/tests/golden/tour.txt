@@ -14,13 +14,13 @@ A Tour of Features
    │         ┆  │            ├──[edit]───▶│    ┆       │            │            │            │   ║ Bob gives Carol Edit
    │         ┆  │            │    ✗┆      │    ┆       │            │            │            │   ║
    │         ┆  │        ╭┄┄┄┼┄┄┄┄╂╯      │    ┆       │            │            │            │   ║
-   │◀════════╪══╪════[[edit]]╪════╪═══════╡    ┆       │            │            │            │   ║ Carol edits the Doc
+   │◀════════╪══╪════[[edit]]╪════┃═══════╡    ┆       │            │            │            │   ║ Carol edits the Doc
    │         ┆  │            │    ┃       │    ┆       │            │            │            │
    │         ┆  │            │    ┃       │    ┆       │            │            │            │
    │         ┆  │            │    ┃       ├──[read]───▶│            │            │            │   Carol shares Read with Dan
    │         ┆  │            │    ┃       │    ┆       │            │            │            │
    │         ┆  │            │    ┃       │    ┆       │            │            │            │
-   │◀════════╪══╪════════════╪════╪═══════╪[[read]]════╡            │            │            │   Dan reads the Doc
+   │◀════════╪══╪════════════╪════┃═══════╪[[read]]════╡            │            │            │   Dan reads the Doc
    │         ┆  │            │    ┃       │            │            │            │            │
    o┄┄┄┄╮ ╭┄┄┼┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄╂┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄╮  │            │
    ├──[read]─┼──┼────────────┼────╂───────┼────────────┼───────────▶│         ┆  │            │   The Doc lets Team read it
@@ -38,7 +38,7 @@ A Tour of Features
    │         ┆  │            │    ┃       │            ├──[/crud/read]───────────┼───────────▶│   where size < 1MB; Dan narrows it to reads, adds a limit
    │         ┆  │            │    ┃       │            │    ┆       │            │            │
    │         ┆  │            │    ┃       │            │    ┆       │            │            │
-   │◀════════╪══╪════════════╪════╪═══════╪════════════╪═[[/crud/read]]══════════╪════════════╡   The Server reads, bound by both caveats
+   │◀════════╪══╪════════════╪════┃═══════╪════════════╪═[[/crud/read]]══════════╪════════════╡   The Server reads, bound by both caveats
    │         ┆  │            │    ┃       │            │            │            │            │
    │         ┆  │            │    ┃       │            │            │            │            │
    │         ╰┄┄o━━━━━━━━━━━━┿━<revoke>   │            │            │            │            │   Alice revokes Bob→Carol, and all that relied on it

@@ -18,7 +18,7 @@
      ╞═[[edit]]    │             │             │             │   acting on yourself
      │    ┃        │             │             │             │
      │    ┃        │             │             │             │
-     │    ┃        │     <revoke>┝━━━━━━━━━━━━━┥             │   not upstream, so no effect (revoker right of its target)
+     │    ┃        │     <revoke>┿━━━━━━━━━━━━━┥             │   not upstream, so no effect (revoker right of its target)
      │    ┃        │             │             │             │
      │    ┃        │             │             │             │
      o━<revoke>    │             │             │             │   the root revokes Ledger→Operators
