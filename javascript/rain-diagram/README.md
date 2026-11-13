@@ -36,11 +36,22 @@ Inline source goes in a `text/rain` script so that HTML doesn't swallow `<revoke
 | `theme`    | `light` or `dark`, overriding the system colour scheme                 |
 | `zoom`     | Scale factor, such as `1.5`                                            |
 
-| Event               | Detail                                     |
-|---------------------|--------------------------------------------|
-| `rain-edit`         | `{ source }`: the rewritten source         |
-| `rain-edit-refused` | `{ message }`: why an edit was refused     |
-| `rain-fallout`      | `{ event, voids }`: a certificate clicked  |
-| `rain-reach`        | `{ principal, subjects }`: a principal hovered |
+| Event               | When                     | Detail |
+|---------------------|--------------------------|--------|
+| `rain-edit`         | an edit was made         | `{ source }`, the rewritten source; a dragged row adds `from` and `to`, its old and new statement index |
+| `rain-edit-refused` | an edit would break it   | `{ message }`, why |
+| `rain-fallout`      | a certificate is clicked | `{ event, voids }`: its event index, and the indices of everything revoking it would void |
+| `rain-moment`       | the "now" line is moved  | `{ happened }`: how many events have happened |
+| `rain-reach`        | a principal is hovered   | `{ principal, subjects }`: the principal's key, and what it can act on |
+
+Each of `rain-reach`'s `subjects` is `{ key, level, caveats }`: a subject's key, an ability held over it (`level` is a Keyhive level like `"edit"`, or a command path like `"/crud/read"`), and the `where` caveats on the certificates it came through, earliest first. A subject appears once for each broadest ability held over it, so holding `/crud/read` and `/msg` over the same document lists it twice, while holding `edit` lists it once (`edit` already covers `read`).
+
+```js
+diagram.addEventListener("rain-reach", ({ detail }) => {
+  for (const { key, level, caveats } of detail.subjects) {
+    console.log(`${detail.principal} → ${key}: ${level}`, caveats);
+  }
+});
+```
 
 Set `.source` to replace the text. With `editable`, the host owns the source: listen for `rain-edit` and keep the text (and any undo history) yourself.
