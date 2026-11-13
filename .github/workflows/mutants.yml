@@ -26,13 +26,13 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - uses: cachix/install-nix-action@v31
       - run: git diff "origin/${{ github.base_ref }}...HEAD" -- '*.rs' > pr.diff
       - run: nix run .#ci-mutants -- pr.diff
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: mutants-changed
@@ -49,10 +49,10 @@ jobs:
       matrix:
         shard: [0, 1, 2, 3]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: cachix/install-nix-action@v31
       - run: nix run .#ci-mutants -- --shard ${{ matrix.shard }}/4
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: mutants-shard-${{ matrix.shard }}
