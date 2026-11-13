@@ -70,9 +70,20 @@ fn the_output_extension_picks_the_format() -> TestResult {
         "",
     )?;
     let svg = std::fs::read_to_string(&output);
+
+    // A .certflow file can leave out its header
+    let snapshot = dir.join("doc.certflow");
+    std::fs::write(&snapshot, "(Doc)-[edit(Doc)]->(Alice)\n")?;
+    let certflow = cli(
+        &["render", "-f", "svg", &snapshot.display().to_string()],
+        "",
+    )?;
+
     std::fs::remove_dir_all(&dir)?;
     assert!(done.status.success(), "{}", text(&done.stderr));
     assert!(svg?.starts_with("<svg"));
+    assert!(certflow.status.success(), "{}", text(&certflow.stderr));
+    assert!(text(&certflow.stdout).contains("rain-diagram certflow"));
     Ok(())
 }
 

@@ -1,0 +1,24 @@
+Keyhive Lab Note #7: a more involved example
+
+ (Thread 1)    (Commenters)      (Alice)        (Carol)         (Bob)       (Thread 2)       (Essay)
+      │╰┄┄┄╮         │              │              │              │              │              │
+      ├──[admin]────▶│              │              │              │              │              │   Thread 1 is created
+      │              │              │              │              │              │              │
+      │              o┄┄┄┄╮ ╭┄┄┄┄┄┄┄┼┄┄┄┄╮         │              │              │              │
+      │              ├──[admin]────▶│    ┆         │              │              │              │   Alice creates Commenters
+      │              │              │    ┆         │              │              │              │
+      │              │              │    ┆         │              │              │              │
+      │              │              ├──[edit]─────▶│              │              │              │   Carol can comment
+      │              │              │    ┆         │              │              │              │
+      │              │              │    ┆         │              │              │              │
+      │              │              ├──[edit]──────┼─────────────▶│              │              │   Bob can comment
+      │              │              │              │              │              │              │
+      │              │              │              │              │         ╭┄┄┄┄o              │
+      │              │◀─────────────┼──────────────┼──────────────┼─────[admin]──┤              │   Thread 2 is created
+      │              │              │              │              │              │              │
+      │              │         ╭┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄╮ ╭┄┄┄┄o
+      │              │         ┆    │◀─────────────┼──────────────┼──────────────┼─────[admin]──┤   The Essay grants Alice Admin
+      │              │         ┆    │              │              │              │              │
+      │              │         ┆    │              │              │              │              │
+      │              │◀─────[read]──┤              │              │              │              │   Commenters can read the Essay
+      │              │              │              │              │              │              │

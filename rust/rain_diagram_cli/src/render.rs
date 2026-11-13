@@ -127,17 +127,114 @@ impl Problem {
     /// Every problem with `source`: its error, or its diagram's warnings.
     #[must_use]
     pub fn all(path: &str, source: &str) -> (Option<Diagram>, Vec<Self>) {
-        match rain_diagram_core::parse(source) {
-            Ok(diagram) => {
-                let warnings = diagram
-                    .diagnostics()
-                    .iter()
-                    .map(|d| Self::warning(path, source, d))
-                    .collect();
-                (Some(diagram), warnings)
-            }
-            Err(e) => (None, vec![Self::error(path, source, &e)]),
+        parse_as(path, source, None)
+    }
+}
+
+/// The notation a file name says: `.rain` or `.certflow`.
+///
+/// ```
+/// use rain_diagram_cli::render::notation_for;
+/// use rain_diagram_core::ast::Kind;
+/// use std::path::Path;
+///
+/// assert_eq!(notation_for(Path::new("threads.certflow")), Some(Kind::Certflow));
+/// assert_eq!(notation_for(Path::new("notes.txt")), None);
+/// ```
+#[must_use]
+pub fn notation_for(path: &Path) -> Option<Kind> {
+    match path.extension()?.to_str()? {
+        "rain" => Some(Kind::Rain),
+        "certflow" => Some(Kind::Certflow),
+        _ => None,
+    }
+}
+
+/// Parse `source` as `notation` (named by its file extension or code
+/// fence), with every problem: the header is supplied if the source leaves
+/// it out, a header naming the other notation is a warning, and lines are
+/// counted in `source` as written.
+///
+/// ```
+/// use rain_diagram_cli::render::parse_as;
+/// use rain_diagram_core::ast::Kind;
+///
+/// let (diagram, problems) = parse_as("doc.rain", "(Doc)-[edit(Doc)]->(Alice)", Some(Kind::Rain));
+/// assert!(diagram.is_some() && problems.is_empty());
+/// ```
+#[must_use]
+pub fn parse_as(
+    path: &str,
+    source: &str,
+    notation: Option<Kind>,
+) -> (Option<Diagram>, Vec<Problem>) {
+    let written = header(source);
+    let supplied = match (notation, written) {
+        (Some(kind), None) => Some(format!("{}\n{source}", keyword(kind))),
+        _ => None,
+    };
+    let text = supplied.as_deref().unwrap_or(source);
+
+    let (diagram, mut problems) = match rain_diagram_core::parse(text) {
+        Ok(diagram) => {
+            let warnings = diagram
+                .diagnostics()
+                .iter()
+                .map(|d| Problem::warning(path, text, d))
+                .collect();
+            (Some(diagram), warnings)
         }
+        Err(e) => (None, vec![Problem::error(path, text, &e)]),
+    };
+    if supplied.is_some() {
+        for p in &mut problems {
+            p.line -= 1;
+        }
+    }
+
+    if let (Some(kind), Some((line, said))) = (notation, written)
+        && said != keyword(kind)
+    {
+        problems.insert(
+            0,
+            Problem {
+                path: path.into(),
+                line,
+                column: 1,
+                severity: Severity::Warning,
+                message: format!(
+                    "this says {said}, but it's named as {}; the header wins",
+                    keyword(kind)
+                ),
+            },
+        );
+    }
+    (diagram, problems)
+}
+
+/// The header `source` starts with (`rain` or `certflow`), and its line:
+/// the first line that isn't blank or a comment.
+#[must_use]
+pub fn header(source: &str) -> Option<(usize, &str)> {
+    let (index, line) = source.lines().enumerate().find(|(_, l)| {
+        let l = l.trim().trim_start_matches('\u{feff}');
+        !l.is_empty() && !l.starts_with("//") && !l.starts_with("%%")
+    })?;
+    let word = line
+        .split_whitespace()
+        .next()?
+        .trim_start_matches('\u{feff}');
+    ["rain", "certflow"]
+        .into_iter()
+        .find(|k| *k == word)
+        .map(|k| (index + 1, k))
+}
+
+/// How a notation is written in a header, extension, or fence.
+const fn keyword(kind: Kind) -> &'static str {
+    match kind {
+        Kind::Rain => "rain",
+        Kind::Certflow => "certflow",
     }
 }
 
@@ -206,6 +303,28 @@ mod tests {
             problems.first().map(|p| p.severity),
             Some(Severity::Warning)
         );
+    }
+
+    #[test]
+    fn extensions_supply_and_check_the_header() {
+        let (d, problems) = parse_as(
+            "a.certflow",
+            "// x\n(A)-[read(B)]->(C)",
+            Some(Kind::Certflow),
+        );
+        assert_eq!(d.map(|d| d.kind()), Some(Kind::Certflow));
+        // Lines as written: the supplied header doesn't shift them
+        assert_eq!(problems.first().map(|p| p.line), Some(2));
+
+        let (d, problems) = parse_as("a.rain", "certflow\n(A)-[read(A)]->(B)", Some(Kind::Rain));
+        assert_eq!(d.map(|d| d.kind()), Some(Kind::Certflow));
+        assert_eq!(
+            problems.iter().map(ToString::to_string).collect::<Vec<_>>(),
+            ["a.rain:1:1: warning: this says certflow, but it's named as rain; the header wins"]
+        );
+
+        let (_, problems) = parse_as("a.rain", "(A)-[read]->(B)", Some(Kind::Rain));
+        assert_eq!(problems.first().map(|p| (p.line, p.column)), Some((1, 10)));
     }
 
     #[test]

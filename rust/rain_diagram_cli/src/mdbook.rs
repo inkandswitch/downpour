@@ -25,7 +25,8 @@
 //!
 //! [mdBook preprocessor]: https://rust-lang.github.io/mdBook/for_developers/preprocessors.html
 
-use crate::render::{Problem, Severity};
+use crate::render::{Problem, Severity, parse_as};
+use rain_diagram_core::ast::Kind;
 use serde_json::Value;
 use std::fmt;
 use thiserror::Error;
@@ -139,25 +140,13 @@ fn diagram(
     html: bool,
     on_error: OnError,
 ) -> (String, Vec<Problem>) {
-    // The fence names the notation; add the header unless it's written
-    let has_header = body
-        .lines()
-        .map(str::trim)
-        .find(|l| !l.is_empty() && !l.starts_with("//") && !l.starts_with("%%"))
-        .is_some_and(|l| {
-            l.split_whitespace()
-                .next()
-                .is_some_and(|w| w == "rain" || w == "certflow")
-        });
-    let (source, offset) = if has_header {
-        (body.to_owned(), fence_line)
-    } else {
-        (format!("{notation}\n{body}"), fence_line - 1)
+    let kind = match notation {
+        "certflow" => Kind::Certflow,
+        _ => Kind::Rain,
     };
-
-    let (diagram, mut problems) = Problem::all(path, &source);
+    let (diagram, mut problems) = parse_as(path, body, Some(kind));
     for p in &mut problems {
-        p.line += offset;
+        p.line += fence_line;
     }
 
     let block = match (diagram, html) {

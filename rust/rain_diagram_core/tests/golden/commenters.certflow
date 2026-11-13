@@ -1,0 +1,9 @@
+certflow
+title Keyhive Lab Note #7: a more involved example
+(Thread 1)-[admin(Thread 1)]->(Commenters)  : Thread 1 is created
+(Commenters)-[admin(Commenters)]->(Alice)   : Alice creates Commenters
+(Alice)-[edit(Commenters)]->(Carol)         : Carol can comment
+(Alice)-[edit(Commenters)]->(Bob)           : Bob can comment
+(Thread 2)-[admin(Thread 2)]->(Commenters)  : Thread 2 is created
+(Essay)-[admin(Essay)]->(Alice)             : The Essay grants Alice Admin
+(Alice)-[read(Essay)]->(Commenters)         : Commenters can read the Essay

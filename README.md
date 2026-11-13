@@ -24,6 +24,8 @@ cd: (Carol)-[read(Doc)]->(Dan) : Carol shares Read with Dan
 (Alice)-<revoke>-x[cd]         : Alice revokes Carol→Dan
 ```
 
+Files are named for their notation: `.rain` for rain diagrams, `.certflow` for certflow. The header line says the same thing, so tools that know the file name (the [CLI](rust/rain_diagram_cli/)) let you leave it out.
+
 Principals get round brackets, certificates get square ones (like the shapes in the diagrams), and invocations get double lines.
 
 | Form                              | Meaning                                                     |

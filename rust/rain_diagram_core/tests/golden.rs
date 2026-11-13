@@ -1,4 +1,5 @@
-//! Goldens: each `golden/*.rain` must render to its `.txt`, and the README's
+//! Goldens: each `golden/*.rain` and `golden/*.certflow` must render to its
+//! `.txt` (and say the notation its extension does), and the README's
 //! picture must match the SVG renderer.
 //!
 //! `notebook-08.txt` is copied from [Keyhive Lab Note #8](https://www.inkandswitch.com/keyhive/notebook/08/); the rest were
@@ -15,7 +16,10 @@ fn text_goldens() -> Result<(), Box<dyn std::error::Error>> {
     let mut cases: Vec<_> = fs::read_dir(&dir)?
         .filter_map(Result::ok)
         .map(|entry| entry.path())
-        .filter(|path| path.extension().is_some_and(|ext| ext == "rain"))
+        .filter(|path| {
+            path.extension()
+                .is_some_and(|ext| ext == "rain" || ext == "certflow")
+        })
         .collect();
     cases.sort();
     assert!(!cases.is_empty(), "no goldens in {}", dir.display());
@@ -23,9 +27,18 @@ fn text_goldens() -> Result<(), Box<dyn std::error::Error>> {
     let mut failures = Vec::new();
     for case in cases {
         let source = fs::read_to_string(&case)?;
-        let text = rain_diagram_core::parse(&source)
-            .map_err(|e| format!("{}: {e}", case.display()))?
-            .to_text();
+        let diagram =
+            rain_diagram_core::parse(&source).map_err(|e| format!("{}: {e}", case.display()))?;
+        let kind = match diagram.kind() {
+            rain_diagram_core::ast::Kind::Rain => "rain",
+            rain_diagram_core::ast::Kind::Certflow => "certflow",
+        };
+        assert!(
+            case.extension().is_some_and(|ext| ext == kind),
+            "{} is a {kind} diagram; name it .{kind}",
+            case.display()
+        );
+        let text = diagram.to_text();
         let expected_path = case.with_extension("txt");
 
         if bless {

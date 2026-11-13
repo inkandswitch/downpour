@@ -7,13 +7,14 @@
 //! $ rain-diagram check diagrams/*.rain --deny-warnings
 //! ```
 //!
-//! Problems are printed as `path:line:column: error: message`. Exit status:
+//! A `.rain` or `.certflow` file can leave out its header line; the
+//! extension supplies it. Problems are printed as `path:line:column: error: message`. Exit status:
 //! 0 on success, 1 if a diagram has errors (or warnings, with
 //! `--deny-warnings`) or a file can't be read or written, 2 for bad
 //! arguments.
 
 use clap::{Parser, Subcommand};
-use rain_diagram_cli::render::{Format, Problem, RenderError, Severity};
+use rain_diagram_cli::render::{Format, RenderError, Severity, notation_for, parse_as};
 use std::{
     io::{self, Read, Write},
     path::{Path, PathBuf},
@@ -81,7 +82,8 @@ fn run(cli: Cli) -> Result<ExitCode, CliError> {
             output,
         } => {
             let (name, source) = read(input.as_deref())?;
-            let (diagram, problems) = Problem::all(&name, &source);
+            let notation = input.as_deref().and_then(notation_for);
+            let (diagram, problems) = parse_as(&name, &source, notation);
             report(&problems);
             let Some(diagram) = diagram else {
                 return Ok(ExitCode::FAILURE);
@@ -113,7 +115,7 @@ fn run(cli: Cli) -> Result<ExitCode, CliError> {
             let mut worst = None;
             for input in &inputs {
                 let (name, source) = read(Some(input))?;
-                let (_, problems) = Problem::all(&name, &source);
+                let (_, problems) = parse_as(&name, &source, notation_for(input));
                 report(&problems);
                 worst = worst.max(problems.iter().map(|p| p.severity).max());
             }
@@ -157,7 +159,7 @@ fn read_stdin() -> Result<(String, String), CliError> {
     Ok(("<stdin>".into(), source))
 }
 
-fn report(problems: &[Problem]) {
+fn report(problems: &[rain_diagram_cli::render::Problem]) {
     for p in problems {
         eprintln!("{p}");
     }

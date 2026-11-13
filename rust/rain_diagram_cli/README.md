@@ -19,7 +19,7 @@ $ rain-diagram check diagrams/*.rain --deny-warnings
 | `certflow-svg` | SVG as a certflow diagram, whatever the header says     |
 | `json`         | The JSON the Keyhive Lab Notes' renderer reads          |
 
-`--at N` draws an SVG as of the first N events. Problems go to stderr as `path:line:column: error: message` (or `warning:`), the form editors and CI annotate. The exit status is 0 on success; 1 if a diagram has errors (or warnings, with `check --deny-warnings`) or a file can't be read or written; and 2 for bad arguments.
+A `.rain` or `.certflow` file can leave out its header line, which the extension supplies; a header naming the other notation gets a warning (the header wins). `--at N` draws an SVG as of the first N events. Problems go to stderr as `path:line:column: error: message` (or `warning:`), the form editors and CI annotate. The exit status is 0 on success; 1 if a diagram has errors (or warnings, with `check --deny-warnings`) or a file can't be read or written; and 2 for bad arguments.
 
 ## `mdbook-rain-diagram`
 
