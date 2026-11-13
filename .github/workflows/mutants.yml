@@ -1,0 +1,59 @@
+# Mutation testing (cargo-mutants, via `nix run .#ci-mutants`).
+#
+# Pull requests mutate only the Rust lines they change, and fail if a mutant
+# survives: new code should come with tests that notice it changing. Weekly
+# (and on demand), everything is mutated in four shards; that run only
+# reports, since a few known survivors are cosmetic (see .cargo/mutants.toml
+# and the mutation results in the project notes).
+name: Mutants
+
+on:
+  pull_request:
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mutants-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  changed:
+    name: changed lines
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: cachix/install-nix-action@v31
+      - run: git diff "origin/${{ github.base_ref }}...HEAD" -- '*.rs' > pr.diff
+      - run: nix run .#ci-mutants -- pr.diff
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mutants-changed
+          path: target/mutants/mutants.out
+          if-no-files-found: ignore
+
+  everything:
+    name: everything (shard ${{ matrix.shard }}/4)
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v31
+      - run: nix run .#ci-mutants -- --shard ${{ matrix.shard }}/4
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mutants-shard-${{ matrix.shard }}
+          path: target/mutants/mutants.out

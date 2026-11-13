@@ -225,7 +225,7 @@ impl Ledger {
     ) -> (Authority, Option<Diagnostic>) {
         let ix = EventIx::new(self.facts.len());
         let mut facts = Facts {
-            deps: BTreeSet::from([ix]),
+            deps: crate::sort::set([ix]),
             ..Facts::default()
         };
 
@@ -515,7 +515,7 @@ impl Ledger {
     ) -> Option<(Ability, Route)> {
         let mut routes = self.routes(events, from, subject, Some(claimed), horizon);
         // Sorting is stable, so earlier certificates still win ties
-        routes.sort_by_cached_key(|(ability, route)| {
+        crate::sort::by_key(&mut routes, |(ability, route)| {
             (
                 breadth(ability),
                 caveats_in(events, &self.deps_of(route)).count(),
@@ -541,16 +541,17 @@ impl Ledger {
         claimed: Option<&Ability>,
         horizon: Horizon,
     ) -> Vec<(Ability, Route)> {
-        let mut candidates: Vec<&Ability> = (0..horizon.0)
-            .map(EventIx::new)
-            .filter(|&ix| self.usable(ix, horizon))
-            .filter_map(|ix| self.granted(ix))
-            .chain(claimed)
-            .filter(|a| claimed.is_none_or(|c| c.covers(a)))
-            .collect::<BTreeSet<_>>()
-            .into_iter()
-            .collect();
-        candidates.sort_by_key(|a| breadth(a));
+        let mut candidates: Vec<&Ability> = crate::sort::set(
+            (0..horizon.0)
+                .map(EventIx::new)
+                .filter(|&ix| self.usable(ix, horizon))
+                .filter_map(|ix| self.granted(ix))
+                .chain(claimed)
+                .filter(|a| claimed.is_none_or(|c| c.covers(a))),
+        )
+        .into_iter()
+        .collect();
+        crate::sort::by_key(&mut candidates, |a| breadth(a));
 
         let mut found: Vec<(Ability, Route)> = Vec::new();
         for candidate in candidates {
@@ -593,9 +594,11 @@ impl Ledger {
 
         // Dijkstra over (caveats, hops), first come first served among
         // equals; with no caveats, this is a breadth-first search
-        let mut best: BTreeMap<PrincipalIx, Cost> = BTreeMap::from([(start, (0, 0))]);
+        let mut best: BTreeMap<PrincipalIx, Cost> = BTreeMap::new();
+        best.insert(start, (0, 0));
         let mut parent: BTreeMap<PrincipalIx, (PrincipalIx, EventIx)> = BTreeMap::new();
-        let mut queue: BTreeSet<(Cost, usize, PrincipalIx)> = BTreeSet::from([((0, 0), 0, start)]);
+        let mut queue: BTreeSet<(Cost, usize, PrincipalIx)> =
+            crate::sort::set([((0, 0), 0, start)]);
         let mut done = BTreeSet::new();
         let mut arrivals = 0;
 
@@ -654,10 +657,11 @@ impl Ledger {
     }
 
     fn deps_of(&self, route: &Route) -> BTreeSet<EventIx> {
-        route
-            .certs()
-            .flat_map(|c| self.facts(c).deps.iter().copied())
-            .collect()
+        crate::sort::set(
+            route
+                .certs()
+                .flat_map(|c| self.facts(c).deps.iter().copied()),
+        )
     }
 
     fn facts(&self, ix: EventIx) -> &Facts {

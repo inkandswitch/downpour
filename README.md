@@ -211,7 +211,8 @@ $ preview            # (in the shell) hot-reloading preview at http://127.0.0.1:
 $ nix run .#preview  # same, without entering the shell (PORT=… to change)
 $ nix run .#site     # the preview as a static site in _site/, as deployed to GitHub Pages
 $ cargo test --workspace --exclude rain_diagram_wasm
-$ nix run .#ci-clippy   # also: ci-bolero, ci-browser, ci-deny, ci-doc, ci-docsrs, ci-fmt, ci-js, ci-mdbook, ci-msrv, ci-no-std, ci-package, ci-test, ci-typos, ci-vite
+$ nix run .#ci-mutants -- my.diff   # mutation-test the lines a diff changes (no diff: everything, slowly)
+$ nix run .#ci-clippy   # also: ci-bolero, ci-browser, ci-deny, ci-doc, ci-docsrs, ci-fmt, ci-js, ci-mdbook, ci-msrv, ci-mutants, ci-no-std, ci-package, ci-test, ci-typos, ci-vite
 ```
 
 ## License

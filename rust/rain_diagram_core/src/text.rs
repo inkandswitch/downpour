@@ -499,7 +499,8 @@ impl<'a> Layout<'a> {
                 }
                 _ => from + 3,
             };
-            let tip = if to == from { start - 1 } else { to - 1 };
+            // A self-delegation runs into its own label, which covers the end
+            let tip = if to == from { start } else { to - 1 };
             self.canvas
                 .path(&[(from, line), (tip, line)], Stroke::Solid);
             if to != from {

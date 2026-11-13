@@ -224,8 +224,44 @@ fn whole(name: &str, n: f64) -> Result<usize, JsError> {
         Ok(n as usize)
     } else {
         Err(JsError::new(&format!(
-            "{name} must be a whole number ≥ 0, not {n}"
+            "{name} must be a whole number ≥ 0, not {}",
+            js_number(n)
         )))
+    }
+}
+
+/// `n` as JavaScript would print it, for messages: without `core::fmt`'s
+/// float formatter, which would cost about 20 KB of Wasm for this alone.
+/// Exact for whole numbers and up to six decimals; beyond that, rounded.
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    clippy::cast_sign_loss,
+    reason = "magnitudes are checked first"
+)]
+fn js_number(n: f64) -> String {
+    if n.is_nan() {
+        return "NaN".into();
+    }
+    let sign = if n.is_sign_negative() && n != 0.0 {
+        "-"
+    } else {
+        ""
+    };
+    let abs = n.abs();
+    if abs.is_infinite() {
+        return format!("{sign}Infinity");
+    }
+    if abs >= 1e15 {
+        return format!("{sign}a number too large to show");
+    }
+    let millionths = (abs * 1e6).round() as u64;
+    let (whole, fraction) = (millionths / 1_000_000, millionths % 1_000_000);
+    if fraction == 0 {
+        format!("{sign}{whole}")
+    } else {
+        let digits = format!("{fraction:06}");
+        format!("{sign}{whole}.{}", digits.trim_end_matches('0'))
     }
 }
 
@@ -391,16 +427,14 @@ impl RainDiagram {
         };
 
         let reach = d.reach(holder, now);
-        let mut events: Vec<usize> = reach
-            .iter()
-            .flat_map(|r| {
-                r.route
-                    .certs()
-                    .map(rain_diagram_core::diagram::EventIx::index)
-            })
-            .collect();
-        events.sort_unstable();
-        events.dedup();
+        // Inserted, not collected: collecting sorts, with another copy of
+        // the sort in the Wasm
+        let mut events = std::collections::BTreeSet::new();
+        events.extend(reach.iter().flat_map(|r| {
+            r.route
+                .certs()
+                .map(rain_diagram_core::diagram::EventIx::index)
+        }));
 
         // Hand-written: `serde_json::json!` costs ~90 KB of Wasm
         let subjects: Vec<String> = reach

@@ -61,7 +61,7 @@ Problems are thrown as `Error`s. A source that doesn't parse gives a message sta
 
 With a Content Security Policy, allow the wasm asset in `connect-src` and Wasm compilation in `script-src` (`'wasm-unsafe-eval'`).
 
-The plain-page builds inline the wasm as base64, so they're about a third larger than the separate `.wasm` file a bundler emits (≈475 KB versus 348 KB, before compression).
+The plain-page builds inline the wasm as base64, so they're about a third larger than the separate `.wasm` file a bundler emits (≈454 KB versus 340 KB, before compression; the `.wasm` is ≈132 KB gzipped).
 
 ## How it's built
 

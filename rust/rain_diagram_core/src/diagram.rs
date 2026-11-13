@@ -324,15 +324,18 @@ impl Diagram {
     pub(crate) fn region_lanes(&self) -> Vec<usize> {
         let mut order: Vec<(usize, &Region)> = self.regions.iter().enumerate().collect();
         // Earlier first; for the same start, longer (outer) first
-        order.sort_by_key(|(_, r)| (r.first, core::cmp::Reverse(r.last)));
+        crate::sort::by_key(&mut order, |(_, r)| (r.first, core::cmp::Reverse(r.last)));
 
         let mut placed: Vec<(usize, &Region, usize)> = Vec::with_capacity(order.len());
         for (i, region) in order {
-            let taken: BTreeSet<usize> = placed
-                .iter()
-                .filter(|(_, other, _)| other.first <= region.last && region.first <= other.last)
-                .map(|&(_, _, lane)| lane)
-                .collect();
+            let taken: BTreeSet<usize> = crate::sort::set(
+                placed
+                    .iter()
+                    .filter(|(_, other, _)| {
+                        other.first <= region.last && region.first <= other.last
+                    })
+                    .map(|&(_, _, lane)| lane),
+            );
             // Above every region containing this one (they sort first), so a
             // nested region's box always fits inside its container's, even
             // when a crossing region has pushed the container up
@@ -349,7 +352,7 @@ impl Diagram {
             placed.push((i, region, lane));
         }
 
-        placed.sort_by_key(|&(i, _, _)| i);
+        crate::sort::by_key(&mut placed, |&(i, _, _)| i);
         placed.into_iter().map(|(_, _, lane)| lane).collect()
     }
 
@@ -862,6 +865,23 @@ mod tests {
         assert_eq!(d.event_ix(2), None);
         assert_eq!(d.now(), Some(EventIx(1)));
         assert_eq!(resolve("rain")?.now(), None);
+        Ok(())
+    }
+
+    #[test]
+    fn separate_regions_share_a_lane_and_overlapping_ones_dont() -> TestResult {
+        let lanes =
+            |src: &str| -> Result<Vec<usize>, crate::Error> { Ok(resolve(src)?.region_lanes()) };
+        assert_eq!(
+            lanes("rain\n>>> A\n(A)-[read(A)]->(B)\n<<< A\n>>> B\n(B)-[read(B)]->(C)\n<<< B")?,
+            [0, 0]
+        );
+        assert_eq!(
+            lanes(
+                "rain\n>>> A\n(A)-[read(A)]->(B)\n>>> B\n(B)-[read(B)]->(C)\n<<< A\n(C)-[read(C)]->(A)\n<<< B"
+            )?,
+            [0, 1]
+        );
         Ok(())
     }
 

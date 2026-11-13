@@ -19,7 +19,7 @@
 mod layout;
 
 use super::{
-    FONT, MARGIN, PILL, REVOKE, STYLE, caveat_text, ceil, colour, describe, escape, pill,
+    FONT, MARGIN, PILL, Px, REVOKE, STYLE, caveat_text, ceil, colour, describe, escape, pill,
     status_class, text_width, title_width,
 };
 use crate::{
@@ -213,7 +213,10 @@ impl<'a> Certflow<'a> {
 
         let _ = write!(
             self.out,
-            r#"<svg xmlns="http://www.w3.org/2000/svg" class="rain-diagram certflow" viewBox="0 0 {width:.0} {height:.0}" width="{width:.0}" height="{height:.0}" font-family="system-ui, sans-serif" font-size="{FONT}">"#
+            r#"<svg xmlns="http://www.w3.org/2000/svg" class="rain-diagram certflow" viewBox="0 0 {width:.0} {height:.0}" width="{width:.0}" height="{height:.0}" font-family="system-ui, sans-serif" font-size="{FONT}">"#,
+            width = Px(width),
+            height = Px(height),
+            FONT = Px(FONT)
         );
         self.out.push_str(STYLE);
         if let Some(title) = self.diagram.title() {
@@ -221,7 +224,8 @@ impl<'a> Certflow<'a> {
                 self.out,
                 r#"<text class="title" x="{MARGIN}" y="{y}">{}</text>"#,
                 escape(title.as_str()),
-                y = MARGIN + 4.0 + self.title - 32.0,
+                y = Px(MARGIN + 4.0 + self.title - 32.0),
+                MARGIN = Px(MARGIN),
             );
         }
 
@@ -291,11 +295,11 @@ impl<'a> Certflow<'a> {
                     "</g>"
                 ),
                 key = escape(principal.key()),
-                x = x,
-                y = y,
-                r = r,
+                x = Px(x),
+                y = Px(y),
+                r = Px(r),
                 colour = colour(p),
-                name = escape(principal.name().as_str()),
+                name = escape(principal.name().as_str())
             );
         }
         self.out.push_str("</g></svg>");
@@ -405,17 +409,17 @@ impl<'a> Certflow<'a> {
                     id = escape(cert.id.as_str()),
                     caveat = caveat_text(cx, pill_y, cert.caveat.as_ref()),
                     title = escape(&describe(d, ix)),
-                    fx = from.0,
-                    fy = from.1,
-                    into_x = into.0,
-                    into_y = into.1,
-                    ox = out.0,
-                    oy = out.1,
-                    tx = tip.0,
-                    ty = tip.1,
+                    fx = Px(from.0),
+                    fy = Px(from.1),
+                    into_x = Px(into.0),
+                    into_y = Px(into.1),
+                    ox = Px(out.0),
+                    oy = Px(out.1),
+                    tx = Px(tip.0),
+                    ty = Px(tip.1),
                     stroke = stroke,
                     head = arrowhead(tip, u, stroke),
-                    pill = pill(cx, pill_y, half, &cert.ability.label(), stroke, false),
+                    pill = pill(cx, pill_y, half, &cert.ability.label(), stroke, false)
                 );
             }
 
@@ -439,10 +443,10 @@ impl<'a> Certflow<'a> {
                     ),
                     status = status,
                     ix = ix.index(),
-                    fx = from.0,
-                    fy = from.1,
-                    into_x = into.0,
-                    into_y = into.1,
+                    fx = Px(from.0),
+                    fy = Px(from.1),
+                    into_x = Px(into.0),
+                    into_y = Px(into.1)
                 );
                 if let Some((out, end)) = cross {
                     let _ = write!(
@@ -451,14 +455,14 @@ impl<'a> Certflow<'a> {
                             r#"<path class="revocation" d="M{ox:.1},{oy:.1} L{ex:.1},{ey:.1}"/>"#,
                             r#"<path class="cross" d="M{a:.1},{b:.1} L{c:.1},{e:.1} M{a:.1},{e:.1} L{c:.1},{b:.1}"/>"#,
                         ),
-                        ox = out.0,
-                        oy = out.1,
-                        ex = end.0,
-                        ey = end.1,
-                        a = end.0 - 6.0,
-                        c = end.0 + 6.0,
-                        b = end.1 - 6.0,
-                        e = end.1 + 6.0,
+                        ox = Px(out.0),
+                        oy = Px(out.1),
+                        ex = Px(end.0),
+                        ey = Px(end.1),
+                        a = Px(end.0 - 6.0),
+                        c = Px(end.0 + 6.0),
+                        b = Px(end.1 - 6.0),
+                        e = Px(end.1 + 6.0)
                     );
                 }
                 let _ = write!(
@@ -467,12 +471,12 @@ impl<'a> Certflow<'a> {
                         r#"<path class="diamond" d="M{cx:.1},{t:.1} L{r:.1},{cy:.1} L{cx:.1},{b:.1} L{l:.1},{cy:.1} Z"/>"#,
                         "</g>"
                     ),
-                    cx = cx,
-                    cy = cy,
-                    t = cy - ry,
-                    b = cy + ry,
-                    l = cx - rx,
-                    r = cx + rx,
+                    cx = Px(cx),
+                    cy = Px(cy),
+                    t = Px(cy - ry),
+                    b = Px(cy + ry),
+                    l = Px(cx - rx),
+                    r = Px(cx + rx)
                 );
             }
 
@@ -556,17 +560,17 @@ impl<'a> Certflow<'a> {
         let _ = write!(
             self.out,
             r#"<path class="powerline {status}"{from} data-to="{to}" d="M{:.1},{:.1} Q{:.1},{:.1} {:.1},{:.1}" stroke="{stroke}"/>"#,
-            start.0,
-            start.1,
-            control.0,
-            control.1,
-            end.0,
-            end.1,
+            Px(start.0),
+            Px(start.1),
+            Px(control.0),
+            Px(control.1),
+            Px(end.0),
+            Px(end.1),
             to = to.index(),
             status = self
                 .now()
                 .and_then(|now| self.diagram.status(to, now))
-                .map_or("valid", status_class),
+                .map_or("valid", status_class)
         );
     }
 }
@@ -578,11 +582,11 @@ fn arrowhead(tip: Point, u: (f64, f64), stroke: &str) -> String {
     let normal = (-u.1 * side, u.0 * side);
     alloc::format!(
         r#"<path class="chevron" d="M{:.1},{:.1} L{:.1},{:.1} L{:.1},{:.1}" stroke="{stroke}"/>"#,
-        base.0 + normal.0,
-        base.1 + normal.1,
-        tip.0,
-        tip.1,
-        base.0 - normal.0,
-        base.1 - normal.1,
+        Px(base.0 + normal.0),
+        Px(base.1 + normal.1),
+        Px(tip.0),
+        Px(tip.1),
+        Px(base.0 - normal.0),
+        Px(base.1 - normal.1)
     )
 }

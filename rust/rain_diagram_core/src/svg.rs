@@ -27,7 +27,10 @@ use crate::{
     diagram::{Diagram, Event, EventIx, PrincipalIx, Region},
 };
 use alloc::{format, string::String};
-use core::fmt::Write as _;
+use core::{
+    cmp::Ordering,
+    fmt::{self, Write as _},
+};
 
 impl Diagram {
     /// Draw as a standalone SVG document, in the notation the header names.
@@ -140,15 +143,15 @@ fn region(
             r#" data-note="{}""#,
             escape(n.as_str())
         )),
-        left = left,
-        top = top,
-        w = right - left,
-        h = bottom - top,
+        left = Px(left),
+        top = Px(top),
+        w = Px(right - left),
+        h = Px(bottom - top),
         colour = colour,
-        tab = tab,
-        tx = left + 7.0,
-        ty = top + 9.0,
-        caption = escape(caption),
+        tab = Px(tab),
+        tx = Px(left + 7.0),
+        ty = Px(top + 9.0),
+        caption = escape(caption)
     );
 }
 
@@ -160,6 +163,80 @@ fn colour(p: PrincipalIx) -> &'static str {
 }
 
 /// A certificate (or invocation, with `double`) box centred on `(x, y)`.
+/// A coordinate or size, written with integer arithmetic: `{:.1}` gives one
+/// decimal, `{:.0}` none, and no precision gives one decimal only when
+/// it's needed (`22`, `22.5`).
+///
+/// SVG output is all such numbers, and formatting `f64` with `core::fmt`
+/// pulls in its float formatter: about 20 KB of Wasm. Rounding is half to
+/// even on the scaled value, like `core::fmt`'s for exact ties.
+#[derive(Debug, Clone, Copy)]
+struct Px(f64);
+
+impl fmt::Display for Px {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let decimals = f.precision();
+        let scale = if decimals == Some(0) { 1 } else { 10 };
+        // As `core::fmt` does, negatives keep their sign even when they
+        // round to zero (`-0.0`)
+        let sign = if self.0.is_sign_negative() { "-" } else { "" };
+        let n = round_scaled(self.0.abs(), scale);
+        match decimals {
+            Some(0) => write!(f, "{sign}{n}"),
+            None if n.is_multiple_of(10) => write!(f, "{sign}{}", n / 10),
+            _ => write!(f, "{sign}{}.{}", n / 10, n % 10),
+        }
+    }
+}
+
+/// `x × scale` (`x` ≥ 0) to the nearest whole number, exactly as
+/// `core::fmt` rounds the decimal value of `x`: ties (only possible when
+/// `x` is exactly halfway) go to even. Near a tie, `x × scale` in floating
+/// point can land on the wrong side, so the tie is checked exactly.
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    clippy::cast_sign_loss,
+    reason = "canvas coordinates are small and non-negative here"
+)]
+fn round_scaled(x: f64, scale: u64) -> u64 {
+    if !x.is_finite() {
+        return 0;
+    }
+    // From 2^52 up, every f64 is a whole number: nothing to round
+    if x >= 4_503_599_627_370_496.0 {
+        return (x as u64).saturating_mul(scale);
+    }
+    let k = (x * scale as f64) as u64;
+    // Against the tie between k and k + 1: (2k + 1) / (2 × scale)
+    match compare_exact(x, 2 * scale, 2 * k + 1) {
+        Ordering::Less => k,
+        Ordering::Equal if k.is_multiple_of(2) => k,
+        Ordering::Greater | Ordering::Equal => k + 1,
+    }
+}
+
+/// How `x × factor` compares with `n`, exactly, for 0 ≤ `x` < 2^52:
+/// `x` is `mantissa × 2^exponent` with a negative exponent, so both sides
+/// are integers once `n` is shifted up by it.
+fn compare_exact(x: f64, factor: u64, n: u64) -> Ordering {
+    let bits = x.to_bits();
+    let raw_exponent = (bits >> 52) & 0x7ff;
+    // Zero or subnormal: below 2^-1022, far under any `n` ≥ 1
+    if raw_exponent == 0 {
+        return Ordering::Less;
+    }
+    let mantissa = (bits & ((1 << 52) - 1)) + (1 << 52);
+    let exponent = i64::try_from(raw_exponent).unwrap_or(0) - 1075;
+    let left = u128::from(mantissa) * u128::from(factor);
+    let shift = u32::try_from(-exponent).unwrap_or(u32::MAX);
+    // So tiny that `n` shifted up overflows: `x × factor` is far below it
+    if shift >= u128::from(n).leading_zeros() {
+        return Ordering::Less;
+    }
+    left.cmp(&(u128::from(n) << shift))
+}
+
 /// How wide the canvas must be to fit the title (16px, semibold) and its
 /// margins.
 fn title_width(d: &Diagram) -> f64 {
@@ -221,9 +298,8 @@ fn caveat_text(x: f64, y: f64, caveat: Option<&crate::ast::Caveat>) -> String {
     caveat.map_or_else(String::new, |caveat| {
         format!(
             r#"<text class="caveat" x="{x:.1}" y="{:.1}" text-anchor="middle" dominant-baseline="central">where {}</text>"#,
-            y + PILL / 2.0 + 10.0,
-            escape(caveat.as_str())
-        )
+            Px(y + PILL / 2.0 + 10.0),
+            escape(caveat.as_str()), x = Px(x))
     })
 }
 
@@ -232,10 +308,10 @@ fn pill(x: f64, y: f64, half: f64, text: &str, colour: &str, double: bool) -> St
     let inner = if double {
         format!(
             r#"<rect class="inner" x="{:.1}" y="{:.1}" width="{:.1}" height="{:.1}" rx="3" stroke="{colour}"/>"#,
-            left + 3.0,
-            top + 3.0,
-            w - 6.0,
-            PILL - 6.0
+            Px(left + 3.0),
+            Px(top + 3.0),
+            Px(w - 6.0),
+            Px(PILL - 6.0)
         )
     } else {
         String::new()
@@ -247,15 +323,15 @@ fn pill(x: f64, y: f64, half: f64, text: &str, colour: &str, double: bool) -> St
             "{inner}",
             r#"<text x="{x:.1}" y="{y:.1}" text-anchor="middle" dominant-baseline="central">{text}</text>"#
         ),
-        h = PILL,
-        left = left,
-        top = top,
-        w = w,
+        h = Px(PILL),
+        left = Px(left),
+        top = Px(top),
+        w = Px(w),
         colour = colour,
         inner = inner,
-        x = x,
-        y = y,
-        text = escape(text),
+        x = Px(x),
+        y = Px(y),
+        text = escape(text)
     )
 }
 
@@ -402,7 +478,62 @@ fn escape(text: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{FONT, text_width};
+    use super::{FONT, MARGIN, Px, text_width, title_width};
+
+    /// The title sits a margin in from the left, and the canvas leaves the
+    /// same margin after it (rounded up to a whole pixel).
+    #[test]
+    fn titles_get_a_margin_on_both_sides() -> Result<(), crate::Error> {
+        let title = "A title of some length, with Wide letters";
+        let d = crate::parse(&alloc::format!("rain\ntitle {title}\n(A)-[read(A)]->(B)"))?;
+        let text = text_width(title) * 16.0 / FONT * 1.08;
+        let slack = title_width(&d) - MARGIN - text - MARGIN;
+        assert!((0.0..1.0).contains(&slack), "{slack}");
+        Ok(())
+    }
+
+    #[test]
+    fn coordinates_format_like_floats() {
+        use alloc::format;
+        let px = |x: f64| {
+            (
+                format!("{:.1}", Px(x)),
+                format!("{:.0}", Px(x)),
+                format!("{}", Px(x)),
+            )
+        };
+        assert_eq!(px(22.0), ("22.0".into(), "22".into(), "22".into()));
+        assert_eq!(px(12.34), ("12.3".into(), "12".into(), "12.3".into()));
+        assert_eq!(px(-3.96), ("-4.0".into(), "-4".into(), "-4".into()));
+        assert_eq!(px(-0.04).0, "-0.0");
+        // Far outside any canvas, still what `core::fmt` writes
+        for x in [
+            1e-30,
+            5e-324,
+            4_503_599_627_370_496.0,
+            1e17,
+            123_456_789.987_654,
+        ] {
+            assert_eq!(format!("{:.1}", Px(x)), format!("{x:.1}"), "{x}");
+            assert_eq!(format!("{:.0}", Px(x)), format!("{x:.0}"), "{x}");
+        }
+    }
+
+    /// Exactly what `core::fmt` writes, ties and near-ties included.
+    #[test]
+    fn rounds_exactly_like_core_fmt() {
+        use alloc::format;
+        bolero::check!()
+            .with_type::<(u32, u8)>()
+            .for_each(|&(n, frac)| {
+                // Hundredths, so near-ties like 34.85 and 0.05 come up often
+                let x = f64::from(n % 100_000) + f64::from(frac % 100) / 100.0;
+                for x in [x, -x] {
+                    assert_eq!(format!("{:.1}", Px(x)), format!("{x:.1}"), "{x}");
+                    assert_eq!(format!("{:.0}", Px(x)), format!("{x:.0}"), "{x}");
+                }
+            });
+    }
 
     #[test]
     fn wide_scripts_take_about_twice_the_room() {

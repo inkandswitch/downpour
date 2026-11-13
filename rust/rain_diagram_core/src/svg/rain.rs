@@ -20,8 +20,8 @@
 //! - The dotted line at the bottom is "now".
 
 use super::{
-    FONT, MARGIN, PILL, REVOKE, STYLE, caveat_text, ceil, colour, describe, escape, index, note,
-    pill, status_class, text_width, title_width,
+    FONT, MARGIN, PILL, Px, REVOKE, STYLE, caveat_text, ceil, colour, describe, escape, index,
+    note, pill, status_class, text_width, title_width,
 };
 use crate::{
     authority::Authority,
@@ -179,9 +179,13 @@ impl<'a> Svg<'a> {
         let _ = write!(
             self.out,
             r#"<svg xmlns="http://www.w3.org/2000/svg" class="rain-diagram" data-rows-top="{rows_top:.1}" data-row-height="{ROW}" data-events="{events}" data-moment="{moment}" viewBox="0 0 {width:.0} {height:.0}" width="{width:.0}" height="{height:.0}" font-family="system-ui, sans-serif" font-size="{FONT}">"#,
-            rows_top = self.title + HEADER,
+            rows_top = Px(self.title + HEADER),
             events = self.diagram.events().len(),
             moment = self.happened,
+            width = Px(width),
+            height = Px(height),
+            ROW = Px(ROW),
+            FONT = Px(FONT)
         );
         self.out.push_str(STYLE);
         if let Some(title) = d.title() {
@@ -189,7 +193,8 @@ impl<'a> Svg<'a> {
                 self.out,
                 r#"<text class="title" x="{MARGIN}" y="{y}">{}</text>"#,
                 escape(title.as_str()),
-                y = MARGIN + 4.0
+                y = Px(MARGIN + 4.0),
+                MARGIN = Px(MARGIN)
             );
         }
 
@@ -213,13 +218,13 @@ impl<'a> Svg<'a> {
                 "</g>"
             ),
             moment = self.happened,
-            MARGIN = MARGIN,
-            y = self.title + HEADER + ROW * index(self.happened) - 2.0,
-            x2 = notes_x - 32.0,
-            hx = notes_x - 18.0,
-            hy = self.title + HEADER + ROW * index(self.happened) - 12.0,
-            hw = notes_x - 32.0 - MARGIN,
-            clock = clock(self.happened),
+            MARGIN = Px(MARGIN),
+            y = Px(self.title + HEADER + ROW * index(self.happened) - 2.0),
+            x2 = Px(notes_x - 32.0),
+            hx = Px(notes_x - 18.0),
+            hy = Px(self.title + HEADER + ROW * index(self.happened) - 12.0),
+            hw = Px(notes_x - 32.0 - MARGIN),
+            clock = clock(self.happened)
         );
 
         // Labels first (later events need to know where earlier ones went),
@@ -250,8 +255,9 @@ impl<'a> Svg<'a> {
                 let _ = write!(
                     self.out,
                     r#"<text x="{notes_x:.1}" y="{:.1}" dominant-baseline="middle">{}</text>"#,
-                    self.row(ix),
-                    escape(text)
+                    Px(self.row(ix)),
+                    escape(text),
+                    notes_x = Px(notes_x)
                 );
             }
         }
@@ -288,9 +294,9 @@ impl<'a> Svg<'a> {
                     id = escape(region.id.as_str()),
                     first = region.first.index(),
                     last = region.last.index(),
-                    x = MARGIN / 2.0 + inset,
-                    y = y - 5.0,
-                    w = width - MARGIN - 2.0 * inset,
+                    x = Px(MARGIN / 2.0 + inset),
+                    y = Px(y - 5.0),
+                    w = Px(width - MARGIN - 2.0 * inset)
                 );
             }
         }
@@ -313,17 +319,17 @@ impl<'a> Svg<'a> {
                     "</g>"
                 ),
                 key = escape(principal.key()),
-                x = x,
-                y = y,
-                top = y + HEAD_RY,
-                bottom = bottom,
+                x = Px(x),
+                y = Px(y),
+                top = Px(y + HEAD_RY),
+                bottom = Px(bottom),
                 colour = colour,
-                rx = text_width(principal.name().as_str()) / 2.0 + 16.0,
-                HEAD_RY = HEAD_RY,
+                rx = Px(text_width(principal.name().as_str()) / 2.0 + 16.0),
+                HEAD_RY = Px(HEAD_RY),
                 i = i,
-                hx = x - 9.0,
-                h = bottom - y - HEAD_RY,
-                name = escape(principal.name().as_str()),
+                hx = Px(x - 9.0),
+                h = Px(bottom - y - HEAD_RY),
+                name = escape(principal.name().as_str())
             );
         }
         self.out.push_str("</g>");
@@ -372,13 +378,13 @@ impl<'a> Svg<'a> {
             caveat = caveat_text(rect.x, y, cert.caveat.as_ref()),
             hit = hit(from, to, y),
             id = escape(cert.id.as_str()),
-            from = from,
-            to = to,
-            y = y,
+            from = Px(from),
+            to = Px(to),
+            y = Px(y),
             colour = colour(issuer),
             head = chevron(to, y, dir, colour(issuer)),
             pill = pill(rect.x, rect.y, rect.half, text, colour(subject), false),
-            title = escape(&describe(self.diagram, ix)),
+            title = escape(&describe(self.diagram, ix))
         );
         rect
     }
@@ -422,12 +428,12 @@ impl<'a> Svg<'a> {
             ix = ix.index(),
             title = escape(&describe(self.diagram, ix)),
             hit = hit(by, on, y),
-            by = by,
-            on = on,
-            y = y,
+            by = Px(by),
+            on = Px(on),
+            y = Px(y),
             colour = stroke,
             head = chevron(on, y, dir, stroke),
-            pill = pill(rect.x, rect.y, rect.half, text, colour(invoke.on), true),
+            pill = pill(rect.x, rect.y, rect.half, text, colour(invoke.on), true)
         );
         rect
     }
@@ -459,10 +465,22 @@ impl<'a> Svg<'a> {
         let under = target.y + PILL / 2.0;
         let up = under + 2.0;
         let rest = if (cx - tx).abs() < 0.5 {
-            format!("M{cx:.1},{:.1} V{up:.1}", y - ry)
+            format!(
+                "M{cx:.1},{:.1} V{up:.1}",
+                Px(y - ry),
+                cx = Px(cx),
+                up = Px(up)
+            )
         } else {
-            let far = if tx > cx { cx + rx } else { cx - rx };
-            format!("M{far:.1},{y:.1} H{tx:.1} V{up:.1}")
+            // The diamond's point facing the target
+            let far = cx + rx.copysign(tx - cx);
+            format!(
+                "M{far:.1},{y:.1} H{tx:.1} V{up:.1}",
+                far = Px(far),
+                y = Px(y),
+                tx = Px(tx),
+                up = Px(up)
+            )
         };
 
         // A revocation with no effect mustn't look like it cut anything: no
@@ -471,10 +489,10 @@ impl<'a> Svg<'a> {
             (
                 format!(
                     r#"<path class="cross" d="M{a:.1},{b:.1} L{c:.1},{e:.1} M{a:.1},{e:.1} L{c:.1},{b:.1}"/>"#,
-                    a = tx - 6.0,
-                    c = tx + 6.0,
-                    b = under + 2.0,
-                    e = under + 14.0,
+                    a = Px(tx - 6.0),
+                    c = Px(tx + 6.0),
+                    b = Px(under + 2.0),
+                    e = Px(under + 14.0)
                 ),
                 String::new(),
             )
@@ -507,16 +525,16 @@ impl<'a> Svg<'a> {
             hit = hit(x, tx, y),
             cross = cross,
             title = title,
-            x = x,
-            y = y,
-            near = near,
+            x = Px(x),
+            y = Px(y),
+            near = Px(near),
             rest = rest,
-            tx = tx,
-            cx = cx,
-            dt = y - ry,
-            db = y + ry,
-            dl = cx - rx,
-            dr = cx + rx,
+            tx = Px(tx),
+            cx = Px(cx),
+            dt = Px(y - ry),
+            db = Px(y + ry),
+            dl = Px(cx - rx),
+            dr = Px(cx + rx)
         );
         Some(Pill {
             x: cx,
@@ -570,7 +588,10 @@ impl<'a> Svg<'a> {
             let _ = write!(
                 self.handles,
                 r#"<circle class="handle" cx="{hx:.1}" cy="{hy:.1}" r="{HANDLE}" stroke="{colour}" data-event="{}"{close}"#,
-                handle.index()
+                handle.index(),
+                hx = Px(hx),
+                hy = Px(hy),
+                HANDLE = Px(HANDLE)
             );
         }
         (hx, hy)
@@ -666,7 +687,10 @@ impl<'a> Svg<'a> {
                     let _ = write!(
                         self.out,
                         r#"<circle class="root" cx="{x:.1}" cy="{cy:.1}" r="{HANDLE}" stroke="{colour}" data-event="{}"/>"#,
-                        ix.index()
+                        ix.index(),
+                        x = Px(x),
+                        cy = Px(cy),
+                        HANDLE = Px(HANDLE)
                     );
                     (x + side * HANDLE, cy)
                 };
@@ -678,10 +702,12 @@ impl<'a> Svg<'a> {
                     r#"<path class="{class}" data-to="{to}" d="M{sx:.1},{sy:.1} C{c1x:.1},{sy:.1} {top_x:.1},{c2y:.1} {top_x:.1},{top_y:.1}" stroke="{colour}"/>"#,
                     to = ix.index(),
                     class = self.powerline_class(ix),
-                    sx = start.0,
-                    sy = start.1,
-                    c1x = start.0 + k * (top_x - start.0),
-                    c2y = top_y - k * (top_y - start.1),
+                    sx = Px(start.0),
+                    sy = Px(start.1),
+                    c1x = Px(start.0 + k * (top_x - start.0)),
+                    c2y = Px(top_y - k * (top_y - start.1)),
+                    top_x = Px(top_x),
+                    top_y = Px(top_y)
                 );
             }
 
@@ -705,6 +731,11 @@ impl<'a> Svg<'a> {
             r#"<path class="{class}"{from} data-to="{to}" d="M{x1:.1},{y1:.1} C{x1:.1},{peak:.1} {x2:.1},{peak:.1} {x2:.1},{y2:.1}" stroke="{colour}"/>"#,
             to = to.index(),
             class = self.powerline_class(to),
+            x1 = Px(x1),
+            y1 = Px(y1),
+            peak = Px(peak),
+            x2 = Px(x2),
+            y2 = Px(y2)
         );
     }
 
@@ -722,6 +753,10 @@ impl<'a> Svg<'a> {
             r#"<path class="{class}"{from} data-to="{to}" d="M{x1:.1},{y1:.1} L{x2:.1},{y2:.1}" stroke="{colour}"/>"#,
             to = to.index(),
             class = self.powerline_class(to),
+            x1 = Px(x1),
+            y1 = Px(y1),
+            x2 = Px(x2),
+            y2 = Px(y2)
         );
     }
 }
@@ -731,8 +766,11 @@ fn chevron(x: f64, y: f64, dir: f64, colour: &str) -> String {
     let back = x - dir * 8.0;
     format!(
         r#"<path class="chevron" d="M{back:.1},{:.1} L{x:.1},{y:.1} L{back:.1},{:.1}" stroke="{colour}"/>"#,
-        y - 5.0,
-        y + 5.0
+        Px(y - 5.0),
+        Px(y + 5.0),
+        back = Px(back),
+        x = Px(x),
+        y = Px(y)
     )
 }
 
@@ -751,8 +789,9 @@ fn hit(a: f64, b: f64, y: f64) -> String {
     let (left, right) = (a.min(b) - 6.0, a.max(b) + 6.0);
     format!(
         r#"<rect class="hit" x="{left:.1}" y="{:.1}" width="{:.1}" height="{:.1}"/>"#,
-        y - ROW * 0.35,
-        right - left,
-        ROW * 0.7
+        Px(y - ROW * 0.35),
+        Px(right - left),
+        Px(ROW * 0.7),
+        left = Px(left)
     )
 }

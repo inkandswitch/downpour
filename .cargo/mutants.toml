@@ -1,8 +1,26 @@
-# cargo-mutants (`cargo mutants -p rain_diagram_core`)
+# cargo-mutants: `nix run .#ci-mutants` (everything, slow) or
+# `nix run .#ci-mutants -- changes.diff` (just the lines a diff touches).
 
-# Test-only generators: a constant string still round-trips, so mutants
-# there are equivalent rather than untested
-exclude_re = ["arbitrary_impls"]
+# The Wasm bindings are tested from JavaScript, so natively every mutant
+# there would look untested
+exclude_globs = ["rust/rain_diagram_wasm/**"]
+
+# Mutants that can't change behaviour, matched by name (not line, so these
+# survive edits). Add one here only with the reason it's equivalent.
+exclude_re = [
+  # Test-only generators: a constant string still round-trips
+  "arbitrary_impls",
+  # Rounding up an already-whole width: one pixel wider, drawn the same
+  "replace < with <= in ceil$",
+  # A tie between two equally good columns for a powerline over a label
+  "replace > with >= in Label::top$",
+  # The certificate at the horizon is the event being decided, which has
+  # no grant yet, so `<` and `<=` admit the same certificates
+  "replace < with <= in Ledger::usable$",
+  # Whether a revocation's diamond is within half a pixel of straight
+  # above its target: straight down or an elbow of under a pixel, drawn alike
+  "replace < with <= in Svg<'a>::revocation$",
+]
 
 # Property tests run for ~1 s each by default; keep mutant runs bounded
 timeout_multiplier = 3.0

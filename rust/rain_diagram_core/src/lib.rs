@@ -84,6 +84,8 @@ pub mod parser;
 #[cfg_attr(docsrs, doc(cfg(feature = "serde")))]
 pub mod site_json;
 
+mod sort;
+
 pub mod svg;
 pub mod text;
 

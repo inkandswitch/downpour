@@ -90,7 +90,7 @@ impl fmt::Display for Document {
                 .filter(|r| r.statements.end == at)
                 .collect();
             closing.reverse();
-            closing.sort_by_key(|r| core::cmp::Reverse(r.statements.start));
+            crate::sort::by_key(&mut closing, |r| core::cmp::Reverse(r.statements.start));
             for region in closing {
                 writeln!(f, "<<< {}", region.id)?;
             }
