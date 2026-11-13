@@ -8,6 +8,8 @@ A plain-text notation, authority analysis, and renderers for _certflow_ and _rai
 - [Keyhive Lab Note #7: Certflow Diagrams][certflow] explains the snapshot view
 - [Keyhive Lab Note #8: Rain Diagrams][rain] adds time, and the plain-text form this project parses
 
+Try it in the browser: [inkandswitch.github.io/downpour](https://inkandswitch.github.io/downpour/), the preview editor, deployed from `main` by `.github/workflows/pages.yml`.
+
 ## The Notation
 
 ```
@@ -200,6 +202,7 @@ It fires `rain-reach` and `rain-fallout` events, and the SVG's `data-*` hooks ar
 $ nix develop        # toolchain, wasm-pack, and a command menu
 $ preview            # (in the shell) hot-reloading preview at http://127.0.0.1:8080
 $ nix run .#preview  # same, without entering the shell (PORT=… to change)
+$ nix run .#site     # the preview as a static site in _site/, as deployed to GitHub Pages
 $ cargo test --workspace --exclude rain_diagram_wasm
 $ nix run .#ci-clippy   # also: ci-fmt, ci-test, ci-doc, ci-no-std, ci-bolero, ci-deny, ci-msrv, ci-typos
 ```

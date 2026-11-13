@@ -130,6 +130,46 @@
           '';
         };
 
+        # The preview as a static site (for GitHub Pages): a release Wasm build,
+        # the editor page, and the component, with `/` sending you to the
+        # editor. Writes `_site/` (or the directory given).
+        site = pkgs.writeShellApplication {
+          name = "rain-site";
+          runtimeInputs = [
+            rust-toolchain
+            wasm-bindgen-cli
+            pkgs.binaryen
+            pkgs.coreutils
+            pkgs.stdenv.cc
+            pkgs.wasm-pack
+          ];
+          text = ''
+            root="''${WORKSPACE_ROOT:-$PWD}"
+            out="$(realpath -m "''${1:-_site}")"
+            case "$out" in
+              / | "$root" | "$HOME") echo "refusing to replace $out" >&2; exit 1 ;;
+            esac
+            set -x
+            rm -rf "$out"
+            mkdir -p "$out/preview" "$out/rain-diagram"
+            wasm-pack build --release --target web --no-pack \
+              --out-dir "$out/rain-diagram/pkg" "$root/rust/rain_diagram_wasm"
+            rm -f "$out/rain-diagram/pkg/.gitignore"
+            cp "$root/javascript/rain-diagram/rain-diagram.js" "$out/rain-diagram/"
+            for file in index.html embed.html main.js highlight.js history.js split.js; do
+              cp "$root/javascript/preview/$file" "$out/preview/"
+            done
+            cat > "$out/index.html" <<'HTML'
+            <!doctype html>
+            <meta charset="utf-8">
+            <title>Downpour</title>
+            <meta http-equiv="refresh" content="0; url=preview/">
+            <a href="preview/">Open the Downpour editor</a>
+            HTML
+            touch "$out/.nojekyll"
+          '';
+        };
+
         # wasm-bodge (github.com/alexjg/wasm-bodge) packages the Wasm bindings
         # as one npm package that loads in Node, bundlers, browsers, workers,
         # and script tags. Not in nixpkgs, so pinned here.
@@ -318,7 +358,7 @@
             type = "app";
             program = pkgs.lib.getExe drv;
           })
-          (ci-checks // {inherit bodge preview;});
+          (ci-checks // {inherit bodge preview site;});
 
         packages = {inherit wasm-bodge;};
 
