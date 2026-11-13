@@ -351,9 +351,12 @@
             CHROMIUM=chromium node check.mjs
           '';
 
+          # Build the npm package, run its smoke tests, and check the README's
+          # Size table still matches it (`size.mjs --update` rewrites the table)
           ci-package = mkCheck "ci-package" ''
             ${pkgs.lib.getExe bodge}
             node --test javascript/rain-diagram-wasm/package-test/*.test.*
+            node javascript/rain-diagram-wasm/size.mjs
           '';
 
           # The docs as docs.rs builds them: nightly, every feature, and

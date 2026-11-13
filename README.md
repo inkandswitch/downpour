@@ -40,7 +40,7 @@ Principals get round brackets, certificates get square ones (like the shapes in 
 | `(A)---[edit(S)]->(B)`            | More dashes before the label slide it towards B (here ¾)    |
 | `>>> A (P): note` … `<<< A`       | A captioned region; `(P)` takes principal P's colour        |
 | `principals: A, B`                | Fix column order (`participant A, B` works too)             |
-| `title …`, `: note`, `// comment` | Annotations (`%%` comments work too)                       |
+| `title …`, `: note`, `// comment` | Annotations (`%%` comments work too)                        |
 
 The ability in the brackets is a Keyhive level or a command path. Levels are `admin`, `edit`, `read`, and `relay` (or 👑 ✏️ 👀 📡), each implying the ones after it; the examples above use them. A command path like `/crud/read`, as in UCAN, can go anywhere a level can (see below).
 
@@ -182,12 +182,12 @@ What a browser downloads to render diagrams. The whole core (parser, authority a
 
 | File | Raw | gzip | Brotli |
 |---|---|---|---|
-| Core, as Wasm (`rain-diagram-wasm.wasm`) | 340 KB | 132 KB | 105 KB |
+| Core, as Wasm (`rain-diagram-wasm.wasm`) | 340 KB | 133 KB | 105 KB |
 | Its JS bindings (wasm-bindgen glue) | 31 KB | 6 KB | 5 KB |
 | `<rain-diagram>` component (`rain-diagram.js`) | 41 KB | 11 KB | 10 KB |
-| Core with the Wasm inlined, for plain pages (`dist/iife/index.js`) | 479 KB | 184 KB | 150 KB |
+| Core with the Wasm inlined, for plain pages (`dist/iife/index.js`) | 479 KB | 185 KB | 150 KB |
 
-Measured on the release build that `nix run .#bodge` makes (wasm-opt, `--panic abort`), 2026-11-13; gzip at level 9, Brotli at quality 11. A bundler serves the `.wasm` as its own file, so only the plain-page builds pay base64's third. Two choices keep the module small: SVG numbers are written with integer arithmetic rather than Rust's float formatter (about 20 KB), and sorting goes through one shared copy of the standard sort rather than one per type (about 50 KB). Neither is slower; drawing SVG got faster.
+Measured on the release build that `nix run .#bodge` makes (wasm-opt, `--panic abort`); gzip at level 9, Brotli at quality 11. `nix run .#ci-package` fails if a figure drifts by more than 3 KB, and `node javascript/rain-diagram-wasm/size.mjs --update` refreshes them. A bundler serves the `.wasm` as its own file, so only the plain-page builds pay base64's third. Two choices keep the module small: SVG numbers are written with integer arithmetic rather than Rust's float formatter (about 20 KB), and sorting goes through one shared copy of the standard sort rather than one per type (about 50 KB). Neither is slower; drawing SVG got faster.
 
 ## In a book
 
