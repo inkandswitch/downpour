@@ -45,7 +45,7 @@ principals: Doc, Alice, Bob, Carol, Dan, Team, Eve, Server
 // An invocation: someone using their authority, (actor)=[[level]]=>(subject).
 (Bob)=[[edit]]=>(Doc)            : Bob edits the Doc
 // \`label:\` names a certificate so revocations and \`via\` can refer to it.
-// Unlabelled ones are named issuer-audience, like \`alice-bob\`.
+// Only labelled certificates can be referred to; unlabelled ones need none.
 bc: (Bob)-[edit]->(Carol)        : Bob gives Carol Edit
 (Carol)=[[edit]]=>(Doc)          : Carol edits the Doc
 <<< A
@@ -59,7 +59,7 @@ bc: (Bob)-[edit]->(Carol)        : Bob gives Carol Edit
 // Groups: authority flows through membership. Eve reaches the Doc through
 // Team; the small circle on Team→Eve is the transitive handle.
 (Doc)-[read]->(Team)             : The Doc lets Team read it
-(Team)-[admin]->(Eve)            : Eve joins Team
+team-eve: (Team)-[admin]->(Eve)  : Eve joins Team
 // \`via\` names the route explicitly (it's normally worked out for you).
 (Eve)-[relay(Doc) via team-eve]->(Server) : Eve lets a sync server relay it
 

@@ -58,7 +58,7 @@ impl Diagram {
     /// ```
     /// let d = rain_diagram_core::parse(
     ///     "rain
-    ///      (Doc)-[edit]->(Alice)
+    ///      doc-alice: (Doc)-[edit]->(Alice)
     ///      (Doc)-<revoke>-x[doc-alice]",
     /// )?;
     /// // Before the revocation, the certificate is still valid

@@ -28,7 +28,7 @@ fn rain_plain_text_example() -> TestResult {
          (Alice)-[edit]->(Bob)            : 2. Alice passes Edit to Bob
          (Bob)=[[edit]]=>(Doc)            : 3. Bob edits the Doc
          (Bob)-[read]->(Carol)            : 4. Bob gives Carol Read
-         (Carol)-[read]->(Dan)            : 5. Carol shares Read with Dan
+         carol-dan: (Carol)-[read]->(Dan) : 5. Carol shares Read with Dan
          (Alice)-<revoke>-x[carol-dan]    : 6. Alice revokes Carol→Dan",
     )?;
 
@@ -91,7 +91,7 @@ fn transitive_handle() -> TestResult {
     let d = parse(
         "rain
          (Doc)-[edit]->(Team)
-         (Team)-[admin]->(Alice)
+         team-alice: (Team)-[admin]->(Alice)
          (Alice)-[edit(Doc) via team-alice]->(Bob)",
     )?;
 

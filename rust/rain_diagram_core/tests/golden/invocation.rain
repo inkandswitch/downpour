@@ -3,7 +3,7 @@ rain
 (Doc)-[admin]->(Alice)
 (Alice)-[edit(Doc)]->(Bob)
 (Bob)=[[edit]]=>(Doc)            : Bob edits
-(Bob)-[edit(Doc)]->(Carol)
+bob-carol: (Bob)-[edit(Doc)]->(Carol)
 (Carol)=[[edit]]=>(Doc)          : Carol edits (void after the revocation)
 (Alice)-<revoke>-x[bob-carol]
 (Bob)=[[edit]]=>(Doc)            : Bob edits again

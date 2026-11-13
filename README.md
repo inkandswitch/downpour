@@ -29,7 +29,7 @@ Principals get round brackets, certificates get square ones (like the shapes in 
 | `(A)-[edit(S)]->(B)`              | A delegates Edit over S to B                                |
 | `(A)-[edit]->(B)`                 | Same, with S inferred from what A holds                     |
 | `(A)-[edit(S) via ta]->(B)`       | Force the route through `ta` (routes are otherwise derived) |
-| `label: (A)-[…]->(B)`             | Label a certificate (otherwise it's implicitly `a-b`)       |
+| `label: (A)-[…]->(B)`             | Label a certificate, so revocations and `via` can name it   |
 | `(B)=[[edit]]=>(S)`               | B uses its Edit authority on S                              |
 | `(A)-<revoke>-x[label]`           | A revokes the certificate `label`                           |
 | `(A)---[edit]->(B)`               | More dashes before the label slide it towards B (here ¾)    |
@@ -146,7 +146,7 @@ And by `to_text`, matching the Lab Note's plain-text version character for chara
 
 <rain-diagram><script type="text/rain">
   rain
-  (Doc)-[edit]->(Alice)
+  doc-alice: (Doc)-[edit]->(Alice)
   (Alice)-[edit]->(Bob)
   (Doc)-<revoke>-x[doc-alice]
 </script></rain-diagram>

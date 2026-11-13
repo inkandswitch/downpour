@@ -5,7 +5,7 @@ rain
 >>> A: Bob does stuff
 (Bob)=[[edit]]=>(Doc)            : Bob edits the Doc
 >>> B: Carol joins in
-(Bob)-[read]->(Carol)            : Bob gives Carol Read
+bob-carol: (Bob)-[read]->(Carol) : Bob gives Carol Read
 (Carol)=[[read]]=>(Doc)          : Carol reads the Doc
 <<< B
 <<< A

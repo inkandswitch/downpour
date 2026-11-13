@@ -32,7 +32,7 @@
 //!
 //! let d = parse(
 //!     "rain
-//!      (Doc)-[edit]->(Alice)
+//!      doc-alice: (Doc)-[edit]->(Alice)
 //!      (Alice)-[edit]->(Bob)
 //!      (Bob)=[[edit]]=>(Doc)
 //!      (Doc)-<revoke>-x[doc-alice]",
@@ -731,7 +731,7 @@ mod tests {
              (Doc)-[edit]->(Alice)
              (Alice)-[edit]->(Bob)
              (Bob)-[read]->(Carol)
-             (Carol)-[read]->(Dan)
+             carol-dan: (Carol)-[read]->(Dan)
              (Alice)-<revoke>-x[carol-dan]",
         )?;
         let revocation = ix(&d, 4);
@@ -766,7 +766,7 @@ mod tests {
              (Doc)-[admin]->(Alice)
              (Alice)-[edit]->(Bob)
              (Bob)=[[edit]]=>(Doc)
-             (Bob)-[edit]->(Carol)
+             bob-carol: (Bob)-[edit]->(Carol)
              (Carol)=[[edit]]=>(Doc)
              (Alice)-<revoke>-x[bob-carol]
              (Bob)=[[edit]]=>(Doc)",
@@ -802,7 +802,7 @@ mod tests {
         let d = parse(
             "rain
              (Doc)-[edit]->(Alice)
-             (Alice)-[read]->(Bob)
+             alice-bob: (Alice)-[read]->(Bob)
              (Doc)-<revoke>-x[alice-bob]
              (Bob)-[read]->(Carol)",
         )?;
@@ -815,7 +815,7 @@ mod tests {
         let d = parse(
             "rain
              (Doc)-[edit]->(Alice)
-             (Alice)-[read]->(Bob)
+             alice-bob: (Alice)-[read]->(Bob)
              (Doc)-[read]->(Dan)
              (Dan)-<revoke>-x[alice-bob]
              (Doc)-[admin]->(Eve)

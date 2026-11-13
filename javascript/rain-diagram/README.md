@@ -18,7 +18,7 @@ npm run build   # wasm-pack → pkg/ (needs wasm-pack and the pinned wasm-bindge
 
 <rain-diagram><script type="text/rain">
   rain
-  (Doc)-[edit]->(Alice)
+  doc-alice: (Doc)-[edit]->(Alice)
   (Alice)-[edit]->(Bob)
   (Doc)-<revoke>-x[doc-alice]
 </script></rain-diagram>

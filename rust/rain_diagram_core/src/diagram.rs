@@ -411,7 +411,13 @@ impl Event {
 /// A resolved certificate.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Cert {
-    /// The explicit label, or the implicit `issuer-audience` one.
+    /// Its explicit `label:`, if it has one. Only labelled certificates can
+    /// be revoked or named in `via`.
+    pub label: Option<CertId>,
+
+    /// A name for display and export: the label, or `issuer-audience` for
+    /// an unlabelled certificate. Not necessarily unique, and never used to
+    /// resolve references.
     pub id: CertId,
 
     /// Who signed it.
@@ -577,18 +583,18 @@ impl Resolver {
             holder = (cert.subject, self.name_ref(cert.subject));
         }
 
-        let id = match &d.id {
-            Some(id) => {
-                if !self.labels.insert(id.clone()) {
-                    return Err(ResolveErrorKind::DuplicateLabel(id.clone()));
-                }
-                id.clone()
-            }
-            None => self.implicit_id(issuer, audience),
-        };
+        if let Some(label) = &d.id
+            && !self.labels.insert(label.clone())
+        {
+            return Err(ResolveErrorKind::DuplicateLabel(label.clone()));
+        }
 
         let cert = Cert {
-            id,
+            label: d.id.clone(),
+            id: d
+                .id
+                .clone()
+                .unwrap_or_else(|| self.implicit_id(issuer, audience)),
             issuer,
             audience,
             subject,
@@ -637,14 +643,12 @@ impl Resolver {
         }
     }
 
-    /// Find the single earlier certificate labelled `id`.
+    /// Find the earlier certificate labelled `id` (labels are unique).
     fn lookup(&self, id: &CertId) -> Result<EventIx, ResolveErrorKind> {
-        let mut matches = self.certs().filter(|(_, cert)| &cert.id == id);
-        match (matches.next(), matches.next()) {
-            (Some((ix, _)), None) => Ok(ix),
-            (None, _) => Err(ResolveErrorKind::UnknownCert(id.clone())),
-            (Some(_), Some(_)) => Err(ResolveErrorKind::AmbiguousCert(id.clone())),
-        }
+        self.certs()
+            .find(|(_, cert)| cert.label.as_ref() == Some(id))
+            .map(|(ix, _)| ix)
+            .ok_or_else(|| ResolveErrorKind::UnknownCert(id.clone()))
     }
 
     fn certs(&self) -> impl Iterator<Item = (EventIx, &Cert)> {
@@ -734,12 +738,8 @@ pub enum ResolveErrorKind {
     DuplicateLabel(CertId),
 
     /// No earlier certificate has this label.
-    #[error("no earlier certificate is labelled `{0}`")]
+    #[error("no earlier certificate is labelled `{0}`; write `{0}: ` before the one you mean")]
     UnknownCert(CertId),
-
-    /// More than one earlier certificate has this (implicit) label.
-    #[error("more than one certificate is labelled `{0}`; give the one you mean an explicit label")]
-    AmbiguousCert(CertId),
 
     /// The subject was omitted, but the issuer holds several.
     #[error(
@@ -851,13 +851,13 @@ mod tests {
     }
 
     #[test]
-    fn revocation_by_explicit_and_implicit_label() -> TestResult {
+    fn revocations_name_explicit_labels() -> TestResult {
         let d = resolve(
             "rain
-             (Doc)-[edit]->(Alice)
+             da: (Doc)-[edit]->(Alice)
              cd: (Alice)-[read]->(Dan)
              (Alice)-<revoke>-x[cd]
-             (Alice)-<revoke>-x[doc-alice]",
+             (Alice)-<revoke>-x[da]",
         )?;
 
         let targets: Vec<_> = d
@@ -868,7 +868,7 @@ mod tests {
                 Event::Delegate(_) | Event::Invoke(_) => None,
             })
             .collect();
-        assert_eq!(targets, ["cd", "doc-alice"]);
+        assert_eq!(targets, ["cd", "da"]);
         Ok(())
     }
 
@@ -885,15 +885,15 @@ mod tests {
     }
 
     #[test]
-    fn ambiguous_implicit_label() {
+    fn unlabelled_certificates_cannot_be_referenced() {
+        // `doc-alice` is only a display name, not a label
         assert!(matches!(
             resolve_err(
                 "rain
-                 (Alice)-[read]->(Dan)
-                 (Alice)-[edit]->(Dan)
-                 (Alice)-<revoke>-x[alice-dan]",
+                 (Doc)-[edit]->(Alice)
+                 (Doc)-<revoke>-x[doc-alice]",
             ),
-            Some(ResolveErrorKind::AmbiguousCert(_))
+            Some(ResolveErrorKind::UnknownCert(_))
         ));
     }
 

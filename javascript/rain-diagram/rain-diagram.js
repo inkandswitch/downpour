@@ -3,7 +3,7 @@
 //   <script type="module" src="./rain-diagram.js"></script>
 //   <rain-diagram><script type="text/rain">
 //     rain
-//     (Doc)-[edit]->(Alice)
+//     doc-alice: (Doc)-[edit]->(Alice)
 //     (Alice)-<revoke>-x[doc-alice]
 //   </script></rain-diagram>
 //

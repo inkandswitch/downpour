@@ -369,12 +369,12 @@ pub fn set_region_rows(
 /// ```
 /// use rain_diagram_core::edit::{DeleteError, delete_statement};
 ///
-/// let source = "rain\n(Doc)-[edit]->(Alice)\n>>> A: gone soon\n(Doc)-<revoke>-x[doc-alice]\n<<< A\n";
+/// let source = "rain\nda: (Doc)-[edit]->(Alice)\n>>> A: gone soon\n(Doc)-<revoke>-x[da]\n<<< A\n";
 /// assert!(matches!(
 ///     delete_statement(source, 0),
 ///     Err(DeleteError::Revoked { by: 1, .. })
 /// ));
-/// assert_eq!(delete_statement(source, 1)?, "rain\n(Doc)-[edit]->(Alice)\n");
+/// assert_eq!(delete_statement(source, 1)?, "rain\nda: (Doc)-[edit]->(Alice)\n");
 /// # Ok::<(), DeleteError>(())
 /// ```
 ///
@@ -510,8 +510,8 @@ pub enum NewStatement {
 /// A delegation is over the subject its issuer holds most strongly at that
 /// moment (or itself, if it holds nothing), written short (`[edit]`) when
 /// inference picks the same subject and in full (`[edit(Doc)]`) otherwise. A
-/// revocation names its target by label, first giving the target an
-/// explicit label if its implicit one is shared.
+/// revocation names its target by label, first labelling the target if it
+/// has none (with its `issuer-audience` name, if that is free).
 ///
 /// ```
 /// use rain_diagram_core::{edit::{NewStatement, insert_statement}, level::Level};
@@ -600,28 +600,24 @@ pub fn insert_statement(
                 .event_ix(target)
                 .ok_or(InsertError::NotACertificate(target))?;
             let cert = d.cert(ix).ok_or(InsertError::NotACertificate(target))?;
-            let shared = d
-                .event_ixs()
-                .filter_map(|i| d.cert(i))
-                .filter(|c| c.id == cert.id)
-                .count()
-                > 1;
-            let label = if shared {
-                // Give the target a fresh explicit label first; one of the
-                // first n+1 names is free by pigeonhole
-                let fresh = (1..=d.events().len() + 1)
-                    .map(|n| alloc::format!("c{n}"))
-                    .find(|id| {
-                        d.event_ixs()
-                            .filter_map(|i| d.cert(i))
-                            .all(|c| c.id.as_str() != id)
-                    })
+            let label = if let Some(label) = &cert.label {
+                label.as_str().into()
+            } else {
+                // Only labelled certificates can be revoked, so label the
+                // target first: its display name if no label has it yet, else
+                // the first free `cN` (one of the first n+1 is free)
+                let taken = |id: &str| {
+                    d.event_ixs()
+                        .filter_map(|i| d.cert(i))
+                        .any(|c| c.label.as_ref().is_some_and(|l| l.as_str() == id))
+                };
+                let fresh = core::iter::once(cert.id.as_str().into())
+                    .chain((1..=d.events().len() + 1).map(|n| alloc::format!("c{n}")))
+                    .find(|id: &String| !taken(id))
                     .unwrap_or_else(|| "c".into());
                 let start = d.events().get(target).map_or(0, |e| e.span.start);
                 text.insert_str(start, &alloc::format!("{fresh}: "));
                 fresh
-            } else {
-                cert.id.as_str().into()
             };
             (
                 alloc::format!("({})-<revoke>-x[{label}]", name(by)?),
@@ -878,7 +874,7 @@ mod tests {
 
     const SOURCE: &str = "rain
 (Doc)-[edit]->(Alice)            : 1
-(Alice)-[edit(Doc)]->(Bob)       : 2
+alice-bob: (Alice)-[edit(Doc)]->(Bob) : 2
 >>> A: Bob does stuff
 (Bob)=[[edit]]=>(Doc)            : 3
 (Doc)-[read]->(Carol)            : 4
@@ -909,7 +905,7 @@ mod tests {
             "rain
 (Doc)-[read]->(Carol)            : 4
 (Doc)-[edit]->(Alice)            : 1
-(Alice)-[edit(Doc)]->(Bob)       : 2
+alice-bob: (Alice)-[edit(Doc)]->(Bob) : 2
 >>> A: Bob does stuff
 (Bob)=[[edit]]=>(Doc)            : 3
 <<< A
@@ -922,7 +918,7 @@ mod tests {
             move_statement(SOURCE, 4, 3)?,
             "rain
 (Doc)-[edit]->(Alice)            : 1
-(Alice)-[edit(Doc)]->(Bob)       : 2
+alice-bob: (Alice)-[edit(Doc)]->(Bob) : 2
 >>> A: Bob does stuff
 (Bob)=[[edit]]=>(Doc)            : 3
 (Alice)-<revoke>-x[alice-bob]    : 5
@@ -950,14 +946,22 @@ mod tests {
         )?;
         assert!(out.ends_with("(Alice)-[read(Essay)]->(Bob)\n"), "{out}");
 
-        // A revocation dropped above its target goes just below it, and a
-        // shared implicit label gets made explicit first
+        // A revocation dropped above its target goes just below it, and an
+        // unlabelled target gets labelled first, by its display name
         let source = "rain\n(Alice)-[read]->(Bob)\n(Alice)-[edit]->(Bob)\n";
         let (out, at) = insert_statement(source, 0, NewStatement::Revoke { by: 0, target: 1 })?;
         assert_eq!(at, 2);
         assert_eq!(
             out,
-            "rain\n(Alice)-[read]->(Bob)\nc1: (Alice)-[edit]->(Bob)\n(Alice)-<revoke>-x[c1]\n"
+            "rain\n(Alice)-[read]->(Bob)\nalice-bob: (Alice)-[edit]->(Bob)\n(Alice)-<revoke>-x[alice-bob]\n"
+        );
+
+        // …or by the first free `cN` when another certificate has that label
+        let taken = "rain\nalice-bob: (Alice)-[read]->(Bob)\n(Alice)-[edit]->(Bob)\n";
+        let (out, _) = insert_statement(taken, 2, NewStatement::Revoke { by: 0, target: 1 })?;
+        assert!(
+            out.ends_with("c1: (Alice)-[edit]->(Bob)\n(Alice)-<revoke>-x[c1]\n"),
+            "{out}"
         );
 
         let (out, _) = insert_statement(
@@ -1041,8 +1045,8 @@ mod tests {
             delete_statement(SOURCE, 9),
             Err(DeleteError::NoSuchStatement(9))
         ));
-        // Two certificates share `doc-alice`, so the second gets a label
-        // to be revoked by; the first can go, the second can't
+        // Two Doc→Alice certificates; only the second is labelled, to be
+        // revoked by. The first can go, the second can't
         let shared = "rain\n(Doc)-[read]->(Alice)\nc1: (Doc)-[edit]->(Alice)\n(Doc)-<revoke>-x[c1]";
         assert_eq!(
             delete_statement(shared, 0).as_deref(),

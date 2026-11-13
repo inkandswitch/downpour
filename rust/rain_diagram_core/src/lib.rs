@@ -27,7 +27,7 @@
 //! | `(A)-[edit(S)]->(B)`              | A delegates Edit over S to B                               |
 //! | `(A)-[edit]->(B)`                 | Same, with S inferred (`admin`: A itself; else what A has) |
 //! | `(A)-[edit(S) via ta]->(B)`       | Route A's authority through certificate `ta`               |
-//! | `label: (A)-[…]->(B)`             | Name a certificate (otherwise it's implicitly `a-b`)       |
+//! | `label: (A)-[…]->(B)`             | Label a certificate, so revocations and `via` can name it  |
 //! | `(B)=[[edit]]=>(S)`               | B uses its Edit authority on S                             |
 //! | `(A)-<revoke>-x[label]`           | A revokes the certificate `label`                          |
 //! | `(A)---[edit]->(B)`               | More dashes before the label slide it towards B (here ¾)   |

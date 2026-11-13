@@ -1,6 +1,6 @@
 rain
 title Transitive authority through a group
-(Doc)-[edit]->(Team)             : Doc grants Team Edit
+doc-team: (Doc)-[edit]->(Team)   : Doc grants Team Edit
 (Team)-[admin]->(Alice)          : Alice joins Team
 (Alice)-[edit(Doc)]->(Bob)       : derived route: through Team
 (Bob)=[[edit]]=>(Doc)

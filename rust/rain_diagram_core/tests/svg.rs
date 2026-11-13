@@ -17,7 +17,7 @@ const REVOCATION: &str = "rain
 (Alice)-[edit]->(Bob)
 (Bob)=[[edit]]=>(Doc)
 (Bob)-[read]->(Carol)
-(Carol)-[read]->(Dan)
+carol-dan: (Carol)-[read]->(Dan)
 (Alice)-<revoke>-x[carol-dan]";
 
 #[test]
@@ -82,7 +82,7 @@ fn void_and_unauthorized_are_marked() -> TestResult {
     let svg = parse(
         "rain
          (Doc)-[admin]->(Alice)
-         (Alice)-[edit(Doc)]->(Bob)
+         alice-bob: (Alice)-[edit(Doc)]->(Bob)
          (Bob)-[edit(Doc)]->(Carol)
          (Carol)=[[edit]]=>(Doc)
          (Alice)-<revoke>-x[alice-bob]
@@ -257,7 +257,7 @@ fn handles_through_one_membership_never_overlap() -> TestResult {
          (Team)-[admin]->(Eve)
          (Eve)=[[edit]]=>(Doc)
          (Eve)=[[read]]=>(Doc)
-         (Doc)-[read]->(Bob)
+         doc-bob: (Doc)-[read]->(Bob)
          (Eve)-<revoke>-x[doc-bob]",
     )?
     .to_rain_svg();
