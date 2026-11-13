@@ -6,6 +6,7 @@
   "workspaces": [
     "javascript/editor",
     "javascript/patchwork",
-    "javascript/rain-diagram"
+    "javascript/rain-diagram",
+    "javascript/rain-diagram-wasm"
   ]
 }

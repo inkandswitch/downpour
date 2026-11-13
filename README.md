@@ -81,6 +81,7 @@ rust/
 └── rain_diagram_wasm/   JS bindings
 javascript/
 ├── rain-diagram/        <rain-diagram> web component (@inkandswitch/rain-diagram)
+├── rain-diagram-wasm/   the core as an npm package, built by wasm-bodge
 ├── editor/              collaborative editor (planned)
 ├── patchwork/           Patchwork tool (planned)
 └── preview/             hot-reloading single-user editor
@@ -106,7 +107,7 @@ docs/                    README pictures, checked by the golden tests
 | SVG        | `Diagram::to_svg`       | `renderSvg`   | Rain or certflow, as the header says (or choose: see below) |
 | Site JSON  | `Diagram::to_site_json` | `toSiteJson`  | The renderer in the [Keyhive Lab Notes][rain]               |
 
-`to_site_json` needs the crate's `serde` feature (`rain_diagram_core = { …, features = ["serde"] }`); the Wasm bindings always include it. `to_rain_svg` and `to_certflow_svg` pick a notation regardless of the header. The preview has Copy and Download for each, and `cargo run --example render [-- --svg | --json] < diagram.rain` does the same from a shell.
+From JavaScript, [`@inkandswitch/rain-diagram-wasm`](javascript/rain-diagram-wasm/) has all of these and loads in Node, bundlers, plain pages, and `<script>` tags; its README covers setup for each. `to_site_json` needs the crate's `serde` feature (`rain_diagram_core = { …, features = ["serde"] }`); the Wasm bindings always include it. `to_rain_svg` and `to_certflow_svg` pick a notation regardless of the header. The preview has Copy and Download for each, and `cargo run --example render [-- --svg | --json] < diagram.rain` does the same from a shell.
 
 Here's the example from [Keyhive Lab Note #8][rain], drawn by `to_svg`:
 

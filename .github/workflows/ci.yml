@@ -32,6 +32,7 @@ jobs:
           - ci-js
           - ci-msrv
           - ci-no-std
+          - ci-package
           - ci-test
           - ci-typos
     steps:

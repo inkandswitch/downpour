@@ -146,7 +146,7 @@
 
         # `nix run .#bodge [template-package.json] [out-dir]`: build the
         # bindings package with wasm-bodge, on our stable toolchain
-        # (`--panic abort`; unwind needs nightly). Defaults to the spike
+        # (`--panic abort`; unwind needs nightly), into javascript/rain-diagram-wasm
         bodge = pkgs.writeShellApplication {
           name = "rain-bodge";
           runtimeInputs = [
@@ -161,8 +161,8 @@
             set -x
             wasm-bodge build \
               --crate-path rust/rain_diagram_wasm \
-              --package-json "''${1:-.ignore/scratch/bodge/package.json}" \
-              --out-dir "''${2:-.ignore/scratch/bodge/dist}" \
+              --package-json "''${1:-javascript/rain-diagram-wasm/package.json}" \
+              --out-dir "''${2:-javascript/rain-diagram-wasm/dist}" \
               --panic abort
           '';
         };
@@ -238,6 +238,13 @@
           ci-doc = mkCheck "ci-doc" ''
             cargo test --doc --workspace --all-features
             RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --all-features
+          '';
+
+          # Build the npm package with wasm-bodge, then load it by name the way
+          # consumers do (import, require, ./slim, ./iife)
+          ci-package = mkCheck "ci-package" ''
+            ${pkgs.lib.getExe bodge}
+            node --test javascript/rain-diagram-wasm/package-test/*.test.*
           '';
 
           # The docs as docs.rs builds them: nightly, every feature, and
