@@ -285,10 +285,11 @@
           # The package in a real Vite app, from a committed lockfile: build it
           # with no Wasm configuration, then load the production build in
           # headless Chromium and check the Wasm ran
-          ci-vite = mkCheckWith [pkgs.chromium] "ci-vite" ''
+          ci-vite = mkCheckWith [pkgs.chromium pkgs.pnpm] "ci-vite" ''
             ${pkgs.lib.getExe bodge}
+            pnpm install --frozen-lockfile
             cd javascript/rain-diagram-wasm/examples/vite
-            npm ci --no-audit --no-fund
+            # Through node, not the .bin shim: its #!/bin/sh is not everywhere
             node node_modules/vite/bin/vite.js build
             CHROMIUM=chromium node check.mjs
           '';

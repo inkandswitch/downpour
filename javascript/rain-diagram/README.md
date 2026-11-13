@@ -8,7 +8,7 @@
 ## Build
 
 ```sh
-npm run build   # wasm-pack → pkg/ (needs wasm-pack and the pinned wasm-bindgen-cli; both in the Nix dev shell)
+pnpm run build  # wasm-pack → pkg/ (needs wasm-pack and the pinned wasm-bindgen-cli; both in the Nix dev shell)
 ```
 
 ## Use

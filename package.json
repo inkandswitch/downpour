@@ -3,10 +3,5 @@
   "private": true,
   "description": "JS packages for rain and certflow diagrams; the Rust crates live alongside",
   "type": "module",
-  "workspaces": [
-    "javascript/editor",
-    "javascript/patchwork",
-    "javascript/rain-diagram",
-    "javascript/rain-diagram-wasm"
-  ]
+  "packageManager": "pnpm@11.27.0"
 }

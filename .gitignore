@@ -26,3 +26,6 @@ CLAUDE.md
 
 # GitHub Pages build (`nix run .#site`)
 /_site/
+
+# pnpm keeps its content store here when it can't share one across filesystems
+/.pnpm-store/

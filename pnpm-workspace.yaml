@@ -1,6 +1,9 @@
-# The same packages as the npm "workspaces" in package.json, for pnpm
 packages:
   - javascript/editor
   - javascript/patchwork
   - javascript/rain-diagram
   - javascript/rain-diagram-wasm
+  - javascript/rain-diagram-wasm/examples/*
+
+# The version comes from the Nix dev shell
+updateNotifier: false
