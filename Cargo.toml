@@ -9,7 +9,7 @@ members = [
 edition = "2024"
 rust-version = "1.91"
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/inkandswitch/rain"
+repository = "https://github.com/inkandswitch/downpour"
 authors = ["Brooklyn Zelenka <hello@brooklynzelenka.com>"]
 
 [workspace.dependencies]

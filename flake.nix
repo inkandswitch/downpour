@@ -1,5 +1,5 @@
 {
-  description = "rain: certflow and rain diagrams for capability authority flows";
+  description = "downpour: certflow and rain diagrams for capability authority flows";
 
   inputs = {
     command-utils = {
@@ -35,7 +35,13 @@
         # Single sources of truth, read from the manifests that own them
         workspaceManifest = builtins.fromTOML (builtins.readFile ./Cargo.toml);
         rustVersion = (builtins.fromTOML (builtins.readFile ./rust-toolchain.toml)).toolchain.channel;
-        msrv = workspaceManifest.workspace.package.rust-version;
+        # rust-overlay keys toolchains by full version (`1.91.0`), while
+        # `rust-version` may omit the patch (`1.91`)
+        rust-version = workspaceManifest.workspace.package.rust-version;
+        msrv =
+          if builtins.length (builtins.splitVersion rust-version) == 2
+          then "${rust-version}.0"
+          else rust-version;
 
         rust-toolchain = pkgs.rust-bin.stable.${rustVersion}.default.override {
           extensions = [
@@ -152,10 +158,12 @@
         # CI checks: each is a standalone `nix run .#ci-<name>` app so hosted
         # CI and local runs execute byte-identical commands.
         ci-env = [
-          rust-toolchain
           nightly-rustfmt
           pkgs.cargo-deny
+          pkgs.nodejs
+          pkgs.stdenv.cc # the linker, so checks also pass outside the dev shell
           pkgs.typos
+          rust-toolchain
         ];
 
         mkCheck = name: text:
@@ -205,6 +213,14 @@
             cargo deny check
           '';
 
+          # Syntax-check every script (there's no JS build step), then run the JS tests
+          ci-js = mkCheck "ci-js" ''
+            for file in preview/*.js preview/*.mjs packages/*/*.js; do
+              node --check "$file"
+            done
+            node --test preview/*.test.mjs
+          '';
+
           ci-typos = mkCheck "ci-typos" ''
             typos
           '';
@@ -213,7 +229,7 @@
           # versions, then restore the committed lockfile.
           ci-msrv = pkgs.writeShellApplication {
             name = "rain-ci-msrv";
-            runtimeInputs = [msrv-toolchain pkgs.coreutils];
+            runtimeInputs = [msrv-toolchain pkgs.coreutils pkgs.stdenv.cc];
             text = ''
               export CARGO_RESOLVER_INCOMPATIBLE_RUST_VERSIONS=fallback
               committed_lock="$(mktemp)"

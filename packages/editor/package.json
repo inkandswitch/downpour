@@ -1,0 +1,13 @@
+{
+  "name": "@inkandswitch/downpour-editor",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Collaborative editor for rain and certflow diagrams (planned)",
+  "license": "MIT OR Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/inkandswitch/downpour.git",
+    "directory": "packages/editor"
+  },
+  "type": "module"
+}

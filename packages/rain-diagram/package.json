@@ -1,0 +1,37 @@
+{
+  "name": "@inkandswitch/rain-diagram",
+  "version": "0.1.0",
+  "private": true,
+  "description": "<rain-diagram>: an interactive, editable rain and certflow diagram web component",
+  "keywords": [
+    "capabilities",
+    "certflow",
+    "keyhive",
+    "rain-diagram",
+    "web-component"
+  ],
+  "license": "MIT OR Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/inkandswitch/downpour.git",
+    "directory": "packages/rain-diagram"
+  },
+  "type": "module",
+  "exports": {
+    ".": "./rain-diagram.js",
+    "./wasm": "./pkg/rain_diagram_wasm.js"
+  },
+  "files": [
+    "pkg/rain_diagram_wasm.d.ts",
+    "pkg/rain_diagram_wasm.js",
+    "pkg/rain_diagram_wasm_bg.wasm",
+    "pkg/rain_diagram_wasm_bg.wasm.d.ts",
+    "rain-diagram.js"
+  ],
+  "sideEffects": [
+    "./rain-diagram.js"
+  ],
+  "scripts": {
+    "build": "wasm-pack build ../../rain_diagram_wasm --release --target web --out-dir ../packages/rain-diagram/pkg"
+  }
+}

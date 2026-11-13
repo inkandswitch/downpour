@@ -1,0 +1,8 @@
+{
+  "name": "downpour",
+  "private": true,
+  "description": "JS packages for rain and certflow diagrams; the Rust crates live alongside",
+  "workspaces": [
+    "packages/*"
+  ]
+}

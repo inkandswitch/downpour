@@ -1,0 +1,38 @@
+# Every job runs a flake app (`nix run .#ci-*`), so CI and local runs execute
+# exactly the same commands with the same pinned toolchains.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: ${{ matrix.check }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        check:
+          - ci-bolero
+          - ci-clippy
+          - ci-deny
+          - ci-doc
+          - ci-fmt
+          - ci-js
+          - ci-msrv
+          - ci-no-std
+          - ci-test
+          - ci-typos
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v31
+      - run: nix run .#${{ matrix.check }}

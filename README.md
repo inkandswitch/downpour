@@ -1,4 +1,4 @@
-# Rain Diagrams
+# Downpour
 
 > [!WARNING]
 > This project is pretty vibey. It started as a sketch to see if the plain-text notation from the Keyhive Lab Notes ([#7][certflow], [#8][rain]) could be parsed and rendered, and much of it was written with an AI pair. Expect sharp edges, churn, and opinions that haven't been tested on anyone yet.
@@ -127,7 +127,7 @@ And by `to_text`, matching the Lab Note's plain-text version character for chara
 
 ## Embedding
 
-`<rain-diagram>` renders the SVG and makes it interactive: hover a principal to trace everything it can reach, click a certificate to preview what revoking it would void. It's a prototype that lives in `preview/` until it gets packaged. See `preview/embed.html`, served at `/embed.html` by the preview.
+`<rain-diagram>` renders the SVG and makes it interactive: hover a principal to trace everything it can reach, click a certificate to preview what revoking it would void. It lives in [`packages/rain-diagram/`](packages/rain-diagram/) (not published yet), and its README lists the attributes and events. See `preview/embed.html`, served at `/embed.html` by the preview.
 
 ```html
 <script type="module" src="./rain-diagram.js"></script>
