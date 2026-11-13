@@ -315,6 +315,33 @@ fn late_authority_joins_on_the_members_lifeline() -> TestResult {
     Ok(())
 }
 
+/// A revocation that has no effect mustn't look like it cut anything: the
+/// effective one strikes its target, the ineffective one doesn't, in both
+/// the SVG and the text art.
+#[test]
+fn only_effective_revocations_strike_their_target() -> TestResult {
+    let effective = parse("rain\nab: (A)-[read]->(B)\n(A)-<revoke>-x[ab]")?;
+    let ineffective = parse("rain\nab: (A)-[read]->(B)\n(C)-<revoke>-x[ab]")?;
+
+    let svg = effective.to_rain_svg();
+    assert!(svg.contains(r#"<path class="cross""#), "{svg}");
+    assert!(effective.to_text().contains('✗'));
+
+    let svg = ineffective.to_rain_svg();
+    let group = svg
+        .find(r#"<g class="event revoke unauthorized""#)
+        .and_then(|at| svg.get(at..at + svg[at..].find("</g>")?))
+        .ok_or("the revocation's group")?;
+    assert!(!group.contains(r#"class="cross""#), "{group}");
+    assert!(
+        group.contains("<title>No effect: C can't revoke ab</title>"),
+        "{group}"
+    );
+    let text = ineffective.to_text();
+    assert!(!text.contains('✗'), "{text}");
+    Ok(())
+}
+
 /// Inline SVG `<style>` is parsed as markup when a page inserts the SVG with
 /// `innerHTML`, so any `<` would cut the stylesheet short.
 #[test]

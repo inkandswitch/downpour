@@ -450,29 +450,54 @@ impl<'a> Svg<'a> {
             format!("M{far:.1},{y:.1} H{tx:.1} V{up:.1}")
         };
 
+        // A revocation with no effect mustn't look like it cut anything: no
+        // cross on the target, and a tooltip saying why
+        let (cross, title) = if revoke.authority.is_authorized() {
+            (
+                format!(
+                    r#"<path class="cross" d="M{a:.1},{b:.1} L{c:.1},{e:.1} M{a:.1},{e:.1} L{c:.1},{b:.1}"/>"#,
+                    a = tx - 6.0,
+                    c = tx + 6.0,
+                    b = under + 2.0,
+                    e = under + 14.0,
+                ),
+                String::new(),
+            )
+        } else {
+            let d = self.diagram;
+            let name = d.principal(revoke.by).map_or("", |p| p.name().as_str());
+            let cert = d.cert(revoke.target).map_or("", |c| c.id.as_str());
+            (
+                String::new(),
+                format!(
+                    "<title>No effect: {} can't revoke {}</title>",
+                    escape(name),
+                    escape(cert)
+                ),
+            )
+        };
+
         let _ = write!(
             out,
             concat!(
                 r#"<g class="event revoke {status}" data-event="{ix}" data-span="{x:.1} {tx:.1}">{hit}"#,
                 r#"<path class="revocation" d="M{x:.1},{y:.1} H{near:.1} {rest}"/>"#,
-                r#"<path class="cross" d="M{a:.1},{b:.1} L{c:.1},{e:.1} M{a:.1},{e:.1} L{c:.1},{b:.1}"/>"#,
+                "{cross}",
                 r#"<path class="diamond" d="M{cx:.1},{dt:.1} L{dr:.1},{y:.1} L{cx:.1},{db:.1} L{dl:.1},{y:.1} Z"/>"#,
                 r#"<text x="{cx:.1}" y="{y:.1}" text-anchor="middle" dominant-baseline="central">✂️ Revoke</text>"#,
-                "</g>"
+                "{title}</g>"
             ),
             status = status,
             ix = ix.index(),
             hit = hit(x, tx, y),
+            cross = cross,
+            title = title,
             x = x,
             y = y,
             near = near,
             rest = rest,
             tx = tx,
             cx = cx,
-            a = tx - 6.0,
-            c = tx + 6.0,
-            b = under + 2.0,
-            e = under + 14.0,
             dt = y - ry,
             db = y + ry,
             dl = cx - rx,

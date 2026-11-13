@@ -227,6 +227,7 @@ const STYLE: &str = r"<style>
 .rain-diagram .revoked, .rain-diagram .void { opacity: 0.4; }
 .rain-diagram .revoked .tint { stroke-dasharray: 3 2; }
 .rain-diagram .unauthorized .tint { stroke: #d33; stroke-dasharray: 2 2; }
+.rain-diagram .revoke.unauthorized .revocation, .rain-diagram .revoke.unauthorized .diamond { stroke-dasharray: 4 3; opacity: 0.55; }
 /* Dark: follows the system unless a host page adds a `light` or `dark` class
    to the root element (the preview's theme toggle does). No angle brackets
    in here: inline SVG styles are parsed as markup, not raw text */

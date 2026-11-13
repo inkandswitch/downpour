@@ -353,14 +353,18 @@ impl<'a> Layout<'a> {
                     self.canvas
                         .path(&[(label.end + 1, line), (x, line)], Stroke::Solid);
                 }
-                self.canvas.text(x, line, "o");
-
-                let under = target.line + 1;
-                self.canvas.path(
-                    &[(target.input, under), (target.input, line)],
-                    Stroke::Solid,
-                );
-                self.canvas.text(target.input, under, "✗");
+                // A revocation that has no effect (the revoker can't revoke
+                // this) mustn't look like it cut anything: no power arrives
+                // at the revoker, and nothing reaches up to the target
+                if revoke.authority.is_authorized() {
+                    self.canvas.text(x, line, "o");
+                    let under = target.line + 1;
+                    self.canvas.path(
+                        &[(target.input, under), (target.input, line)],
+                        Stroke::Solid,
+                    );
+                    self.canvas.text(target.input, under, "✗");
+                }
                 Some(label)
             }
         }

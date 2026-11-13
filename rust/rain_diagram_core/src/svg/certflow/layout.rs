@@ -22,6 +22,11 @@ pub(super) type Point = (f64, f64);
 const ITERATIONS: usize = 300;
 const SEPARATION_PASSES: usize = 200;
 
+/// Majorization has settled once no node moves more than this (in hops):
+/// tight enough that settled layouts come out the same as running every
+/// iteration, for the examples checked.
+const SETTLED: f64 = 0.001;
+
 /// Place `radii.len()` nodes joined by `edges`, so neighbours sit about
 /// `unit` apart and no two nodes come closer than their radii plus `gap`.
 pub(super) fn place(radii: &[f64], edges: &[(usize, usize)], unit: f64, gap: f64) -> Vec<Point> {
@@ -105,6 +110,9 @@ fn start(n: usize, hops: &[Vec<f64>]) -> Vec<Point> {
 fn majorize(points: &mut [Point], hops: &[Vec<f64>]) {
     let n = points.len();
     for _ in 0..ITERATIONS {
+        // Each pass is O(n²), so stop as soon as the layout has settled
+        // rather than always running all of them
+        let mut moved: f64 = 0.0;
         for i in 0..n {
             let (mut sx, mut sy, mut total) = (0.0, 0.0, 0.0);
             for j in (0..n).filter(|&j| j != i) {
@@ -122,8 +130,15 @@ fn majorize(points: &mut [Point], hops: &[Vec<f64>]) {
                 total += w;
             }
             if total > 0.0 {
-                points[i] = (sx / total, sy / total);
+                let next = (sx / total, sy / total);
+                moved = moved
+                    .max((next.0 - points[i].0).abs())
+                    .max((next.1 - points[i].1).abs());
+                points[i] = next;
             }
+        }
+        if moved < SETTLED {
+            break;
         }
     }
 }
