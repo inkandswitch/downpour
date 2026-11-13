@@ -290,7 +290,7 @@ mod tests {
     #[allow(clippy::float_cmp, reason = "hop counts are exact small whole numbers")]
     fn hops_count_edges_and_put_strangers_one_past_the_longest_path() {
         // 0 - 1 - 2   3 (alone); a self-loop and an out-of-range edge ignored
-        let hops = hops(4, &[(0, 1), (1, 2), (2, 2), (0, 9)]);
+        let hops = hops(4, &[(0, 1), (1, 2), (2, 2), (0, 9), (4, 0), (0, 4)]);
         assert_eq!(hops[0][..3], [0.0, 1.0, 2.0]);
         assert_eq!(hops[2][0], 2.0);
         // The longest real path is 2, so strangers are 3 apart
@@ -342,12 +342,29 @@ mod tests {
             stress(&points)
         );
         assert!((1..=ITERATIONS).contains(&passes));
+        // Every edge ends up close to its one hop
+        for (a, b) in edges {
+            assert!(
+                (distance(points[a], points[b]) - 1.0).abs() < 0.25,
+                "{a}–{b}"
+            );
+        }
     }
 
     #[test]
     fn orienting_puts_the_first_node_on_top_and_the_second_to_its_left() {
-        let mut points = vec![(10.0, 0.0), (20.0, 10.0), (0.0, 10.0), (10.0, 20.0)];
+        // The first starts at a diagonal, so it has to be turned to the top
+        let before = vec![(20.0, 20.0), (0.0, 20.0), (20.0, 0.0), (0.0, 0.0)];
+        let mut points = before.clone();
         orient(&mut points);
+        // A rigid turn (and maybe a mirror): every distance is kept
+        for i in 0..4 {
+            for j in i + 1..4 {
+                assert!(
+                    (distance(points[i], points[j]) - distance(before[i], before[j])).abs() < 1e-9
+                );
+            }
+        }
         // Centred on the origin
         let n = to_f64(points.len());
         let centre = points
@@ -358,7 +375,6 @@ mod tests {
         assert!(points[0].0.abs() < 1e-9 && points[0].1 < 0.0, "{points:?}");
         assert!(points[1].0 <= points[0].0, "{points:?}");
         // Distances are kept
-        assert!((distance(points[0], points[3]) - 20.0).abs() < 1e-9);
     }
 
     #[test]
@@ -387,6 +403,19 @@ mod tests {
             separate(&mut points, &radii, 6.0);
             assert_eq!(points, before);
         }
+        // Two overlapping nodes each move half the overlap, straight apart
+        // (5 apart, wanting 12: each moves 3.5 along the 3-4-5 line)
+        let mut pair = vec![(0.0, 0.0), (3.0, 4.0)];
+        separate(&mut pair, &[5.0, 5.0], 2.0);
+        assert!((distance(pair[0], pair[1]) - 12.0).abs() < 1e-9, "{pair:?}");
+        assert!(
+            (pair[0].0 + 2.1).abs() < 1e-9 && (pair[0].1 + 2.8).abs() < 1e-9,
+            "{pair:?}"
+        );
+        assert!(
+            (pair[1].0 - 5.1).abs() < 1e-9 && (pair[1].1 - 6.8).abs() < 1e-9,
+            "{pair:?}"
+        );
         // Two nodes on the same spot part sideways
         let mut same = vec![(0.0, 0.0), (0.0, 0.0)];
         separate(&mut same, &[5.0, 5.0], 2.0);
@@ -399,9 +428,15 @@ mod tests {
     #[test]
     fn placing_nothing_gives_nothing_and_scales_by_unit() {
         assert!(place(&[], &[], 100.0, 10.0).is_empty());
-        let small = place(&[1.0; 2], &[(0, 1)], 10.0, 0.0);
-        let large = place(&[1.0; 2], &[(0, 1)], 100.0, 0.0);
-        let ratio = distance(large[0], large[1]) / distance(small[0], small[1]);
-        assert!((ratio - 10.0).abs() < 0.01, "{ratio}");
+        // A triangle, so both axes matter
+        let edges = [(0, 1), (1, 2), (2, 0)];
+        let small = place(&[1.0; 3], &edges, 10.0, 0.0);
+        let large = place(&[1.0; 3], &edges, 100.0, 0.0);
+        for (a, b) in [(0, 1), (1, 2), (2, 0)] {
+            let ratio = distance(large[a], large[b]) / distance(small[a], small[b]);
+            assert!((ratio - 10.0).abs() < 0.01, "{ratio}");
+            // Neighbours a unit apart
+            assert!((distance(large[a], large[b]) - 100.0).abs() < 5.0);
+        }
     }
 }

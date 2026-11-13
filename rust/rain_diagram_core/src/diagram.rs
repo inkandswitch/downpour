@@ -283,7 +283,8 @@ impl Diagram {
 
     /// A lane for each region, so regions that share rows never share a
     /// lane: outer regions get lower lanes than the regions nested inside
-    /// them, and overlapping regions get different ones.
+    /// them (even when a crossing region has pushed the outer one up), and
+    /// overlapping regions get different ones.
     pub(crate) fn region_lanes(&self) -> Vec<usize> {
         let mut order: Vec<(usize, &Region)> = self.regions.iter().enumerate().collect();
         // Earlier first; for the same start, longer (outer) first
@@ -296,10 +297,19 @@ impl Diagram {
                 .filter(|(_, other, _)| other.first <= region.last && region.first <= other.last)
                 .map(|&(_, _, lane)| lane)
                 .collect();
-            // n regions can take at most n lanes, so one of 0..=n is free
-            let lane = (0..=taken.len())
+            // Above every region containing this one (they sort first), so a
+            // nested region's box always fits inside its container's, even
+            // when a crossing region has pushed the container up
+            let floor = placed
+                .iter()
+                .filter(|(_, outer, _)| outer.first <= region.first && region.last <= outer.last)
+                .map(|&(_, _, lane)| lane + 1)
+                .max()
+                .unwrap_or(0);
+            // Of floor..=floor+n, at least one is free
+            let lane = (floor..=floor + taken.len())
                 .find(|lane| !taken.contains(lane))
-                .unwrap_or(taken.len());
+                .unwrap_or(floor + taken.len());
             placed.push((i, region, lane));
         }
 
@@ -1041,6 +1051,40 @@ mod tests {
         ));
         // And a good one still resolves
         assert!(Diagram::resolve(&with(Vec::from([region("R", 0..2)?]))).is_ok());
+        Ok(())
+    }
+
+    /// A region nested in another always gets a higher lane than it, even
+    /// when a region crossing the outer one has pushed it up: otherwise the
+    /// inner box would be padded more than its container and stick out.
+    #[test]
+    fn nested_regions_lane_above_their_container() -> TestResult {
+        // r3 crosses r0 (rows 1–2 vs 2–3), pushing r0 to lane 1; r2 sits
+        // inside r0 and must go above it, not back down to lane 0
+        let d = resolve(
+            "rain
+             (Doc)-[read]->(Alice)
+             >>> r1
+             >>> r3
+             (Alice)-[read(Doc)]->(Team)
+             <<< r1
+             >>> r0
+             (Bob)-[read]->(Alice)
+             <<< r3
+             >>> r2
+             (Team)-[relay]->(Alice)
+             <<< r2
+             <<< r0",
+        )?;
+        let lane = |id: &str| {
+            d.regions()
+                .iter()
+                .position(|r| r.id.as_str() == id)
+                .map(|i| d.region_lanes()[i])
+        };
+        assert!(lane("r2") > lane("r0"), "{:?}", d.region_lanes());
+        // Crossing regions share rows, so they never share a lane
+        assert_ne!(lane("r0"), lane("r3"));
         Ok(())
     }
 }

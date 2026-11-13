@@ -1867,6 +1867,15 @@ mod geometry {
             half_h: f64,
         },
     }
+    /// Whether `p` lies on the way from `from` towards `to`: along the line
+    /// between them, on `to`'s side of `from`.
+    fn heading(from: (f64, f64), p: (f64, f64), to: (f64, f64)) -> bool {
+        let (ax, ay) = (p.0 - from.0, p.1 - from.1);
+        let (bx, by) = (to.0 - from.0, to.1 - from.1);
+        let cross = (ax * by - ay * bx).abs() / bx.hypot(by).max(1e-9);
+        cross < 0.3 && ax * bx + ay * by > 0.0
+    }
+
     impl Node {
         const fn centre(self) -> (f64, f64) {
             match self {
@@ -2005,6 +2014,15 @@ mod geometry {
                 "width {} for right edge {right}\n{source}",
                 view[2]
             );
+            let bottom = nodes
+                .iter()
+                .map(|n| n.centre().1 + n.radius())
+                .fold(f64::MIN, f64::max);
+            assert!(
+                (view[3] - (bottom + 24.0 + frame)).abs() <= 0.6,
+                "height {} for bottom edge {bottom}\n{source}",
+                view[3]
+            );
 
             // Nothing overlaps (the layout keeps 18 px between nodes)
             for (i, a) in nodes.iter().enumerate() {
@@ -2058,6 +2076,16 @@ mod geometry {
                                 node.on_edge(ps[2]) && audience.on_edge(ps[3]),
                                 "#{i} wire out\n{source}"
                             );
+                            // Each end faces the other node
+                            let (ic, nc, ac) = (issuer.centre(), node.centre(), audience.centre());
+                            assert!(
+                                heading(ic, ps[0], nc) && heading(nc, ps[1], ic),
+                                "#{i} wire in faces away\n{source}"
+                            );
+                            assert!(
+                                heading(nc, ps[2], ac) && heading(ac, ps[3], nc),
+                                "#{i} wire out faces away\n{source}"
+                            );
                         }
                         let chevron = parts
                             .iter()
@@ -2068,6 +2096,22 @@ mod geometry {
                             near(cs[1].0, ps[3].0) && near(cs[1].1, ps[3].1),
                             "#{i} arrowhead off the tip\n{source}"
                         );
+                        // The arms trail back towards the box, not past the tip
+                        if cert.issuer != cert.audience {
+                            let ac = principal(cert.audience).centre();
+                            let arms = (
+                                f64::midpoint(cs[0].0, cs[2].0),
+                                f64::midpoint(cs[0].1, cs[2].1),
+                            );
+                            let (to_arms, to_tip) = (
+                                (arms.0 - ac.0).hypot(arms.1 - ac.1),
+                                (cs[1].0 - ac.0).hypot(cs[1].1 - ac.1),
+                            );
+                            assert!(
+                                to_arms > to_tip,
+                                "#{i} arrowhead points backwards\n{source}"
+                            );
+                        }
                         for arm in [cs[0], cs[2]] {
                             assert!(
                                 ((arm.0 - cs[1].0).hypot(arm.1 - cs[1].1) - 106_f64.sqrt()).abs()
@@ -2135,6 +2179,31 @@ mod geometry {
                     (bow - (0.3 * length).max(40.0)).abs() < 0.3,
                     "powerline into #{to} bows {bow} for length {length}\n{source}"
                 );
+                // Square to the chord
+                let dot = (control.0 - mid.0) * (end.0 - start.0)
+                    + (control.1 - mid.1) * (end.1 - start.1);
+                assert!(
+                    dot.abs() / (bow * length).max(1e-9) < 0.01,
+                    "powerline into #{to} bows askew\n{source}"
+                );
+                // A root's bows away from the audience, clear of the wire
+                if !a.contains_key("data-from")
+                    && let Some(Event::Delegate(cert)) = d.event_ix(to).and_then(|ix| d.event(ix))
+                {
+                    // (meaningless when the audience is the subject: it's on the chord)
+                    if cert.audience == cert.subject {
+                        continue;
+                    }
+                    let ac = principal(cert.audience).centre();
+                    let away =
+                        (control.0 - mid.0) * (ac.0 - mid.0) + (control.1 - mid.1) * (ac.1 - mid.1);
+                    assert!(
+                        // as a cosine, with room for rounding when the audience is
+                        // nearly in line with the chord
+                        away / (bow * (ac.0 - mid.0).hypot(ac.1 - mid.1)).max(1e-9) <= 0.02,
+                        "root powerline into #{to} bows towards its audience\n{source}"
+                    );
+                }
             }
 
             // Regions wrap their drawn nodes, with room for the caption tab
@@ -2155,6 +2224,37 @@ mod geometry {
                     .expect("its region");
                 let (x, y) = (num(a, "x"), num(a, "y"));
                 let b = (x, y, x + num(a, "width"), y + num(a, "height"));
+                // Exactly: the drawn nodes' extent, padded by 12 + 24k (k
+                // more for each level nested inside), plus the tab on top
+                let drawn: Vec<Node> = (r.first.index()..=r.last.index())
+                    .filter_map(|e| events.get(&e).copied())
+                    .collect();
+                if !drawn.is_empty() {
+                    let extent = drawn.iter().fold(
+                        (f64::MAX, f64::MAX, f64::MIN, f64::MIN),
+                        |(l, t, rr, bb), n| {
+                            let (c, rad) = (n.centre(), n.radius());
+                            (
+                                l.min(c.0 - rad),
+                                t.min(c.1 - rad),
+                                rr.max(c.0 + rad),
+                                bb.max(c.1 + rad),
+                            )
+                        },
+                    );
+                    let pad = extent.0 - b.0;
+                    assert!(
+                        pad > 11.8 && near((pad - 12.0) / 24.0, ((pad - 12.0) / 24.0).round()),
+                        "region {id} pad {pad}\n{source}"
+                    );
+                    assert!(
+                        // sums of several 0.1-rounded numbers, so a looser tolerance
+                        (b.2 - extent.2 - pad).abs() < 0.3
+                            && (b.3 - extent.3 - pad).abs() < 0.3
+                            && (extent.1 - b.1 - pad - 18.0).abs() < 0.3,
+                        "region {id} padded unevenly\n{source}"
+                    );
+                }
                 for e in r.first.index()..=r.last.index() {
                     if let Some(n) = events.get(&e) {
                         let (c, rad) = (n.centre(), n.radius());
@@ -2164,6 +2264,41 @@ mod geometry {
                                 && b.1 <= c.1 - rad - 29.8
                                 && c.1 + rad + 11.8 <= b.3,
                             "region {id} doesn't wrap #{e}\n{source}"
+                        );
+                    }
+                }
+            }
+
+            // A region whose rows contain another's draws its box around it
+            let mut boxes: Vec<(&rain_diagram_core::diagram::Region, Bbox)> = Vec::new();
+            let mut current: Option<&str> = None;
+            for (name, a) in &all {
+                if *name == "g" {
+                    current = (a.get("class") == Some(&"region")).then(|| a["data-region"]);
+                } else if let (Some(id), "rect", Some(&"region-box")) =
+                    (current, *name, a.get("class"))
+                {
+                    let r = d
+                        .regions()
+                        .iter()
+                        .find(|r| r.id.as_str() == id)
+                        .expect("its region");
+                    let (x, y) = (num(a, "x"), num(a, "y"));
+                    boxes.push((r, (x, y, x + num(a, "width"), y + num(a, "height"))));
+                }
+            }
+            for (outer, ob) in &boxes {
+                for (inner, ib) in &boxes {
+                    let nested = outer.id != inner.id
+                        && outer.first <= inner.first
+                        && inner.last <= outer.last
+                        && (outer.first, outer.last) != (inner.first, inner.last);
+                    if nested {
+                        assert!(
+                            ob.0 < ib.0 && ob.1 < ib.1 && ib.2 < ob.2 && ib.3 < ob.3,
+                            "region {} doesn't surround {}\n{source}",
+                            outer.id.as_str(),
+                            inner.id.as_str()
                         );
                     }
                 }
