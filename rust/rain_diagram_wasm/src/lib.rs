@@ -79,13 +79,14 @@ pub fn set_region_note(source: &str, region: &str, note: &str) -> Result<String,
 #[wasm_bindgen(js_name = insertStatement)]
 pub fn insert_statement(
     source: &str,
-    at: usize,
+    at: f64,
     kind: &str,
-    from: usize,
-    to: usize,
+    from: f64,
+    to: f64,
     level: &str,
 ) -> Result<String, JsError> {
     use rain_diagram_core::{edit::NewStatement, level::Level};
+    let (at, from, to) = (whole("at", at)?, whole("from", from)?, whole("to", to)?);
     let level = || {
         level
             .parse::<Level>()
@@ -121,8 +122,8 @@ pub fn insert_statement(
 /// Throws if there's no such statement, a revocation still names it, or
 /// the result wouldn't parse.
 #[wasm_bindgen(js_name = deleteStatement)]
-pub fn delete_statement(source: &str, statement: usize) -> Result<String, JsError> {
-    rain_diagram_core::edit::delete_statement(source, statement)
+pub fn delete_statement(source: &str, statement: f64) -> Result<String, JsError> {
+    rain_diagram_core::edit::delete_statement(source, whole("statement", statement)?)
         .map_err(|e| JsError::new(&e.to_string()))
 }
 
@@ -133,8 +134,8 @@ pub fn delete_statement(source: &str, statement: usize) -> Result<String, JsErro
 ///
 /// Throws if either column doesn't exist.
 #[wasm_bindgen(js_name = movePrincipal)]
-pub fn move_principal(source: &str, from: usize, to: usize) -> Result<String, JsError> {
-    rain_diagram_core::edit::move_principal(source, from, to)
+pub fn move_principal(source: &str, from: f64, to: f64) -> Result<String, JsError> {
+    rain_diagram_core::edit::move_principal(source, whole("from", from)?, whole("to", to)?)
         .map_err(|e| JsError::new(&e.to_string()))
 }
 
@@ -149,9 +150,10 @@ pub fn move_principal(source: &str, from: usize, to: usize) -> Result<String, Js
 pub fn set_region_rows(
     source: &str,
     region: &str,
-    first: usize,
-    last: usize,
+    first: f64,
+    last: f64,
 ) -> Result<String, JsError> {
+    let (first, last) = (whole("first", first)?, whole("last", last)?);
     rain_diagram_core::edit::set_region_rows(source, region, first, last)
         .map_err(|e| JsError::new(&e.to_string()))
 }
@@ -162,14 +164,14 @@ pub fn set_region_rows(
 ///
 /// # Errors
 ///
-/// Throws if there's no such statement or `percent` is over 100.
+/// Throws if there's no such statement, or a number isn't a whole number
+/// ≥ 0. Percentages past 100 count as 100.
 #[wasm_bindgen(js_name = setPosition)]
-pub fn set_position(
-    source: &str,
-    statement: usize,
-    percent: Option<u16>,
-) -> Result<String, JsError> {
-    rain_diagram_core::edit::set_position(source, statement, percent)
+pub fn set_position(source: &str, statement: f64, percent: Option<f64>) -> Result<String, JsError> {
+    let percent = percent
+        .map(|p| whole("percent", p).map(|p| u16::try_from(p).unwrap_or(u16::MAX)))
+        .transpose()?;
+    rain_diagram_core::edit::set_position(source, whole("statement", statement)?, percent)
         .map_err(|e| JsError::new(&e.to_string()))
 }
 
@@ -181,8 +183,8 @@ pub fn set_position(
 /// Throws if `to` is above something the statement relies on or below
 /// something relying on it, or if the result wouldn't parse.
 #[wasm_bindgen(js_name = moveStatement)]
-pub fn move_statement(source: &str, from: usize, to: usize) -> Result<String, JsError> {
-    rain_diagram_core::edit::move_statement(source, from, to)
+pub fn move_statement(source: &str, from: f64, to: f64) -> Result<String, JsError> {
+    rain_diagram_core::edit::move_statement(source, whole("from", from)?, whole("to", to)?)
         .map_err(|e| JsError::new(&e.to_string()))
 }
 
@@ -201,6 +203,27 @@ fn parse(source: &str) -> Result<rain_diagram_core::diagram::Diagram, JsError> {
         let (line, column) = e.span().line_col(source);
         JsError::new(&format!("{line}:{column}: {e}"))
     })
+}
+
+/// A JS number used as an index or count: it must be a whole number ≥ 0.
+/// Taking `f64` and checking, rather than `usize`, because wasm-bindgen
+/// would otherwise wrap negatives (`-1` becomes 4294967295) and silently
+/// drop fractions.
+fn whole(name: &str, n: f64) -> Result<usize, JsError> {
+    #[allow(clippy::float_cmp, reason = "an exact whole-number check")]
+    let whole = n.is_finite() && n >= 0.0 && n.trunc() == n && n <= f64::from(u32::MAX);
+    if whole {
+        #[allow(
+            clippy::cast_possible_truncation,
+            clippy::cast_sign_loss,
+            reason = "checked: whole, non-negative, and within u32"
+        )]
+        Ok(n as usize)
+    } else {
+        Err(JsError::new(&format!(
+            "{name} must be a whole number ≥ 0, not {n}"
+        )))
+    }
 }
 
 /// A parsed diagram, kept for interactive queries without re-parsing.
@@ -245,17 +268,25 @@ impl RainDiagram {
     }
 
     /// The rain SVG with the "now" line below the first `happened` events.
-    #[must_use]
+    ///
+    /// # Errors
+    ///
+    /// Throws unless `happened` is a whole number ≥ 0.
     #[wasm_bindgen(js_name = rainSvgAt)]
-    pub fn rain_svg_at(&self, happened: usize) -> String {
-        self.diagram.to_rain_svg_at(happened)
+    pub fn rain_svg_at(&self, happened: f64) -> Result<String, JsError> {
+        Ok(self.diagram.to_rain_svg_at(whole("happened", happened)?))
     }
 
     /// The certflow snapshot after the first `happened` events.
-    #[must_use]
+    ///
+    /// # Errors
+    ///
+    /// Throws unless `happened` is a whole number ≥ 0.
     #[wasm_bindgen(js_name = certflowSvgAt)]
-    pub fn certflow_svg_at(&self, happened: usize) -> String {
-        self.diagram.to_certflow_svg_at(happened)
+    pub fn certflow_svg_at(&self, happened: f64) -> Result<String, JsError> {
+        Ok(self
+            .diagram
+            .to_certflow_svg_at(whole("happened", happened)?))
     }
 
     /// The notation the header names: `"rain"` or `"certflow"`.
@@ -293,7 +324,14 @@ impl RainDiagram {
     #[must_use]
     pub fn reach(&self, principal: &str) -> String {
         let d = &self.diagram;
-        let (Some(holder), Some(now)) = (d.principal_by_key(principal), d.now()) else {
+        // A key (`alice`) or a display name (`Alice`)
+        let holder = d.principal_by_key(principal).or_else(|| {
+            d.principals()
+                .iter()
+                .find(|p| p.name().as_str() == principal)
+                .and_then(|p| d.principal_by_key(p.key()))
+        });
+        let (Some(holder), Some(now)) = (holder, d.now()) else {
             return r#"{"subjects":[],"events":[]}"#.into();
         };
 
@@ -330,23 +368,31 @@ impl RainDiagram {
 
     /// The rows event `event` can be dragged to, as `[first, last]`: below
     /// everything it relies on, above everything relying on it.
-    #[must_use]
-    pub fn movable(&self, event: usize) -> Vec<usize> {
-        self.diagram
-            .event_ix(event)
+    ///
+    /// # Errors
+    ///
+    /// Throws unless `event` is a whole number ≥ 0.
+    pub fn movable(&self, event: f64) -> Result<Vec<usize>, JsError> {
+        Ok(self
+            .diagram
+            .event_ix(whole("event", event)?)
             .map(|ix| {
                 let range = self.diagram.movable(ix);
                 Vec::from([*range.start(), *range.end()])
             })
-            .unwrap_or_default()
+            .unwrap_or_default())
     }
 
     /// Indices of the events that revoking event `event` would void (empty
     /// for anything but a certificate).
-    #[must_use]
-    pub fn dependents(&self, event: usize) -> Vec<usize> {
-        self.diagram
-            .event_ix(event)
+    ///
+    /// # Errors
+    ///
+    /// Throws unless `event` is a whole number ≥ 0.
+    pub fn dependents(&self, event: f64) -> Result<Vec<usize>, JsError> {
+        Ok(self
+            .diagram
+            .event_ix(whole("event", event)?)
             .filter(|&ix| self.diagram.cert(ix).is_some())
             .map(|ix| {
                 self.diagram
@@ -354,6 +400,6 @@ impl RainDiagram {
                     .map(rain_diagram_core::diagram::EventIx::index)
                     .collect()
             })
-            .unwrap_or_default()
+            .unwrap_or_default())
     }
 }

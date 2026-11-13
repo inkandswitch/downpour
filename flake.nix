@@ -130,6 +130,43 @@
           '';
         };
 
+        # wasm-bodge (github.com/alexjg/wasm-bodge) packages the Wasm bindings
+        # as one npm package that loads in Node, bundlers, browsers, workers,
+        # and script tags. Not in nixpkgs, so pinned here.
+        wasm-bodge = pkgs.rustPlatform.buildRustPackage rec {
+          pname = "wasm-bodge";
+          version = "0.5.0";
+          src = pkgs.fetchCrate {
+            inherit pname version;
+            hash = "sha256-rynFZi1ZMVzi/pBVpSjRMPIVkeJxCM7tfZblGjFLVDE=";
+          };
+          cargoHash = "sha256-lNgGxyLcO7yEATlMfjjVXBgmjtXI4l+lFk/yagP7lh0=";
+          doCheck = false;
+        };
+
+        # `nix run .#bodge [template-package.json] [out-dir]`: build the
+        # bindings package with wasm-bodge, on our stable toolchain
+        # (`--panic abort`; unwind needs nightly). Defaults to the spike
+        bodge = pkgs.writeShellApplication {
+          name = "rain-bodge";
+          runtimeInputs = [
+            rust-toolchain
+            wasm-bindgen-cli
+            wasm-bodge
+            pkgs.binaryen
+            pkgs.esbuild
+            pkgs.nodejs
+          ];
+          text = ''
+            set -x
+            wasm-bodge build \
+              --crate-path rust/rain_diagram_wasm \
+              --package-json "''${1:-.ignore/scratch/bodge/package.json}" \
+              --out-dir "''${2:-.ignore/scratch/bodge/dist}" \
+              --panic abort
+          '';
+        };
+
         command_menu = command-utils.commands.${system} [
           (rust.build {cargo = pkgs.cargo;})
           (rust.test {
@@ -260,7 +297,9 @@
             type = "app";
             program = pkgs.lib.getExe drv;
           })
-          (ci-checks // {inherit preview;});
+          (ci-checks // {inherit bodge preview;});
+
+        packages = {inherit wasm-bodge;};
 
         devShells.default = pkgs.mkShell {
           name = "rain_shell";

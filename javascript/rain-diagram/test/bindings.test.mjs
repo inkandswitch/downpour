@@ -130,24 +130,46 @@ describe("the JS boundary", () => {
   test("wrong argument types are refused", () => {
     throwsMatching(() => wasm.renderSvg(undefined), /expected a string/);
     throwsMatching(() => wasm.renderSvg(42), /expected a string/);
-    throwsMatching(() => wasm.moveStatement(SOURCE, "1", "2"), /expected a number/);
+    // Numbers go through JS coercion first: numeric strings work like
+    // numbers, and anything else becomes NaN, which is refused
+    assert.equal(wasm.moveStatement(SOURCE, "1", "2"), wasm.moveStatement(SOURCE, 1, 2));
+    throwsMatching(() => wasm.moveStatement(SOURCE, "one", 2), /^from must be a whole number ≥ 0, not NaN$/);
   });
 
-  // Today wasm-bindgen wraps negatives and truncates fractions into usize/u16,
-  // so these silently do the wrong thing. To fix before publishing (see TODO).
-  const todo = "validate numbers at the boundary before publishing";
-  test("negative positions are refused", { todo }, () => {
-    assert.throws(() => wasm.setPosition(SOURCE, 1, -5));
+  // Numbers are taken as JS numbers and checked, rather than letting
+  // wasm-bindgen wrap negatives (-1 → 4294967295) or drop fractions
+  test("negative and fractional numbers are refused, naming the argument", () => {
+    throwsMatching(() => wasm.setPosition(SOURCE, 1, -5), /^percent must be a whole number ≥ 0, not -5$/);
+    throwsMatching(() => wasm.moveStatement(SOURCE, -1, 0), /^from must be a whole number ≥ 0, not -1$/);
+    throwsMatching(() => wasm.moveStatement(SOURCE, 1.7, 2), /^from must be a whole number ≥ 0, not 1.7$/);
+    throwsMatching(() => wasm.deleteStatement(SOURCE, NaN), /^statement must be a whole number ≥ 0, not NaN$/);
+    throwsMatching(() => wasm.insertStatement(SOURCE, Infinity, "invoke", 0, 1, "read"), /^at must be a whole number/);
+    throwsMatching(() => wasm.movePrincipal(SOURCE, 0, -2), /^to must be a whole number/);
+    throwsMatching(() => wasm.setRegionRows("rain\n>>> R\n(A)-[read]->(B)\n<<< R", "R", 0.5, 0), /^first must be a whole number/);
   });
-  test("negative statement numbers are refused", { todo }, () => {
-    assert.throws(() => wasm.moveStatement(SOURCE, -1, 0), /whole number/);
+
+  test("class methods check their numbers too", () => {
+    const d = new wasm.RainDiagram(SOURCE);
+    try {
+      throwsMatching(() => d.rainSvgAt(-1), /^happened must be a whole number/);
+      throwsMatching(() => d.certflowSvgAt(1.5), /^happened must be a whole number/);
+      throwsMatching(() => d.dependents(-1), /^event must be a whole number/);
+      throwsMatching(() => d.movable(0.1), /^event must be a whole number/);
+      // Whole numbers past the end are fine: nothing there
+      assert.deepEqual(Array.from(d.dependents(99)), []);
+    } finally {
+      d.free();
+    }
   });
-  test("fractional statement numbers are refused", { todo }, () => {
-    assert.throws(() => wasm.moveStatement(SOURCE, 1.7, 2));
+
+  test("percentages past 100 count as 100", () => {
+    assert.equal(wasm.setPosition(SOURCE, 1, 250), wasm.setPosition(SOURCE, 1, 100));
   });
-  test("reach accepts a display name", { todo }, () => {
+
+  test("reach accepts a display name as well as a key", () => {
     const d = new wasm.RainDiagram("rain\n(Doc)-[edit]->(Alice)\n");
     try {
+      assert.deepEqual(JSON.parse(d.reach("Alice")), JSON.parse(d.reach("alice")));
       assert.notDeepEqual(JSON.parse(d.reach("Alice")).subjects, []);
     } finally {
       d.free();
