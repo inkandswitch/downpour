@@ -384,6 +384,7 @@
 
               pkgs.binaryen
               pkgs.nodejs
+              pkgs.pnpm
               pkgs.rust-analyzer
               pkgs.wasm-pack
             ]

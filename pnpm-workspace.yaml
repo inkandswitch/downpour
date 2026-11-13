@@ -1,0 +1,6 @@
+# The same packages as the npm "workspaces" in package.json, for pnpm
+packages:
+  - javascript/editor
+  - javascript/patchwork
+  - javascript/rain-diagram
+  - javascript/rain-diagram-wasm
