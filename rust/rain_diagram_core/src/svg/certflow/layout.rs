@@ -285,4 +285,123 @@ mod tests {
         let passes = majorize(&mut points, &hops);
         assert!(passes < ITERATIONS / 2, "took {passes} passes");
     }
+
+    #[test]
+    #[allow(clippy::float_cmp, reason = "hop counts are exact small whole numbers")]
+    fn hops_count_edges_and_put_strangers_one_past_the_longest_path() {
+        // 0 - 1 - 2   3 (alone); a self-loop and an out-of-range edge ignored
+        let hops = hops(4, &[(0, 1), (1, 2), (2, 2), (0, 9)]);
+        assert_eq!(hops[0][..3], [0.0, 1.0, 2.0]);
+        assert_eq!(hops[2][0], 2.0);
+        // The longest real path is 2, so strangers are 3 apart
+        assert_eq!(hops[3][..3], [3.0, 3.0, 3.0]);
+        assert_eq!(hops[3][3], 0.0);
+        // With no edges at all, strangers are 2 apart (longest counts as 1)
+        assert_eq!(super::hops(2, &[])[0][1], 2.0);
+    }
+
+    #[test]
+    fn nodes_start_in_layers_by_distance_from_the_first() {
+        // A star: 0 in the middle, 1..=3 one hop out, 4 two hops out
+        let edges = [(0, 1), (0, 2), (0, 3), (3, 4)];
+        let points = start(5, &hops(5, &edges));
+        for (i, layer) in [(0, 0.0), (1, 1.0), (2, 1.0), (3, 1.0), (4, 2.0)] {
+            assert!(
+                (layer..layer + 0.3).contains(&points[i].1),
+                "{i}: {:?}",
+                points[i]
+            );
+        }
+        // Spread sideways within a layer, one slot each
+        let xs: Vec<f64> = (1..=3).map(|i| points[i].0).collect();
+        for (slot, x) in xs.iter().enumerate() {
+            assert!((to_f64(slot)..to_f64(slot) + 0.3).contains(x), "{xs:?}");
+        }
+    }
+
+    #[test]
+    fn majorizing_brings_distances_towards_hops() {
+        let edges = [(0, 1), (1, 2), (2, 3), (3, 0), (0, 4)];
+        let hops = hops(5, &edges);
+        let stress = |points: &[Point]| {
+            let mut total = 0.0;
+            for i in 0..points.len() {
+                for j in i + 1..points.len() {
+                    let d = hops[i][j];
+                    total += (distance(points[i], points[j]) - d).powi(2) / (d * d);
+                }
+            }
+            total
+        };
+        let mut points = start(5, &hops);
+        let before = stress(&points);
+        let passes = majorize(&mut points, &hops);
+        assert!(
+            stress(&points) < before / 4.0,
+            "{before} → {}",
+            stress(&points)
+        );
+        assert!((1..=ITERATIONS).contains(&passes));
+    }
+
+    #[test]
+    fn orienting_puts_the_first_node_on_top_and_the_second_to_its_left() {
+        let mut points = vec![(10.0, 0.0), (20.0, 10.0), (0.0, 10.0), (10.0, 20.0)];
+        orient(&mut points);
+        // Centred on the origin
+        let n = to_f64(points.len());
+        let centre = points
+            .iter()
+            .fold((0.0, 0.0), |(x, y), p| (x + p.0 / n, y + p.1 / n));
+        assert!(centre.0.abs() < 1e-9 && centre.1.abs() < 1e-9, "{centre:?}");
+        // The first straight above the centre, the second on the left
+        assert!(points[0].0.abs() < 1e-9 && points[0].1 < 0.0, "{points:?}");
+        assert!(points[1].0 <= points[0].0, "{points:?}");
+        // Distances are kept
+        assert!((distance(points[0], points[3]) - 20.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn separating_leaves_room_and_leaves_spaced_layouts_alone() {
+        // Deterministic but varied: a small linear congruential sequence
+        let mut seed = 7_u64;
+        let mut next = || {
+            seed = seed.wrapping_mul(6_364_136_223_846_793_005).wrapping_add(1);
+            to_f64(usize::try_from(seed >> 40).unwrap_or(0) % 1000) / 10.0
+        };
+        for n in [2, 5, 12] {
+            let radii: Vec<f64> = (0..n).map(|_| 5.0 + next() / 5.0).collect();
+            let mut points: Vec<Point> = (0..n).map(|_| (next(), next())).collect();
+            separate(&mut points, &radii, 6.0);
+            for i in 0..n {
+                for j in i + 1..n {
+                    let room = distance(points[i], points[j]) - radii[i] - radii[j];
+                    assert!(
+                        room >= 6.0 - 1e-6,
+                        "{n} nodes: {i} and {j} only {room} apart"
+                    );
+                }
+            }
+            // Already spaced: nothing moves
+            let before = points.clone();
+            separate(&mut points, &radii, 6.0);
+            assert_eq!(points, before);
+        }
+        // Two nodes on the same spot part sideways
+        let mut same = vec![(0.0, 0.0), (0.0, 0.0)];
+        separate(&mut same, &[5.0, 5.0], 2.0);
+        assert!(
+            same[0].0 < same[1].0 && (same[0].1 - same[1].1).abs() < 1e-9,
+            "{same:?}"
+        );
+    }
+
+    #[test]
+    fn placing_nothing_gives_nothing_and_scales_by_unit() {
+        assert!(place(&[], &[], 100.0, 10.0).is_empty());
+        let small = place(&[1.0; 2], &[(0, 1)], 10.0, 0.0);
+        let large = place(&[1.0; 2], &[(0, 1)], 100.0, 0.0);
+        let ratio = distance(large[0], large[1]) / distance(small[0], small[1]);
+        assert!((ratio - 10.0).abs() < 0.01, "{ratio}");
+    }
 }

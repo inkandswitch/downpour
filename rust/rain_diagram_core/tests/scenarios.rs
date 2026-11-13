@@ -1852,4 +1852,342 @@ mod geometry {
             }
         });
     }
+
+    /// A certflow node: a principal's circle, or a certificate's box or a
+    /// revocation's diamond (both measured as boxes, as the layout does).
+    #[derive(Clone, Copy, Debug)]
+    enum Node {
+        Circle {
+            c: (f64, f64),
+            r: f64,
+        },
+        Box {
+            c: (f64, f64),
+            half: f64,
+            half_h: f64,
+        },
+    }
+    impl Node {
+        const fn centre(self) -> (f64, f64) {
+            match self {
+                Self::Circle { c, .. } | Self::Box { c, .. } => c,
+            }
+        }
+        const fn radius(self) -> f64 {
+            match self {
+                Self::Circle { r, .. } => r,
+                Self::Box { half, .. } => half,
+            }
+        }
+        /// Whether `p` lies on the boundary.
+        fn on_edge(self, p: (f64, f64)) -> bool {
+            match self {
+                Self::Circle { c, r } => ((p.0 - c.0).hypot(p.1 - c.1) - r).abs() < 0.2,
+                Self::Box { c, half, half_h } => {
+                    let k = ((p.0 - c.0).abs() / half).max((p.1 - c.1).abs() / half_h);
+                    (k - 1.0).abs() < 0.02
+                }
+            }
+        }
+    }
+
+    /// Certflow geometry: nodes framed by the margins, never overlapping;
+    /// wires and powerlines leaving and entering exactly on node
+    /// boundaries; regions wrapping their nodes; and, at each moment, only
+    /// the principals involved so far.
+    #[allow(clippy::too_many_lines)]
+    #[test]
+    fn certflow_geometry_holds_together() {
+        check!().with_type::<Vec<u8>>().for_each(|bytes| {
+            let Some(scenario) = common::arbitrary::<Scenario>(bytes) else {
+                return;
+            };
+            let (source, d) = scenario.diagram();
+            let svg = d.to_certflow_svg();
+            let all = tags(&svg);
+            let near = |a: f64, b: f64| (a - b).abs() < 0.15;
+            let view: Vec<f64> = all[0].1["viewBox"]
+                .split(' ')
+                .filter_map(|n| n.parse().ok())
+                .collect();
+
+            let mut principals: BTreeMap<&str, Node> = BTreeMap::new();
+            let mut events: BTreeMap<usize, Node> = BTreeMap::new();
+            let mut group: Option<&BTreeMap<&str, &str>> = None;
+            for (name, a) in &all {
+                if *name == "g" {
+                    group = Some(a);
+                    continue;
+                }
+                let Some(g) = group else { continue };
+                let event = g.get("data-event").and_then(|e| e.parse::<usize>().ok());
+                match (*name, a.get("class"), event) {
+                    ("circle", Some(&"node"), _) => {
+                        let key = g["data-principal"];
+                        principals.insert(
+                            key,
+                            Node::Circle {
+                                c: (num(a, "cx"), num(a, "cy")),
+                                r: num(a, "r"),
+                            },
+                        );
+                    }
+                    ("rect", Some(&"pill"), Some(e)) => {
+                        let (x, y, w, h) =
+                            (num(a, "x"), num(a, "y"), num(a, "width"), num(a, "height"));
+                        events.insert(
+                            e,
+                            Node::Box {
+                                c: (x + w / 2.0, y + h / 2.0),
+                                half: w / 2.0,
+                                half_h: h / 2.0,
+                            },
+                        );
+                    }
+                    ("path", Some(&"diamond"), Some(e)) => {
+                        let ps = points(a["d"]);
+                        let c = (ps[0].0, ps[1].1);
+                        events.insert(
+                            e,
+                            Node::Box {
+                                c,
+                                half: 22.0,
+                                half_h: 16.0,
+                            },
+                        );
+                    }
+                    _ => {}
+                }
+            }
+            let principal = |p: rain_diagram_core::diagram::PrincipalIx| {
+                principals[d.principal(p).expect("in range").key()]
+            };
+            assert_eq!(principals.len(), d.principals().len(), "{source}");
+
+            // Framed by the margins: the leftmost and topmost edges sit at
+            // the margin (plus the region frame, and the title's room)
+            let nodes: Vec<Node> = principals
+                .values()
+                .chain(events.values())
+                .copied()
+                .collect();
+            if nodes.is_empty() {
+                return;
+            }
+            let left = nodes
+                .iter()
+                .map(|n| n.centre().0 - n.radius())
+                .fold(f64::MAX, f64::min);
+            let top_edge = nodes
+                .iter()
+                .map(|n| n.centre().1 - n.radius())
+                .fold(f64::MAX, f64::min);
+            let right = nodes
+                .iter()
+                .map(|n| n.centre().0 + n.radius())
+                .fold(f64::MIN, f64::max);
+            let frame = left - 24.0;
+            if d.regions().is_empty() {
+                assert!(near(frame, 0.0), "frame {frame} without regions\n{source}");
+            } else {
+                assert!(
+                    frame > 29.8 && near((frame - 30.0) / 24.0, ((frame - 30.0) / 24.0).round()),
+                    "frame {frame}\n{source}"
+                );
+            }
+            let title = if d.title().is_some() { 32.0 } else { 0.0 };
+            assert!(
+                near(top_edge, 24.0 + title + frame),
+                "top edge {top_edge}\n{source}"
+            );
+            assert!(
+                (view[2] - (right + 24.0 + frame)).abs() <= 0.6,
+                "width {} for right edge {right}\n{source}",
+                view[2]
+            );
+
+            // Nothing overlaps (the layout keeps 18 px between nodes)
+            for (i, a) in nodes.iter().enumerate() {
+                for b in &nodes[i + 1..] {
+                    let (ca, cb) = (a.centre(), b.centre());
+                    let gap = (ca.0 - cb.0).hypot(ca.1 - cb.1) - a.radius() - b.radius();
+                    assert!(
+                        gap >= 17.5,
+                        "nodes {ca:?} and {cb:?} only {gap} apart\n{source}"
+                    );
+                }
+            }
+
+            for ix in d.event_ixs() {
+                let i = ix.index();
+                let parts: Vec<&(&str, BTreeMap<&str, &str>)> = {
+                    let open = format!(r#"data-event="{i}""#);
+                    let mut inside = false;
+                    let mut out = Vec::new();
+                    for t in &all {
+                        if t.0 == "g" {
+                            inside = t.1.get("class").is_some_and(|c| c.starts_with("event "))
+                                && t.1
+                                    .get("data-event")
+                                    .is_some_and(|e| format!(r#"data-event="{e}""#) == open);
+                            continue;
+                        }
+                        if inside {
+                            out.push(t);
+                        }
+                    }
+                    out
+                };
+                match d.event(ix) {
+                    // Wires: issuer's edge → box, box → audience's edge,
+                    // with an arrowhead whose tip is the wire's end
+                    Some(Event::Delegate(cert)) => {
+                        let node = events[&i];
+                        let wire = parts
+                            .iter()
+                            .find(|t| t.1.get("class") == Some(&"wire"))
+                            .expect("a wire");
+                        let ps = points(wire.1["d"]);
+                        let (issuer, audience) = (principal(cert.issuer), principal(cert.audience));
+                        if cert.issuer != cert.audience {
+                            assert!(
+                                issuer.on_edge(ps[0]) && node.on_edge(ps[1]),
+                                "#{i} wire in\n{source}"
+                            );
+                            assert!(
+                                node.on_edge(ps[2]) && audience.on_edge(ps[3]),
+                                "#{i} wire out\n{source}"
+                            );
+                        }
+                        let chevron = parts
+                            .iter()
+                            .find(|t| t.1.get("class") == Some(&"chevron"))
+                            .expect("an arrowhead");
+                        let cs = points(chevron.1["d"]);
+                        assert!(
+                            near(cs[1].0, ps[3].0) && near(cs[1].1, ps[3].1),
+                            "#{i} arrowhead off the tip\n{source}"
+                        );
+                        for arm in [cs[0], cs[2]] {
+                            assert!(
+                                ((arm.0 - cs[1].0).hypot(arm.1 - cs[1].1) - 106_f64.sqrt()).abs()
+                                    < 0.2,
+                                "#{i} arrowhead arm\n{source}"
+                            );
+                        }
+                    }
+                    // Revocations: revoker's edge → diamond, diamond → the
+                    // target's box, crossed out there if it took effect
+                    Some(Event::Revoke(r)) => {
+                        let node = events[&i];
+                        let lines: Vec<Vec<(f64, f64)>> = parts
+                            .iter()
+                            .filter(|t| t.1.get("class") == Some(&"revocation"))
+                            .map(|t| points(t.1["d"]))
+                            .collect();
+                        assert!(
+                            principal(r.by).on_edge(lines[0][0]) && node.on_edge(lines[0][1]),
+                            "#{i} revocation in\n{source}"
+                        );
+                        if let Some(target) = events.get(&r.target.index()) {
+                            let end = lines[1][1];
+                            assert!(
+                                node.on_edge(lines[1][0]) && target.on_edge(end),
+                                "#{i} revocation out\n{source}"
+                            );
+                            if let Some(cross) =
+                                parts.iter().find(|t| t.1.get("class") == Some(&"cross"))
+                            {
+                                let cs = points(cross.1["d"]);
+                                let cx = cs.iter().map(|p| p.0).sum::<f64>() / cs.len() as f64;
+                                let cy = cs.iter().map(|p| p.1).sum::<f64>() / cs.len() as f64;
+                                assert!(
+                                    near(cx, end.0) && near(cy, end.1),
+                                    "#{i} cross off the target\n{source}"
+                                );
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+
+            // Powerlines: from a node's edge to the edge of the box they feed,
+            // bowed out from the chord by max(0.3 × length, 40)
+            for (_, a) in all.iter().filter(|(n, a)| {
+                *n == "path" && a.get("class").is_some_and(|c| c.starts_with("powerline"))
+            }) {
+                let ps = points(a["d"]);
+                let (start, control, end) = (ps[0], ps[1], ps[2]);
+                let to: usize = a["data-to"].parse().expect("data-to");
+                assert!(
+                    events[&to].on_edge(end),
+                    "powerline into #{to} ends off its edge at {end:?}\n{source}"
+                );
+                assert!(
+                    nodes.iter().any(|n| n.on_edge(start)),
+                    "powerline into #{to} starts at {start:?}, on no edge\n{source}"
+                );
+                let length = (end.0 - start.0).hypot(end.1 - start.1);
+                let mid = (f64::midpoint(start.0, end.0), f64::midpoint(start.1, end.1));
+                let bow = (control.0 - mid.0).hypot(control.1 - mid.1);
+                assert!(
+                    (bow - (0.3 * length).max(40.0)).abs() < 0.3,
+                    "powerline into #{to} bows {bow} for length {length}\n{source}"
+                );
+            }
+
+            // Regions wrap their drawn nodes, with room for the caption tab
+            let mut region: Option<&str> = None;
+            for (name, a) in &all {
+                if *name == "g" {
+                    region = (a.get("class") == Some(&"region")).then(|| a["data-region"]);
+                    continue;
+                }
+                let (Some(id), "rect", Some(&"region-box")) = (region, *name, a.get("class"))
+                else {
+                    continue;
+                };
+                let r = d
+                    .regions()
+                    .iter()
+                    .find(|r| r.id.as_str() == id)
+                    .expect("its region");
+                let (x, y) = (num(a, "x"), num(a, "y"));
+                let b = (x, y, x + num(a, "width"), y + num(a, "height"));
+                for e in r.first.index()..=r.last.index() {
+                    if let Some(n) = events.get(&e) {
+                        let (c, rad) = (n.centre(), n.radius());
+                        assert!(
+                            b.0 <= c.0 - rad - 11.8
+                                && c.0 + rad + 11.8 <= b.2
+                                && b.1 <= c.1 - rad - 29.8
+                                && c.1 + rad + 11.8 <= b.3,
+                            "region {id} doesn't wrap #{e}\n{source}"
+                        );
+                    }
+                }
+            }
+
+            // At each moment, only the principals involved so far appear
+            for happened in 0..d.events().len() {
+                let svg = d.to_certflow_svg_at(happened);
+                for p in d.principals() {
+                    let ix = d.principal_by_key(p.key()).expect("its own key");
+                    let involved = d.events().iter().take(happened).any(|e| match &e.node {
+                        Event::Delegate(c) => [c.issuer, c.audience, c.subject].contains(&ix),
+                        Event::Invoke(i) => i.by == ix || i.on == ix,
+                        Event::Revoke(r) => r.by == ix,
+                    });
+                    let shown = svg.contains(&format!(r#"data-principal="{}""#, p.key()));
+                    assert_eq!(
+                        shown,
+                        involved,
+                        "{} at moment {happened}\n{source}",
+                        p.name()
+                    );
+                }
+            }
+        });
+    }
 }
