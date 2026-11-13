@@ -199,9 +199,15 @@ describe("the preview's <rain-diagram>", () => {
     const options = await evaluate(() =>
       Array.from(document.getElementById("picture").shadowRoot.querySelectorAll(".menu button"), (b) => b.textContent),
     );
-    assert.deepEqual(options, ["👑 Admin", "✏️ Edit", "👀 Read", "📡 Relay", "👑 Admin", "✏️ Edit", "👀 Read", "📡 Relay"]);
-    // The second row is Invoke
-    const invoke = await centre(".menu .menu-row:nth-child(2) button:nth-of-type(2)");
+    // Carol holds nothing yet: she can delegate authority over herself, or
+    // try any level on Doc
+    const titles = await evaluate(() =>
+      Array.from(document.getElementById("picture").shadowRoot.querySelectorAll(".menu-row span"), (s) => s.textContent),
+    );
+    assert.deepEqual(titles, ["Delegate Carol (itself)", "Invoke"]);
+    assert.deepEqual(options, ["👑 Admin", "✏️ Edit", "👀 Read", "📡 Relay", "/", "👑 Admin", "✏️ Edit", "👀 Read", "📡 Relay"]);
+    // The last row is Invoke
+    const invoke = await centre(".menu .menu-row:last-child button:nth-of-type(2)");
     await click(invoke);
     assert.match(await source(), /\n\(Carol\)=\[\[edit\]\]=>\(Doc\)\n/);
   });

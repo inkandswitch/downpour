@@ -5,7 +5,9 @@
 //! must exist), so these build source from a small cast instead. Every
 //! certificate gets an explicit label and subject, revocations only target
 //! earlier certificates, and the rest is up to the generator, including
-//! delegations nobody had the authority to make.
+//! delegations nobody had the authority to make. Abilities come from a
+//! small vocabulary of levels, command paths, or both, and some delegations
+//! carry `where` caveats.
 
 // Generators and helpers outside `#[test]` fns are still test code
 #![allow(
@@ -20,6 +22,7 @@ mod common;
 use arbitrary::{Arbitrary, Unstructured};
 use bolero::check;
 use rain_diagram_core::{
+    ability::Ability,
     authority::{Authority, Status},
     diagram::{Diagram, Event, EventIx, PrincipalIx},
     level::Level,
@@ -28,6 +31,16 @@ use rain_diagram_core::{
 use std::fmt::Write as _;
 
 const CAST: [&str; 4] = ["Doc", "Alice", "Team", "Bob"];
+
+/// Command paths sharing prefixes, so chains both narrow and dead-end.
+const COMMANDS: [&str; 6] = [
+    "/",
+    "/crud",
+    "/crud/read",
+    "/crud/write",
+    "/msg",
+    "/msg/send",
+];
 
 /// What a delegation or invocation is about. Mostly aims at things the
 /// actor plausibly holds, so that chains (and transitive routes) form.
@@ -50,12 +63,13 @@ enum Step {
         issuer: u8,
         audience: u8,
         subject: Target,
-        level: Level,
+        ability: u8,
+        caveat: u8,
     },
     Invoke {
         by: u8,
         on: Target,
-        level: Level,
+        ability: u8,
     },
     Revoke {
         by: u8,
@@ -78,20 +92,18 @@ impl<'a> Arbitrary<'a> for Target {
 
 impl<'a> Arbitrary<'a> for Step {
     fn arbitrary(u: &mut Unstructured<'a>) -> arbitrary::Result<Self> {
-        let level = |u: &mut Unstructured<'a>| -> arbitrary::Result<Level> {
-            Ok(Level::ALL[usize::from(u8::arbitrary(u)?) % Level::ALL.len()])
-        };
         Ok(match u8::arbitrary(u)? % 8 {
             0..=4 => Self::Delegate {
                 issuer: u8::arbitrary(u)?,
                 audience: u8::arbitrary(u)?,
                 subject: Target::arbitrary(u)?,
-                level: level(u)?,
+                ability: u8::arbitrary(u)?,
+                caveat: u8::arbitrary(u)?,
             },
             5..=6 => Self::Invoke {
                 by: u8::arbitrary(u)?,
                 on: Target::arbitrary(u)?,
-                level: level(u)?,
+                ability: u8::arbitrary(u)?,
             },
             _ => Self::Revoke {
                 by: u8::arbitrary(u)?,
@@ -103,6 +115,10 @@ impl<'a> Arbitrary<'a> for Step {
 #[derive(Debug, Arbitrary)]
 struct Scenario {
     title: bool,
+
+    /// Which abilities: mostly levels (Keyhive), sometimes command paths
+    /// (UCAN), occasionally both mixed
+    vocabulary: u8,
 
     /// Which adjacent pair `shuffling_is_harmless` tries to swap
     swap: u8,
@@ -118,6 +134,17 @@ struct Scenario {
 }
 
 impl Scenario {
+    fn ability(&self, seed: u8) -> String {
+        let level = || Level::ALL[usize::from(seed) % Level::ALL.len()].to_string();
+        let command = || COMMANDS[usize::from(seed) % COMMANDS.len()].to_string();
+        match self.vocabulary % 8 {
+            0..=4 => level(),
+            5..=6 => command(),
+            _ if seed & 0x80 == 0 => level(),
+            _ => command(),
+        }
+    }
+
     #[allow(
         clippy::too_many_lines,
         reason = "one pass building the source from generated steps"
@@ -153,7 +180,8 @@ impl Scenario {
                     issuer,
                     audience,
                     subject,
-                    level,
+                    ability,
+                    caveat,
                 } => {
                     // Half the time, pass on something already received, so
                     // chains (and so transitive routes and revocation
@@ -165,24 +193,29 @@ impl Scenario {
                     };
                     let audience = pick(audience);
                     let subject = aim(&grants, issuer, subject);
+                    let caveat = if caveat % 4 == 0 {
+                        format!(" where n < {caveat}")
+                    } else {
+                        String::new()
+                    };
                     lines.push(format!(
-                        "c{}: ({})-[{}({})]->({}) : step {n}",
+                        "c{}: ({})-[{}({}){caveat}]->({}) : step {n}",
                         subjects.len(),
                         CAST[issuer],
-                        level.keyword(),
+                        self.ability(ability),
                         CAST[subject],
                         CAST[audience]
                     ));
                     grants.push((audience, subject));
                     subjects.push(subject);
                 }
-                Step::Invoke { by, on, level } => {
+                Step::Invoke { by, on, ability } => {
                     let by = pick(by);
                     let on = aim(&grants, by, on);
                     lines.push(format!(
                         "({})=[[{}]]=>({})",
                         CAST[by],
-                        level.keyword(),
+                        self.ability(ability),
                         CAST[on]
                     ));
                 }
@@ -336,9 +369,25 @@ fn routes_are_causal_chains_and_attenuate() {
 
             if let Event::Delegate(cert) = event {
                 let granted = d.granted(ix).expect("routed certificates are authorised");
-                assert!(granted <= cert.level, "{source}");
+                assert!(cert.ability.covers(granted), "{source}");
                 for &c in &chain {
-                    assert!(Some(granted) <= d.granted(c), "{source}");
+                    let held = d.granted(c).expect("route certificates are authorised");
+                    assert!(held.covers(granted), "{source}");
+                }
+            }
+            if let Event::Invoke(invoke) = event {
+                for &c in &chain {
+                    let held = d.granted(c).expect("route certificates are authorised");
+                    assert!(held.covers(&invoke.ability), "{source}");
+                }
+            }
+
+            // Caveats only pile up: an event is bound by every caveat its
+            // route's certificates are
+            let bound: Vec<EventIx> = d.caveats(ix).map(|(c, _)| c).collect();
+            for &c in &chain {
+                for (k, _) in d.caveats(c) {
+                    assert!(bound.contains(&k), "{source}");
                 }
             }
         }
@@ -453,7 +502,7 @@ fn valid_certificates_are_reachable() {
             assert!(
                 reach
                     .iter()
-                    .any(|r| r.subject == cert.subject && r.level >= granted),
+                    .any(|r| r.subject == cert.subject && r.ability.covers(granted)),
                 "{source}"
             );
         }
@@ -534,7 +583,7 @@ fn generator_is_not_vacuous() {
             {
                 TRANSITIVE.fetch_add(1, Relaxed);
             }
-            if d.granted(ix).is_some_and(|g| g < cert.level) {
+            if d.granted(ix).is_some_and(|g| *g != cert.ability) {
                 ATTENUATED.fetch_add(1, Relaxed);
             }
         }
@@ -639,21 +688,20 @@ fn pinned_source(d: &Diagram, swap: Option<usize>) -> String {
                         .collect();
                     format!(" via {}", holder_first.join(", "))
                 });
+                let caveat = c
+                    .caveat
+                    .as_ref()
+                    .map_or_else(String::new, |w| format!(" where {w}"));
                 format!(
-                    "{}: ({})-[{}({}){via}]->({})",
+                    "{}: ({})-[{}({}){via}{caveat}]->({})",
                     c.id,
                     name(c.issuer),
-                    c.level.keyword(),
+                    c.ability,
                     name(c.subject),
                     name(c.audience)
                 )
             }
-            Event::Invoke(i) => format!(
-                "({})=[[{}]]=>({})",
-                name(i.by),
-                i.level.keyword(),
-                name(i.on)
-            ),
+            Event::Invoke(i) => format!("({})=[[{}]]=>({})", name(i.by), i.ability, name(i.on)),
             Event::Revoke(r) => format!("({})-<revoke>-x[{}]", name(r.by), label(r.target)),
         };
         source.push_str(&line);
@@ -1040,7 +1088,13 @@ fn inserted_statements_land_where_asked() {
         }
         let at = usize::from(c.at) % (d.events().len() + 1);
         let (from, to) = (usize::from(c.from) % columns, usize::from(c.to) % columns);
-        let level = Level::ALL[usize::from(c.level) % Level::ALL.len()];
+        let ability: Ability = if c.level & 0x80 == 0 {
+            Level::ALL[usize::from(c.level) % Level::ALL.len()].into()
+        } else {
+            COMMANDS[usize::from(c.level) % COMMANDS.len()]
+                .parse()
+                .expect("valid command")
+        };
 
         let certs: Vec<EventIx> = certs(&d).map(|(ix, _)| ix).collect();
         let new = match (c.revoke, certs.get(usize::from(c.to) % certs.len().max(1))) {
@@ -1051,16 +1105,18 @@ fn inserted_statements_land_where_asked() {
             _ if c.level % 2 == 0 => NewStatement::Delegate {
                 issuer: from,
                 audience: to,
-                level,
+                // Half the time a chosen subject, as the drag menu offers
+                subject: (c.percent & 1 == 1).then(|| usize::from(c.percent >> 1) % columns),
+                ability,
             },
             _ => NewStatement::Invoke {
                 by: from,
                 on: to,
-                level,
+                ability,
             },
         };
 
-        let (out, landed) = match insert_statement(&source, at, new) {
+        let (out, landed) = match insert_statement(&source, at, new.clone()) {
             Ok(done) => done,
             // Allowed: the new line makes some later inference ambiguous
             Err(InsertError::Result(_)) => return,
@@ -1083,6 +1139,24 @@ fn inserted_statements_land_where_asked() {
             }
             NewStatement::Delegate { .. } | NewStatement::Invoke { .. } => {
                 assert_eq!(landed, at, "{out}");
+                if let NewStatement::Delegate {
+                    subject: Some(subject),
+                    ..
+                } = new
+                {
+                    let cert = after
+                        .event_ix(landed)
+                        .and_then(|ix| after.cert(ix))
+                        .expect("a delegation landed");
+                    // Columns can reorder, so compare names
+                    let name =
+                        |d: &Diagram, p: PrincipalIx| d.principal(p).map(|p| p.name().clone());
+                    assert_eq!(
+                        name(&after, cert.subject),
+                        d.principals().get(subject).map(|p| p.name().clone()),
+                        "{out}"
+                    );
+                }
                 let back = delete_statement(&out, landed).expect("a fresh statement can go");
                 assert_eq!(back, source, "{out}");
             }
@@ -1265,8 +1339,8 @@ fn placed_labels_render_on_their_row() {
         );
 
         let label = match after.event(after.event_ix(n).expect("in range")) {
-            Some(Event::Delegate(cert)) => format!("[{}]", cert.level),
-            Some(Event::Invoke(invoke)) => format!("[[{}]]", invoke.level),
+            Some(Event::Delegate(cert)) => format!("[{}]", cert.ability),
+            Some(Event::Invoke(invoke)) => format!("[[{}]]", invoke.ability),
             Some(Event::Revoke(_)) => String::from("<revoke>"),
             None => unreachable!("in range"),
         };
@@ -1758,7 +1832,7 @@ mod geometry {
                 let Some(Event::Delegate(cert)) = d.event(ix) else {
                     continue;
                 };
-                let attenuated = d.granted(ix).is_some_and(|g| g < cert.level);
+                let attenuated = d.granted(ix).is_some_and(|g| *g != cert.ability);
                 assert_eq!(
                     event_group(&svg, ix).contains("(attenuated to"),
                     attenuated,

@@ -331,10 +331,6 @@ fn escape(text: &str) -> String {
 
 /// A level as [Keyhive Lab Note #8](https://www.inkandswitch.com/keyhive/notebook/08/) labels it: `👑 Admin`, `✏️ Edit`, `👀 Read`,
 /// `📡 Relay`.
-fn level_label(level: crate::level::Level) -> String {
-    format!("{} {}", level.emoji(), level.name())
-}
-
 #[cfg(test)]
 mod tests {
     use super::{FONT, text_width};

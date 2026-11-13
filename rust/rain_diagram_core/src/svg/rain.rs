@@ -20,8 +20,7 @@
 //! - The dotted line at the bottom is "now".
 
 use super::{
-    FONT, MARGIN, PILL, REVOKE, STYLE, colour, escape, index, level_label, note, pill,
-    status_class, text_width,
+    FONT, MARGIN, PILL, REVOKE, STYLE, colour, escape, index, note, pill, status_class, text_width,
 };
 use crate::{
     authority::Authority,
@@ -342,7 +341,7 @@ impl<'a> Svg<'a> {
         let (issuer, audience, subject) = (cert.issuer, cert.audience, cert.subject);
         let (from, to) = (self.lifeline(issuer), self.lifeline(audience));
         let y = self.row(ix);
-        let text = &level_label(cert.level);
+        let text = &cert.ability.label();
         let half = text_width(text) / 2.0 + 10.0;
         let dir = if to < from { -1.0 } else { 1.0 };
         // Just off the issuer's lifeline, unless the arrow is too short
@@ -383,7 +382,7 @@ impl<'a> Svg<'a> {
     fn invocation(&self, ix: EventIx, invoke: &Invoke, status: &str, out: &mut String) -> Pill {
         let (by, on) = (self.lifeline(invoke.by), self.lifeline(invoke.on));
         let y = self.row(ix);
-        let text = &level_label(invoke.level);
+        let text = &invoke.ability.label();
         let half = text_width(text) / 2.0 + 13.0;
         let dir = if on < by { -1.0 } else { 1.0 };
 
@@ -532,10 +531,10 @@ impl<'a> Svg<'a> {
             cert.id,
             name(cert.issuer),
             name(cert.audience),
-            cert.level,
+            cert.ability,
             name(cert.subject)
         );
-        if let Some(granted) = d.granted(ix).filter(|&g| g < cert.level) {
+        if let Some(granted) = d.granted(ix).filter(|&g| *g != cert.ability) {
             let _ = write!(text, " (attenuated to {granted})");
         }
         text

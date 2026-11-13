@@ -11,8 +11,11 @@
 //! what was valid, revoked, or reachable at any moment.
 
 use crate::{
-    ast::{CertId, Delegation, Document, Kind, Name, Placement, Span, Spanned, Statement, Text},
-    authority::{Authority, Diagnostic, Ledger, Reach, Status},
+    ability::Ability,
+    ast::{
+        Caveat, CertId, Delegation, Document, Kind, Name, Placement, Span, Spanned, Statement, Text,
+    },
+    authority::{Authority, Diagnostic, Ledger, Reach, Route, Status},
     level::Level,
 };
 use alloc::{
@@ -196,6 +199,12 @@ impl Diagram {
             .map(PrincipalIx)
     }
 
+    /// The principal in `column`, if there is one.
+    #[must_use]
+    pub fn principal_ix(&self, column: usize) -> Option<PrincipalIx> {
+        (column < self.principals.len()).then_some(PrincipalIx(column))
+    }
+
     /// Look up a principal.
     #[must_use]
     pub fn principal(&self, ix: PrincipalIx) -> Option<&Principal> {
@@ -254,15 +263,43 @@ impl Diagram {
         self.ledger.status(&self.events, ix, now)
     }
 
-    /// The level a certificate actually grants, after attenuation. `None`
+    /// The ability a certificate actually grants, after attenuation. `None`
     /// for unauthorised certificates and non-certificate events.
     #[must_use]
-    pub fn granted(&self, ix: EventIx) -> Option<Level> {
+    pub fn granted(&self, ix: EventIx) -> Option<&Ability> {
         self.ledger.granted(ix)
     }
 
-    /// Everything `holder` can act on as of `now`, at the highest level
-    /// available. Excludes the holder itself.
+    /// The `where` caveats an event is bound by: those on every
+    /// certificate it relies on (itself included), earliest first.
+    ///
+    /// ```
+    /// use rain_diagram_core::parse;
+    ///
+    /// let d = parse(
+    ///     "rain
+    ///      (Doc)-[/crud where path = /docs]->(Alice)
+    ///      (Alice)-[/crud/read where size < 1MB]->(Bob)
+    ///      (Bob)=[[/crud/read]]=>(Doc)",
+    /// )?;
+    /// let read = d.event_ix(2).expect("three events");
+    /// let caveats: Vec<_> = d.caveats(read).map(|(_, c)| c.as_str()).collect();
+    /// assert_eq!(caveats, ["path = /docs", "size < 1MB"]);
+    /// # Ok::<(), rain_diagram_core::Error>(())
+    /// ```
+    pub fn caveats(&self, ix: EventIx) -> impl Iterator<Item = (EventIx, &Caveat)> + '_ {
+        self.ledger.caveats(&self.events, ix)
+    }
+
+    /// The `where` caveats on everything `route` relies on, earliest first:
+    /// what an event relying on it would be bound by.
+    #[must_use]
+    pub fn route_caveats(&self, route: &Route) -> Vec<(EventIx, &Caveat)> {
+        self.ledger.route_caveats(&self.events, route)
+    }
+
+    /// For each subject `holder` can act on as of `now`, each broadest
+    /// ability it holds. Excludes the holder itself.
     #[must_use]
     pub fn reach(&self, holder: PrincipalIx, now: EventIx) -> Vec<Reach> {
         self.ledger
@@ -466,9 +503,13 @@ pub struct Cert {
     /// What it grants authority over.
     pub subject: PrincipalIx,
 
-    /// The level it claims. What actually flows may be less: see
+    /// The ability it claims. What actually flows may be less: see
     /// [`Diagram::granted`].
-    pub level: Level,
+    pub ability: Ability,
+
+    /// Its own `where` caveat. Those it inherits are in
+    /// [`Diagram::caveats`].
+    pub caveat: Option<Caveat>,
 
     /// How the issuer came to hold the subject.
     pub authority: Authority,
@@ -487,7 +528,7 @@ pub struct Invoke {
     pub by: PrincipalIx,
 
     /// The access exercised.
-    pub level: Level,
+    pub ability: Ability,
 
     /// What is acted on.
     pub on: PrincipalIx,
@@ -574,7 +615,7 @@ impl Resolver {
             Statement::Invoke(i) => Ok((
                 Event::Invoke(Invoke {
                     by: self.intern(&i.by),
-                    level: i.level,
+                    ability: i.ability.clone(),
                     on: self.intern(&i.on),
                     authority: Authority::Unauthorized,
                     at: i.at,
@@ -600,7 +641,7 @@ impl Resolver {
         let audience = self.intern(&d.audience);
         let subject = match &d.subject {
             Some(subject) => self.intern(subject),
-            None => self.infer_subject(issuer, d.level)?,
+            None => self.infer_subject(issuer, &d.ability)?,
         };
 
         // `via` is a chain: the first is held by the issuer, and each next
@@ -635,7 +676,8 @@ impl Resolver {
             issuer,
             audience,
             subject,
-            level: d.level,
+            ability: d.ability.clone(),
+            caveat: d.caveat.clone(),
             authority: Authority::Unauthorized,
             at: d.at,
             note: d.note.clone(),
@@ -653,9 +695,9 @@ impl Resolver {
     fn infer_subject(
         &self,
         issuer: PrincipalIx,
-        level: Level,
+        ability: &Ability,
     ) -> Result<PrincipalIx, ResolveErrorKind> {
-        if level == Level::Admin {
+        if ability.level() == Some(Level::Admin) {
             return Ok(issuer);
         }
 

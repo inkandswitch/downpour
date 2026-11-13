@@ -1,21 +1,29 @@
 //! Who could do what, when, and why.
 //!
-//! Every principal holds Admin over itself. Authority over anything else
-//! arrives through certificates: `(I)-[L(S)]->(A)` lets A act on S at level
-//! L, but only as far as I could when it signed. What actually flows is the
-//! lesser of the two (_attenuation_).
+//! Every principal holds everything over itself. Authority over anything
+//! else arrives through certificates: `(I)-[X(S)]->(A)` lets A act on S
+//! with ability X, but only as far as I could when it signed. What actually
+//! flows is the narrower of the two (_attenuation_), and nothing at all if
+//! neither covers the other (see [`Ability`]).
 //!
 //! Groups make authority transitive. If Alice holds authority over Team, and
 //! Team holds Edit over Doc, then Alice holds authority over Doc through
-//! Team, at the least of the levels along the way. The certificate carrying
-//! Doc's authority past Team (Team → Alice) is a _transitive handle_.
+//! Team, at the narrowest of the abilities along the way. The certificate
+//! carrying Doc's authority past Team (Team → Alice) is a _transitive
+//! handle_.
+//!
+//! A certificate can also carry a `where` caveat. Caveats are opaque, so
+//! they never stop authority flowing here; instead each event lists the
+//! caveats along everything it relies on (see
+//! [`Diagram::caveats`](crate::diagram::Diagram::caveats)), which only grow
+//! as authority is passed on.
 //!
 //! The rules, applied in causal order:
 //!
 //! | Event        | Authorised when                                                       | Effect                                       |
 //! |--------------|-----------------------------------------------------------------------|----------------------------------------------|
-//! | Delegation   | the issuer holds the subject (at any level)                           | grants `min(claimed, held)`                  |
-//! | Invocation   | the actor holds the subject at the level used                         |                                              |
+//! | Delegation   | the issuer holds something over the subject comparable to the claim   | grants the narrower of claimed and held       |
+//! | Invocation   | the actor holds something over the subject covering the ability used  |                                              |
 //! | Revocation   | the revoker issued something the target relies on, or holds Admin     | voids the target and everything relying on it |
 //!
 //! Revocation is retrocausal: it voids what relied on the target even if
@@ -23,8 +31,9 @@
 //! revocation stays effective; revoking the revoker later doesn't undo it.
 //!
 //! Each delegation and invocation relies on exactly one [`Route`], chosen
-//! when it happens: the one granting the most (up to what was claimed), then
-//! the fewest hops, then the earliest certificates. Keyhive certificates name
+//! when it happens: the one granting the broadest ability (up to what was
+//! claimed), then relying on the fewest caveats, then the fewest hops, then
+//! the earliest certificates. Keyhive certificates name
 //! their proof, so a later alternate route doesn't rescue a voided one.
 //!
 //! ```
@@ -46,12 +55,13 @@
 //! ```
 
 use crate::{
-    ast::{CertId, Name, Span, Spanned},
+    ability::Ability,
+    ast::{Caveat, CertId, Name, Span, Spanned},
     diagram::{Cert, Event, EventIx, Invoke, PrincipalIx, Revoke},
     level::Level,
 };
 use alloc::{
-    collections::{BTreeMap, BTreeSet, VecDeque},
+    collections::{BTreeMap, BTreeSet},
     vec::Vec,
 };
 use thiserror::Error;
@@ -166,7 +176,7 @@ pub struct Reach {
     pub subject: PrincipalIx,
 
     /// How far.
-    pub level: Level,
+    pub ability: Ability,
 
     /// Through which certificates.
     pub route: Route,
@@ -180,8 +190,8 @@ pub(crate) struct Ledger {
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 struct Facts {
-    /// For an authorised delegation, the level that actually flows.
-    granted: Option<Level>,
+    /// For an authorised delegation, the ability that actually flows.
+    granted: Option<Ability>,
 
     /// Certificates this event relies on, itself included for a delegation.
     deps: BTreeSet<EventIx>,
@@ -193,6 +203,14 @@ struct Facts {
 /// The causal past: events with index below this.
 #[derive(Debug, Clone, Copy)]
 struct Horizon(usize);
+
+/// Where a search starts: the holder, and the certificates a route must
+/// begin with (holder first).
+#[derive(Debug, Clone, Copy)]
+struct Start<'a> {
+    holder: PrincipalIx,
+    via: &'a [EventIx],
+}
 
 impl Ledger {
     /// Admit the next delegation. `via` is the (shape-checked) required
@@ -212,37 +230,47 @@ impl Ledger {
         };
 
         let (authority, diagnostic) = if cert.issuer == cert.subject && via.is_empty() {
-            facts.granted = Some(cert.level);
+            facts.granted = Some(cert.ability.clone());
             (Authority::Root, None)
         } else {
             let horizon = Horizon(ix.index());
-            match self.best(events, cert.issuer, cert.subject, cert.level, via, horizon) {
-                Some((granted, route)) => {
-                    facts.granted = Some(granted);
-                    facts.deps.extend(self.deps_of(&route));
-                    let attenuated = (granted < cert.level).then(|| {
-                        Diagnostic::new(
-                            span,
-                            DiagnosticKind::Attenuated {
-                                issuer: names(cert.issuer),
-                                subject: names(cert.subject),
-                                claimed: cert.level,
-                                granted,
-                            },
-                        )
-                    });
-                    (Authority::Route(route), attenuated)
-                }
-                None => (
-                    Authority::Unauthorized,
-                    Some(Diagnostic::new(
+            let from = Start {
+                holder: cert.issuer,
+                via,
+            };
+            if let Some((granted, route)) =
+                self.best(events, from, cert.subject, &cert.ability, horizon)
+            {
+                facts.deps.extend(self.deps_of(&route));
+                let attenuated = (granted != cert.ability).then(|| {
+                    Diagnostic::new(
                         span,
-                        DiagnosticKind::Unauthorized {
-                            who: names(cert.issuer),
+                        DiagnosticKind::Attenuated {
+                            issuer: names(cert.issuer),
                             subject: names(cert.subject),
+                            claimed: cert.ability.clone(),
+                            granted: granted.clone(),
                         },
-                    )),
-                ),
+                    )
+                });
+                facts.granted = Some(granted);
+                (Authority::Route(route), attenuated)
+            } else {
+                let held = self.held(events, from, cert.subject, horizon);
+                let kind = if held.is_empty() {
+                    DiagnosticKind::Unauthorized {
+                        who: names(cert.issuer),
+                        subject: names(cert.subject),
+                    }
+                } else {
+                    DiagnosticKind::Unrelated {
+                        issuer: names(cert.issuer),
+                        subject: names(cert.subject),
+                        claimed: cert.ability.clone(),
+                        held,
+                    }
+                };
+                (Authority::Unauthorized, Some(Diagnostic::new(span, kind)))
             }
         };
 
@@ -260,24 +288,28 @@ impl Ledger {
     ) -> (Authority, Option<Diagnostic>) {
         let horizon = Horizon(self.facts.len());
         let mut facts = Facts::default();
+        let from = Start {
+            holder: invoke.by,
+            via: &[],
+        };
 
         let (authority, diagnostic) = if invoke.by == invoke.on {
             (Authority::Root, None)
         } else {
-            match self.best(events, invoke.by, invoke.on, invoke.level, &[], horizon) {
-                Some((held, route)) if held >= invoke.level => {
+            match self.best(events, from, invoke.on, &invoke.ability, horizon) {
+                Some((held, route)) if held == invoke.ability => {
                     facts.deps = self.deps_of(&route);
                     (Authority::Route(route), None)
                 }
-                held => (
+                Some(_) | None => (
                     Authority::Unauthorized,
                     Some(Diagnostic::new(
                         span,
                         DiagnosticKind::Insufficient {
                             who: names(invoke.by),
                             subject: names(invoke.on),
-                            needed: invoke.level,
-                            held: held.map(|(level, _)| level),
+                            needed: invoke.ability.clone(),
+                            held: self.held(events, from, invoke.on, horizon),
                         },
                     )),
                 ),
@@ -321,7 +353,11 @@ impl Ledger {
             if subject == revoke.by {
                 return Some(Authority::Root);
             }
-            self.search(events, revoke.by, subject, Level::Admin, &[], horizon)
+            let from = Start {
+                holder: revoke.by,
+                via: &[],
+            };
+            self.search(events, from, subject, &Level::Admin.into(), horizon)
                 .and_then(Route::from_path)
                 .map(Authority::Route)
         };
@@ -354,9 +390,9 @@ impl Ledger {
         (authority, diagnostic)
     }
 
-    /// The level a delegation actually grants, if it was authorised.
-    pub(crate) fn granted(&self, ix: EventIx) -> Option<Level> {
-        self.facts.get(ix.index())?.granted
+    /// The ability a delegation actually grants, if it was authorised.
+    pub(crate) fn granted(&self, ix: EventIx) -> Option<&Ability> {
+        self.facts.get(ix.index())?.granted.as_ref()
     }
 
     /// Whether `cert` relies on (or is) `on`.
@@ -364,6 +400,27 @@ impl Ledger {
         self.facts
             .get(ix.index())
             .is_some_and(|f| f.deps.contains(&on))
+    }
+
+    /// The certificates with caveats that `ix` relies on, earliest first.
+    pub(crate) fn caveats<'a>(
+        &'a self,
+        events: &'a [Spanned<Event>],
+        ix: EventIx,
+    ) -> impl Iterator<Item = (EventIx, &'a Caveat)> + 'a {
+        caveats_in(events, &self.facts(ix).deps)
+    }
+
+    /// The certificates with caveats that `route` relies on, earliest first.
+    pub(crate) fn route_caveats<'a>(
+        &self,
+        events: &'a [Spanned<Event>],
+        route: &Route,
+    ) -> Vec<(EventIx, &'a Caveat)> {
+        self.deps_of(route)
+            .into_iter()
+            .filter_map(|ix| Some((ix, cert_at(events, ix)?.caveat.as_ref()?)))
+            .collect()
     }
 
     pub(crate) fn status(
@@ -404,6 +461,8 @@ impl Ledger {
         })
     }
 
+    /// For each subject, each broadest ability `holder` has over it as of
+    /// `now`. Excludes the holder itself.
     pub(crate) fn reach(
         &self,
         events: &[Spanned<Event>],
@@ -412,68 +471,139 @@ impl Ledger {
         now: EventIx,
     ) -> Vec<Reach> {
         let horizon = Horizon(now.index() + 1);
+        let from = Start { holder, via: &[] };
         (0..principals)
             .map(PrincipalIx::new)
             .filter(|&subject| subject != holder)
-            .filter_map(|subject| {
-                let (level, route) =
-                    self.best(events, holder, subject, Level::Admin, &[], horizon)?;
-                Some(Reach {
-                    subject,
-                    level,
-                    route,
-                })
+            .flat_map(|subject| {
+                self.routes(events, from, subject, None, horizon)
+                    .into_iter()
+                    .map(move |(ability, route)| Reach {
+                        subject,
+                        ability,
+                        route,
+                    })
             })
             .collect()
     }
 
-    /// The route granting the most (at most `claimed`), with that level.
+    /// The broadest abilities `from` holds over `subject`.
+    fn held(
+        &self,
+        events: &[Spanned<Event>],
+        from: Start<'_>,
+        subject: PrincipalIx,
+        horizon: Horizon,
+    ) -> Vec<Ability> {
+        self.routes(events, from, subject, None, horizon)
+            .into_iter()
+            .map(|(ability, _)| ability)
+            .collect()
+    }
+
+    /// The route granting the broadest ability within `claimed`, with that
+    /// ability. Between abilities equally broad but different (`/crud/read`
+    /// and `/crud/write` under `/crud`), the one with fewer caveats, then
+    /// fewer hops, then earlier certificates.
     fn best(
         &self,
         events: &[Spanned<Event>],
-        holder: PrincipalIx,
+        from: Start<'_>,
         subject: PrincipalIx,
-        claimed: Level,
-        via: &[EventIx],
+        claimed: &Ability,
         horizon: Horizon,
-    ) -> Option<(Level, Route)> {
-        Level::ALL
-            .iter()
-            .rev()
-            .filter(|&&level| level <= claimed)
-            .find_map(|&level| {
-                let path = self.search(events, holder, subject, level, via, horizon)?;
-                Some((level, Route::from_path(path)?))
-            })
+    ) -> Option<(Ability, Route)> {
+        let mut routes = self.routes(events, from, subject, Some(claimed), horizon);
+        // Sorting is stable, so earlier certificates still win ties
+        routes.sort_by_cached_key(|(ability, route)| {
+            (
+                breadth(ability),
+                caveats_in(events, &self.deps_of(route)).count(),
+                route.certs().count(),
+            )
+        });
+        routes.into_iter().next()
     }
 
-    /// Shortest path of usable certificates, each granting at least
-    /// `at_least`, from `holder` to `subject`, starting with `via`.
-    /// Returned holder first.
+    /// The broadest abilities over `subject` that `from` can reach, each with
+    /// its route: only those within `claimed`, if given.
+    ///
+    /// What flows down a route is the narrowest of its certificates, which
+    /// is always one of the abilities granted along it (or `claimed`). So
+    /// trying those candidates broadest first, and searching for a route
+    /// whose every certificate covers the candidate, finds each broadest
+    /// one exactly.
+    fn routes(
+        &self,
+        events: &[Spanned<Event>],
+        from: Start<'_>,
+        subject: PrincipalIx,
+        claimed: Option<&Ability>,
+        horizon: Horizon,
+    ) -> Vec<(Ability, Route)> {
+        let mut candidates: Vec<&Ability> = (0..horizon.0)
+            .map(EventIx::new)
+            .filter(|&ix| self.usable(ix, horizon))
+            .filter_map(|ix| self.granted(ix))
+            .chain(claimed)
+            .filter(|a| claimed.is_none_or(|c| c.covers(a)))
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect();
+        candidates.sort_by_key(|a| breadth(a));
+
+        let mut found: Vec<(Ability, Route)> = Vec::new();
+        for candidate in candidates {
+            if found.iter().any(|(held, _)| held.covers(candidate)) {
+                continue;
+            }
+            if let Some(route) = self
+                .search(events, from, subject, candidate, horizon)
+                .and_then(Route::from_path)
+            {
+                found.push((candidate.clone(), route));
+            }
+        }
+        found
+    }
+
+    /// The path of usable certificates, each covering `at_least`, from
+    /// `from` to `subject` that relies on the fewest caveats, then has the
+    /// fewest hops, then takes the earliest certificates. Returned holder
+    /// first.
     fn search(
         &self,
         events: &[Spanned<Event>],
-        holder: PrincipalIx,
+        from: Start<'_>,
         subject: PrincipalIx,
-        at_least: Level,
-        via: &[EventIx],
+        at_least: &Ability,
         horizon: Horizon,
     ) -> Option<Vec<EventIx>> {
-        let usable = |ix: EventIx| self.usable(ix, horizon) && self.granted(ix) >= Some(at_least);
+        let usable = |ix: EventIx| {
+            self.usable(ix, horizon) && self.granted(ix).is_some_and(|g| g.covers(at_least))
+        };
 
-        let mut start = holder;
-        for &ix in via {
+        let mut start = from.holder;
+        for &ix in from.via {
             if !usable(ix) {
                 return None;
             }
             start = cert_at(events, ix)?.subject;
         }
 
+        // Dijkstra over (caveats, hops), first come first served among
+        // equals; with no caveats, this is a breadth-first search
+        let mut best: BTreeMap<PrincipalIx, Cost> = BTreeMap::from([(start, (0, 0))]);
         let mut parent: BTreeMap<PrincipalIx, (PrincipalIx, EventIx)> = BTreeMap::new();
-        let mut queue = VecDeque::from([start]);
-        let mut seen = BTreeSet::from([start]);
+        let mut queue: BTreeSet<(Cost, usize, PrincipalIx)> = BTreeSet::from([((0, 0), 0, start)]);
+        let mut done = BTreeSet::new();
+        let mut arrivals = 0;
 
-        while let Some(node) = queue.pop_front() {
+        while let Some((cost, _, node)) = queue.pop_first() {
+            if !done.insert(node) {
+                continue;
+            }
+
             if node == subject {
                 let mut path = Vec::new();
                 let mut at = node;
@@ -481,7 +611,7 @@ impl Ledger {
                     path.push(ix);
                     at = prev;
                 }
-                path.extend(via.iter().rev());
+                path.extend(from.via.iter().rev());
                 path.reverse();
                 return (!path.is_empty()).then_some(path);
             }
@@ -497,9 +627,13 @@ impl Ledger {
             });
 
             for (next, ix) in edges {
-                if seen.insert(next) {
+                let caveats = caveats_in(events, &self.facts(ix).deps).count();
+                let reached = (cost.0 + caveats, cost.1 + 1);
+                if best.get(&next).is_none_or(|&known| reached < known) {
+                    best.insert(next, reached);
                     parent.insert(next, (node, ix));
-                    queue.push_back(next);
+                    arrivals += 1;
+                    queue.insert((reached, arrivals, next));
                 }
             }
         }
@@ -534,6 +668,27 @@ impl Ledger {
         };
         self.facts.get(ix.index()).unwrap_or(&EMPTY)
     }
+}
+
+/// A search cost: caveats relied on, then hops.
+type Cost = (usize, usize);
+
+/// A sort key putting broader abilities first: if `a` covers `b`, then
+/// `breadth(a) < breadth(b)`.
+fn breadth(ability: &Ability) -> (usize, core::cmp::Reverse<Level>) {
+    match ability {
+        Ability::Level(level) => (0, core::cmp::Reverse(*level)),
+        Ability::Command(command) => (command.depth(), core::cmp::Reverse(Level::Admin)),
+    }
+}
+
+/// The caveats on the certificates in `deps`, earliest first.
+fn caveats_in<'a>(
+    events: &'a [Spanned<Event>],
+    deps: &'a BTreeSet<EventIx>,
+) -> impl Iterator<Item = (EventIx, &'a Caveat)> + 'a {
+    deps.iter()
+        .filter_map(|&ix| Some((ix, cert_at(events, ix)?.caveat.as_ref()?)))
 }
 
 impl From<bool> for Status {
@@ -596,6 +751,26 @@ pub enum DiagnosticKind {
         subject: Name,
     },
 
+    /// A delegation claiming something the issuer holds nothing comparable
+    /// to, such as `/msg` when it holds `/crud`.
+    #[error(
+        "{issuer} holds {} over {subject}, none of which covers or falls under {claimed}, so this certificate grants nothing",
+        list(.held)
+    )]
+    Unrelated {
+        /// The issuer.
+        issuer: Name,
+
+        /// The subject.
+        subject: Name,
+
+        /// What the certificate says.
+        claimed: Ability,
+
+        /// The broadest abilities the issuer holds.
+        held: Vec<Ability>,
+    },
+
     /// A delegation claiming more than the issuer holds.
     #[error(
         "{issuer} only holds {granted} over {subject}, so this grants {granted}, not {claimed}"
@@ -608,14 +783,14 @@ pub enum DiagnosticKind {
         subject: Name,
 
         /// What the certificate says.
-        claimed: Level,
+        claimed: Ability,
 
         /// What actually flows.
-        granted: Level,
+        granted: Ability,
     },
 
     /// An invocation beyond what the actor holds.
-    #[error("{who} can't use {needed} on {subject}: {}", held_phrase(*.held))]
+    #[error("{who} can't use {needed} on {subject}: {}", held_phrase(.held))]
     Insufficient {
         /// The actor.
         who: Name,
@@ -623,11 +798,11 @@ pub enum DiagnosticKind {
         /// The subject.
         subject: Name,
 
-        /// The level used.
-        needed: Level,
+        /// The ability used.
+        needed: Ability,
 
-        /// The most they hold, if anything.
-        held: Option<Level>,
+        /// The broadest abilities they hold, if any.
+        held: Vec<Ability>,
     },
 
     /// A revocation from someone who isn't upstream of the target and isn't
@@ -645,11 +820,28 @@ pub enum DiagnosticKind {
     },
 }
 
-fn held_phrase(held: Option<Level>) -> alloc::string::String {
-    held.map_or_else(
-        || "they hold no authority over it".into(),
-        |level| alloc::format!("they only hold {level}"),
-    )
+fn held_phrase(held: &[Ability]) -> alloc::string::String {
+    if held.is_empty() {
+        "they hold no authority over it".into()
+    } else {
+        alloc::format!("they only hold {}", list(held))
+    }
+}
+
+/// `a`, `a and b`, or `a, b, and c`.
+fn list(items: &[Ability]) -> alloc::string::String {
+    use core::fmt::Write as _;
+    let mut out = alloc::string::String::new();
+    for (i, item) in items.iter().enumerate() {
+        let sep = match (i, items.len()) {
+            (0, _) => "",
+            (_, 2) => " and ",
+            (i, n) if i + 1 == n => ", and ",
+            _ => ", ",
+        };
+        let _ = write!(out, "{sep}{item}");
+    }
+    out
 }
 
 fn target_phrase(target: Option<&CertId>) -> alloc::string::String {
@@ -686,7 +878,7 @@ mod tests {
              (Doc)-[read]->(Alice)
              (Alice)-[edit]->(Bob)",
         )?;
-        assert_eq!(d.granted(ix(&d, 1)), Some(Level::Read));
+        assert_eq!(d.granted(ix(&d, 1)), Some(&Level::Read.into()));
         assert_eq!(
             kinds(&d),
             ["Alice only holds read over Doc, so this grants read, not edit"]
@@ -719,7 +911,7 @@ mod tests {
         assert_eq!(route.through(), [ix(&d, 1)]);
         assert_eq!(route.held(), ix(&d, 1));
         // Alice is only a Read member of Team
-        assert_eq!(d.granted(ix(&d, 2)), Some(Level::Read));
+        assert_eq!(d.granted(ix(&d, 2)), Some(&Level::Read.into()));
         Ok(())
     }
 
@@ -872,9 +1064,9 @@ mod tests {
              (Doc)-[edit]->(Alice)",
         )?;
         let alice = d.principal_by_key("alice").expect("Alice is in it");
-        let level = |now| d.reach(alice, now).first().map(|r| r.level);
-        assert_eq!(level(ix(&d, 0)), Some(Level::Read));
-        assert_eq!(level(ix(&d, 1)), Some(Level::Edit));
+        let level = |now| d.reach(alice, now).first().map(|r| r.ability.clone());
+        assert_eq!(level(ix(&d, 0)), Some(Level::Read.into()));
+        assert_eq!(level(ix(&d, 1)), Some(Level::Edit.into()));
         Ok(())
     }
 
@@ -901,7 +1093,7 @@ mod tests {
         let reach: Vec<_> = d
             .reach(bob, d.now().expect("not empty"))
             .into_iter()
-            .filter_map(|r| Some((d.principal(r.subject)?.key(), r.level)))
+            .filter_map(|r| Some((d.principal(r.subject)?.key(), r.ability.level()?)))
             .collect();
         assert_eq!(
             reach,
@@ -912,6 +1104,146 @@ mod tests {
                 ("essay", Level::Read),
             ]
         );
+        Ok(())
+    }
+
+    fn ability(s: &str) -> Ability {
+        s.parse().expect("test abilities are valid")
+    }
+
+    #[test]
+    fn command_paths_attenuate_by_prefix() -> TestResult {
+        let d = parse(
+            "rain
+             (Doc)-[/crud]->(Alice)
+             (Alice)-[/crud/read]->(Bob)
+             (Bob)=[[/crud/read]]=>(Doc)
+             (Bob)=[[/crud/write]]=>(Doc)",
+        )?;
+        assert_eq!(d.granted(ix(&d, 1)), Some(&ability("/crud/read")));
+        assert_eq!(
+            statuses(&d),
+            [
+                Some(Status::Valid),
+                Some(Status::Valid),
+                Some(Status::Valid),
+                Some(Status::Unauthorized)
+            ]
+        );
+        assert_eq!(
+            kinds(&d),
+            ["Bob can't use /crud/write on Doc: they only hold /crud/read"]
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn claiming_more_than_a_path_grants_the_path() -> TestResult {
+        let d = parse(
+            "rain
+             (Doc)-[/crud/read]->(Alice)
+             (Alice)-[/crud]->(Bob)",
+        )?;
+        assert_eq!(d.granted(ix(&d, 1)), Some(&ability("/crud/read")));
+        assert_eq!(
+            kinds(&d),
+            ["Alice only holds /crud/read over Doc, so this grants /crud/read, not /crud"]
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn unrelated_abilities_grant_nothing() -> TestResult {
+        let d = parse(
+            "rain
+             (Doc)-[/msg]->(Alice)
+             (Doc)-[read]->(Alice)
+             (Alice)-[/crud]->(Bob)",
+        )?;
+        assert_eq!(d.granted(ix(&d, 2)), None);
+        assert_eq!(
+            kinds(&d),
+            [
+                "Alice holds read and /msg over Doc, none of which covers or falls under /crud, so this certificate grants nothing"
+            ]
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn levels_and_paths_dont_mix_along_a_chain() -> TestResult {
+        let d = parse(
+            "rain
+             (Doc)-[edit]->(Team)
+             (Team)-[/(Team)]->(Alice)
+             (Alice)-[edit(Doc)]->(Bob)",
+        )?;
+        assert_eq!(statuses(&d).last(), Some(&Some(Status::Unauthorized)));
+        Ok(())
+    }
+
+    #[test]
+    fn reach_lists_each_broadest_ability() -> TestResult {
+        let d = parse(
+            "rain
+             (Doc)-[/crud/read]->(Alice)
+             (Doc)-[/msg]->(Alice)
+             (Doc)-[/msg/send]->(Alice)",
+        )?;
+        let alice = d.principal_by_key("alice").expect("Alice is in it");
+        let held: Vec<String> = d
+            .reach(alice, d.now().expect("not empty"))
+            .iter()
+            .map(|r| r.ability.to_string())
+            .collect();
+        assert_eq!(held, ["/msg", "/crud/read"]);
+        Ok(())
+    }
+
+    #[test]
+    fn caveats_pile_up_along_routes() -> TestResult {
+        let d = parse(
+            "rain
+             (Doc)-[/crud where path = /docs]->(Team)
+             (Team)-[/ where team.active]->(Alice)
+             (Alice)-[/crud/read(Doc) where size < 1MB]->(Bob)
+             (Bob)=[[/crud/read]]=>(Doc)",
+        )?;
+        let caveats = |i| -> Vec<&str> { d.caveats(ix(&d, i)).map(|(_, c)| c.as_str()).collect() };
+        assert_eq!(caveats(0), ["path = /docs"]);
+        assert_eq!(caveats(2), ["path = /docs", "team.active", "size < 1MB"]);
+        assert_eq!(caveats(3), caveats(2));
+        Ok(())
+    }
+
+    #[test]
+    fn routes_prefer_fewer_caveats_then_earlier() -> TestResult {
+        let d = parse(
+            "rain
+             (Doc)-[/ where x]->(Alice)
+             (Doc)-[/]->(Alice)
+             (Doc)-[/]->(Alice)
+             (Alice)-[/crud]->(Bob)",
+        )?;
+        let route = d
+            .cert(ix(&d, 3))
+            .and_then(|c| c.authority.route())
+            .expect("Alice holds Doc");
+        assert_eq!(route.source(), ix(&d, 1));
+        assert_eq!(d.caveats(ix(&d, 3)).count(), 0);
+        Ok(())
+    }
+
+    #[test]
+    fn breadth_beats_fewer_caveats() -> TestResult {
+        let d = parse(
+            "rain
+             (Doc)-[/crud/read]->(Alice)
+             (Doc)-[/crud where x]->(Alice)
+             (Alice)-[/crud]->(Bob)",
+        )?;
+        assert_eq!(d.granted(ix(&d, 2)), Some(&ability("/crud")));
+        assert_eq!(d.caveats(ix(&d, 2)).count(), 1);
         Ok(())
     }
 }

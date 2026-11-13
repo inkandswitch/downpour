@@ -10,8 +10,11 @@
 //! line        = directive | statement
 //! directive   = "title" text | "participant" name { "," name }
 //! statement   = [ cert-id ":" ] ( delegate | invoke | revoke ) [ ":" text ]
-//! delegate    = principal "-[" level [ principal ] [ "via" cert-id { "," cert-id } ] "]->" principal
-//! invoke      = principal "=[[" level "]]=>" principal
+//! delegate    = principal "-[" ability [ principal ] [ "via" cert-id { "," cert-id } ] [ "where" caveat ] "]->" principal
+//! invoke      = principal "=[[" ability "]]=>" principal
+//! ability     = level | command
+//! level       = "admin" | "edit" | "read" | "relay" | emoji
+//! command     = "/" | "/" segment { "/" segment }
 //! revoke      = principal "-<revoke>-x" "[" cert-id "]"
 //! principal   = "(" name ")"
 //! ```
@@ -20,11 +23,13 @@
 //! after a space, so `https://` in a note is safe) or `%%`, as in Mermaid.
 
 use crate::{
+    ability::{Ability, Command, InvalidAbility, InvalidCommand},
     ast::{
-        CertId, Delegation, Document, InvalidCertId, InvalidName, InvalidText, Invocation, Kind,
-        Name, Placement, Region, Revocation, Span, Spanned, Statement, Text, comment_start,
+        Caveat, CertId, Delegation, Document, InvalidCaveat, InvalidCertId, InvalidName,
+        InvalidText, Invocation, Kind, Name, Placement, Region, Revocation, Span, Spanned,
+        Statement, Text, comment_start,
     },
-    level::{Level, UnknownLevel},
+    level::UnknownLevel,
 };
 use alloc::{collections::BTreeMap, string::String, vec::Vec};
 use core::num::NonZeroU8;
@@ -262,7 +267,7 @@ fn statement(c: &mut Cursor<'_>) -> Result<Statement, ParseError> {
         let before = run(c, '-', "")?;
 
         if c.eat("[") {
-            let level = level(c)?;
+            let ability = ability(c)?;
 
             c.skip_ws();
             let subject = if c.rest().starts_with('(') {
@@ -281,6 +286,13 @@ fn statement(c: &mut Cursor<'_>) -> Result<Statement, ParseError> {
                 Vec::new()
             };
 
+            let caveat = if c.eat_word("where") {
+                let (raw, span) = c.take_while(|ch| ch != ']');
+                Some(Caveat::new(raw.trim_end()).map_err(|e| ParseError::new(span, e.into()))?)
+            } else {
+                None
+            };
+
             c.expect("]", "`]` to close the certificate")?;
             let after = run(c, '-', "`->` after the certificate")?;
             c.expect(">", "`->` after the certificate")?;
@@ -289,9 +301,10 @@ fn statement(c: &mut Cursor<'_>) -> Result<Statement, ParseError> {
             return Ok(Statement::Delegate(Delegation {
                 id: id.map(|id| id.node),
                 issuer: by,
-                level,
+                ability,
                 subject,
                 via,
+                caveat,
                 audience,
                 at: c.placement(before, after),
                 note: tail(c)?,
@@ -323,7 +336,7 @@ fn statement(c: &mut Cursor<'_>) -> Result<Statement, ParseError> {
         unlabelled(id)?;
         let before = run(c, '=', "")?;
         c.expect("[[", "`[[` to start the invocation")?;
-        let level = level(c)?;
+        let ability = ability(c)?;
         c.expect("]]", "`]]` to close the invocation")?;
         let after = run(c, '=', "`=>` after the invocation")?;
         c.expect(">", "`=>` after the invocation")?;
@@ -331,7 +344,7 @@ fn statement(c: &mut Cursor<'_>) -> Result<Statement, ParseError> {
 
         return Ok(Statement::Invoke(Invocation {
             by,
-            level,
+            ability,
             on,
             at: c.placement(before, after),
             note: tail(c)?,
@@ -369,12 +382,17 @@ fn principal(c: &mut Cursor<'_>) -> Result<Name, ParseError> {
     Name::new(raw.trim()).map_err(|e| ParseError::new(span, e.into()))
 }
 
-fn level(c: &mut Cursor<'_>) -> Result<Level, ParseError> {
-    // Stop at arrow characters too, so a missing `]` is reported as one
-    let (raw, span) =
-        c.take_while(|ch| !matches!(ch, '(' | ']' | '-' | '=' | '>') && !ch.is_whitespace());
+fn ability(c: &mut Cursor<'_>) -> Result<Ability, ParseError> {
+    c.skip_ws();
+    // Stop at arrow characters too, so a missing `]` is reported as one;
+    // paths can hold dashes, but never `]`, `(`, `=`, or `>`
+    let (raw, span) = if c.rest().starts_with('/') {
+        c.take_while(Command::is_path_char)
+    } else {
+        c.take_while(|ch| !matches!(ch, '(' | ']' | '-' | '=' | '>') && !ch.is_whitespace())
+    };
     raw.parse()
-        .map_err(|e: UnknownLevel| ParseError::new(span, e.into()))
+        .map_err(|e: InvalidAbility| ParseError::new(span, e.into()))
 }
 
 fn cert_id(c: &mut Cursor<'_>) -> Result<CertId, ParseError> {
@@ -607,6 +625,14 @@ pub enum ParseErrorKind {
     #[error(transparent)]
     Level(#[from] UnknownLevel),
 
+    /// A malformed command path.
+    #[error(transparent)]
+    Command(#[from] InvalidCommand),
+
+    /// A bad `where` caveat.
+    #[error(transparent)]
+    Caveat(#[from] InvalidCaveat),
+
     /// A bad principal name.
     #[error(transparent)]
     Name(#[from] InvalidName),
@@ -624,9 +650,19 @@ pub enum ParseErrorKind {
     Text(#[from] InvalidText),
 }
 
+impl From<InvalidAbility> for ParseErrorKind {
+    fn from(e: InvalidAbility) -> Self {
+        match e {
+            InvalidAbility::Level(e) => Self::Level(e),
+            InvalidAbility::Command(e) => Self::Command(e),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::level::Level;
     use testresult::TestResult;
 
     fn name(s: &str) -> Name {
@@ -656,9 +692,10 @@ mod tests {
                 Statement::Delegate(Delegation {
                     id: None,
                     issuer: name("Doc"),
-                    level: Level::Edit,
+                    ability: Level::Edit.into(),
                     subject: None,
                     via: Vec::new(),
+                    caveat: None,
                     audience: name("Alice"),
                     at: None,
                     note: None,
@@ -666,9 +703,10 @@ mod tests {
                 Statement::Delegate(Delegation {
                     id: Some(CertId::new("cd")?),
                     issuer: name("Carol"),
-                    level: Level::Read,
+                    ability: Level::Read.into(),
                     subject: Some(name("Doc")),
                     via: Vec::new(),
+                    caveat: None,
                     audience: name("Dan"),
                     at: None,
                     note: Some(Text::new("shares Read")?),
@@ -676,9 +714,10 @@ mod tests {
                 Statement::Delegate(Delegation {
                     id: None,
                     issuer: name("Alice"),
-                    level: Level::Edit,
+                    ability: Level::Edit.into(),
                     subject: Some(name("Doc")),
                     via: Vec::from([CertId::new("ta")?, CertId::new("x.1")?]),
+                    caveat: None,
                     audience: name("Bob"),
                     at: None,
                     note: None,
@@ -686,6 +725,60 @@ mod tests {
             ]
         );
         Ok(())
+    }
+
+    #[test]
+    fn commands_and_caveats() -> TestResult {
+        let parsed = statements(
+            "rain
+             (Alice)-[/crud/read-only(Doc) via ta where path = \"/a(b)\" & n < 3 ]->(Bob)
+             (Bob)=[[/]]=>(Doc)",
+        )?;
+        assert_eq!(
+            parsed,
+            [
+                Statement::Delegate(Delegation {
+                    id: None,
+                    issuer: name("Alice"),
+                    ability: "/crud/read-only".parse()?,
+                    subject: Some(name("Doc")),
+                    via: Vec::from([CertId::new("ta")?]),
+                    caveat: Some(Caveat::new("path = \"/a(b)\" & n < 3")?),
+                    audience: name("Bob"),
+                    at: None,
+                    note: None,
+                }),
+                Statement::Invoke(Invocation {
+                    by: name("Bob"),
+                    ability: "/".parse()?,
+                    on: name("Doc"),
+                    at: None,
+                    note: None,
+                }),
+            ]
+        );
+        assert_eq!(
+            parsed.first().map(ToString::to_string).as_deref(),
+            Some("(Alice)-[/crud/read-only(Doc) via ta where path = \"/a(b)\" & n < 3]->(Bob)")
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn bad_commands_and_caveats() {
+        let kind = |src: &str| document(src).map_err(|e| e.kind().clone()).err();
+        assert!(matches!(
+            kind("rain\n(A)-[/crud/]->(B)"),
+            Some(ParseErrorKind::Command(_))
+        ));
+        assert!(matches!(
+            kind("rain\n(A)-[edit where ]->(B)"),
+            Some(ParseErrorKind::Caveat(_))
+        ));
+        assert!(matches!(
+            kind("rain\n(A)-[edit where x[0] ]->(B)"),
+            Some(ParseErrorKind::Caveat(InvalidCaveat::Bracket('[')))
+        ));
     }
 
     #[test]
@@ -701,7 +794,7 @@ mod tests {
             [
                 Statement::Invoke(Invocation {
                     by: name("Bob"),
-                    level: Level::Edit,
+                    ability: Level::Edit.into(),
                     on: name("Doc"),
                     at: None,
                     note: None,

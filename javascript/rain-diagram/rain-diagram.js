@@ -106,7 +106,7 @@ const STYLE = `
     font: 12px system-ui, sans-serif;
   }
   .menu-row { display: flex; align-items: center; gap: 4px; }
-  .menu-row span { width: 58px; opacity: 0.7; }
+  .menu-row span { min-width: 58px; max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; opacity: 0.7; }
   .menu button { padding: 3px 8px; border: 1px solid rgb(127 127 127 / 0.3); border-radius: 6px; background: transparent; color: inherit; font: inherit; cursor: pointer; }
   .menu button:hover, .menu button:focus-visible { background: rgb(61 125 216 / 0.15); outline: none; }
   :host([grabbing]), :host([grabbing]) * { cursor: grabbing !important; }
@@ -505,6 +505,23 @@ export class RainDiagramElement extends HTMLElement {
       ["read", "👀 Read"],
       ["relay", "📡 Relay"],
     ];
+    const label = (ability) => LEVELS.find(([level]) => level === ability)?.[1] ?? ability;
+    // What can be passed on from a held ability: the levels it implies, or
+    // the command path itself
+    const within = (held) => {
+      const rank = LEVELS.findIndex(([level]) => level === held);
+      return rank < 0 ? [held] : LEVELS.slice(rank).map(([level]) => level);
+    };
+    const names = this.#diagram?.principals() ?? [];
+    const held = JSON.parse(this.#diagram?.heldBefore(from, at) ?? "[]");
+    // Each subject the actor holds, and the abilities over it, broadest first
+    const holdings = new Map();
+    for (const { subject, level } of held) {
+      const abilities = holdings.get(subject) ?? [];
+      for (const a of within(level)) if (!abilities.includes(a)) abilities.push(a);
+      holdings.set(subject, abilities);
+    }
+    const OWN = [...LEVELS.map(([level]) => level), "/"];
     const menu = document.createElement("div");
     menu.className = "menu";
     menu.setAttribute("role", "menu");
@@ -533,8 +550,18 @@ export class RainDiagramElement extends HTMLElement {
     if (target.kind === "cert") {
       row("Revoke", [["✂️ Revoke", () => insertStatement(this.#text, at, "revoke", from, target.to, "")]]);
     } else {
-      row("Delegate", LEVELS.map(([level, label]) => [label, () => insertStatement(this.#text, at, "delegate", from, target.to, level)]));
-      row("Invoke", LEVELS.map(([level, label]) => [label, () => insertStatement(this.#text, at, "invoke", from, target.to, level)]));
+      // Delegate anything the issuer holds, over each subject, or its own
+      // authority over itself
+      const delegate = (subject, abilities, title) =>
+        row(title, abilities.map((a) => [label(a), () => insertStatement(this.#text, at, "delegate", from, target.to, a, subject)]));
+      for (const [subject, abilities] of holdings) {
+        delegate(subject, abilities, `Delegate ${names[subject] ?? "?"}`);
+      }
+      delegate(from, OWN, `Delegate ${names[from] ?? "self"} (itself)`);
+      // Invoke what it holds over the target, or anything (to show an
+      // unauthorised attempt) if it holds nothing
+      const over = holdings.get(target.to) ?? (target.to === from ? OWN : LEVELS.map(([level]) => level));
+      row("Invoke", over.map((a) => [label(a), () => insertStatement(this.#text, at, "invoke", from, target.to, a)]));
     }
 
     const host = this.getBoundingClientRect();

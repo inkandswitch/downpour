@@ -320,7 +320,7 @@ impl<'a> Layout<'a> {
         let line = event_line(to_isize(ix.index()));
         match self.diagram.event(ix)? {
             Event::Delegate(cert) => {
-                let text = format!("[{}]", cert.level);
+                let text = format!("[{}]", cert.ability);
                 Some(self.arrow(
                     self.x(cert.issuer),
                     self.x(cert.audience),
@@ -331,7 +331,7 @@ impl<'a> Layout<'a> {
             }
 
             Event::Invoke(invoke) => {
-                let text = format!("[[{}]]", invoke.level);
+                let text = format!("[[{}]]", invoke.ability);
                 let powered_by = invoke
                     .authority
                     .route()

@@ -475,16 +475,20 @@ fn close_line(lines: &[&str], open: usize, id: &str) -> Option<usize> {
 
 /// A statement to add by direct manipulation (dragging between lifelines).
 /// Principals are columns; `target` is an event index.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum NewStatement {
-    /// `issuer` delegates to `audience`, over what it holds at that moment.
+    /// `issuer` delegates to `audience`, over `subject` or, if that's
+    /// `None`, over what it holds at that moment.
     Delegate {
         /// The issuer's column.
         issuer: usize,
         /// The audience's column.
         audience: usize,
-        /// The level granted.
-        level: crate::level::Level,
+        /// The subject's column (the issuer's own, for authority over
+        /// itself), or `None` to pick what the issuer holds.
+        subject: Option<usize>,
+        /// The ability granted.
+        ability: crate::ability::Ability,
     },
 
     /// `by` uses its authority on `on`.
@@ -493,8 +497,8 @@ pub enum NewStatement {
         by: usize,
         /// The subject's column.
         on: usize,
-        /// The level used.
-        level: crate::level::Level,
+        /// The ability used.
+        ability: crate::ability::Ability,
     },
 
     /// `by` revokes the certificate at event `target`.
@@ -510,8 +514,9 @@ pub enum NewStatement {
 /// earlier than just after its target), returning the new source and where
 /// the statement landed.
 ///
-/// A delegation is over the subject its issuer holds most strongly at that
-/// moment (or itself, if it holds nothing), written short (`[edit]`) when
+/// A delegation is over its `subject`, or else over the subject its issuer
+/// holds most strongly at that moment (or itself, if it holds nothing). It's
+/// written short (`[edit]`) when
 /// inference picks the same subject and in full (`[edit(Doc)]`) otherwise. A
 /// revocation names its target by label, first labelling the target if it
 /// has none (with its `issuer-audience` name, if that is free).
@@ -524,7 +529,7 @@ pub enum NewStatement {
 /// let (out, at) = insert_statement(
 ///     source,
 ///     1,
-///     NewStatement::Delegate { issuer: 1, audience: 2, level: Level::Read },
+///     NewStatement::Delegate { issuer: 1, audience: 2, subject: None, ability: Level::Read.into() },
 /// )?;
 /// assert_eq!(at, 1);
 /// assert_eq!(
@@ -558,27 +563,37 @@ pub fn insert_statement(
         NewStatement::Delegate {
             issuer,
             audience,
-            level,
+            subject,
+            ability,
         } => {
             let (from, to) = (name(issuer)?, name(audience)?);
-            // What the issuer holds most strongly just before this moment
+            let chosen = subject.map(name).transpose()?;
+            // What the issuer holds, preferring what covers the ability,
+            // then the strongest level, just before this moment
             let held = at
                 .checked_sub(1)
                 .and_then(|i| d.event_ix(i))
                 .map(|now| d.reach(crate::diagram::PrincipalIx::new(issuer), now))
                 .unwrap_or_default();
-            let subject = held
-                .iter()
-                .max_by_key(|r| (r.level, core::cmp::Reverse(r.subject)))
-                .and_then(|r| d.principal(r.subject))
-                .map(|p| p.name().as_str());
+            let subject = chosen.or_else(|| {
+                held.iter()
+                    .max_by_key(|r| {
+                        (
+                            r.ability.covers(&ability),
+                            r.ability.level(),
+                            core::cmp::Reverse(r.subject),
+                        )
+                    })
+                    .and_then(|r| d.principal(r.subject))
+                    .map(|p| p.name().as_str())
+            });
 
-            let short = alloc::format!("({from})-[{}]->({to})", level.keyword());
+            let short = alloc::format!("({from})-[{ability}]->({to})");
             let line = match subject {
                 None => short,
                 Some(subject) => {
                     // Short if inference lands on the same subject
-                    let full = alloc::format!("({from})-[{}({subject})]->({to})", level.keyword());
+                    let full = alloc::format!("({from})-[{ability}({subject})]->({to})");
                     let infers_same = crate::parse(&insert_line(&text, &d, at, &short))
                         .ok()
                         .and_then(|after| {
@@ -593,8 +608,8 @@ pub fn insert_statement(
             (line, at)
         }
 
-        NewStatement::Invoke { by, on, level } => (
-            alloc::format!("({})=[[{}]]=>({})", name(by)?, level.keyword(), name(on)?),
+        NewStatement::Invoke { by, on, ability } => (
+            alloc::format!("({})=[[{ability}]]=>({})", name(by)?, name(on)?),
             at,
         ),
 
@@ -944,7 +959,8 @@ alice-bob: (Alice)-[edit(Doc)]->(Bob) : 2
             NewStatement::Delegate {
                 issuer: 2,
                 audience: 3,
-                level: Level::Read,
+                subject: None,
+                ability: Level::Read.into(),
             },
         )?;
         assert!(out.ends_with("(Alice)-[read(Essay)]->(Bob)\n"), "{out}");
@@ -973,7 +989,7 @@ alice-bob: (Alice)-[edit(Doc)]->(Bob) : 2
             NewStatement::Invoke {
                 by: 1,
                 on: 0,
-                level: Level::Read,
+                ability: Level::Read.into(),
             },
         )?;
         assert_eq!(

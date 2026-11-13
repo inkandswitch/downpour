@@ -18,9 +18,7 @@
 
 mod layout;
 
-use super::{
-    FONT, MARGIN, PILL, REVOKE, STYLE, colour, escape, level_label, pill, status_class, text_width,
-};
+use super::{FONT, MARGIN, PILL, REVOKE, STYLE, colour, escape, pill, status_class, text_width};
 use crate::{
     authority::Authority,
     diagram::{Diagram, Event, EventIx, PrincipalIx},
@@ -120,7 +118,7 @@ impl<'a> Certflow<'a> {
                     }
                     nodes += 1;
                     shapes.push(Shape::Box {
-                        half: text_width(&level_label(cert.level)) / 2.0 + 12.0,
+                        half: text_width(&cert.ability.label()) / 2.0 + 12.0,
                         half_h: PILL / 2.0,
                     });
                     edges.push((principal_node(cert.issuer), node));
@@ -387,7 +385,7 @@ impl<'a> Certflow<'a> {
                     ty = tip.1,
                     stroke = stroke,
                     head = arrowhead(tip, u, stroke),
-                    pill = pill(cx, cy, half, &level_label(cert.level), stroke, false),
+                    pill = pill(cx, cy, half, &cert.ability.label(), stroke, false),
                 );
             }
 

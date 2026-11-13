@@ -69,6 +69,7 @@
 
 extern crate alloc;
 
+pub mod ability;
 pub mod ast;
 pub mod authority;
 pub mod diagram;

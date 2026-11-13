@@ -4,11 +4,15 @@
 //! events are delegations (`from`/`to`/`level`/`subject`), invocations
 //! (`invoke`/`by`/`on`), and revocations (`revoke`/`by`). Exporting to it
 //! lets the existing renderer draw diagrams written in the textual notation.
+//!
+//! Command paths go in `level` and `invoke` as written (`"/crud/read"`),
+//! and a delegation's own `where` caveat in `caveat`; the site's renderer
+//! only knows Keyhive's levels, so it can't draw those.
 
 use crate::{
+    ability::Ability,
     authority::Route,
     diagram::{Diagram, Event},
-    level::Level,
 };
 use alloc::{string::String, vec::Vec};
 use serde::Serialize;
@@ -50,7 +54,8 @@ impl Diagram {
                         id: cert.id.as_str(),
                         from: self.key(cert.issuer),
                         to: self.key(cert.audience),
-                        level: cert.level,
+                        level: &cert.ability,
+                        caveat: cert.caveat.as_ref().map(crate::ast::Caveat::as_str),
                         subject: (cert.subject != cert.issuer).then(|| self.key(cert.subject)),
                         transitive: cert
                             .authority
@@ -62,7 +67,7 @@ impl Diagram {
                             .collect(),
                     },
                     Event::Invoke(invoke) => SiteEvent::Invoke {
-                        invoke: invoke.level,
+                        invoke: &invoke.ability,
                         by: self.key(invoke.by),
                         on: self.key(invoke.on),
                     },
@@ -95,14 +100,16 @@ enum SiteEvent<'a> {
         id: &'a str,
         from: &'a str,
         to: &'a str,
-        level: Level,
+        level: &'a Ability,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        caveat: Option<&'a str>,
         #[serde(skip_serializing_if = "Option::is_none")]
         subject: Option<&'a str>,
         #[serde(skip_serializing_if = "Vec::is_empty")]
         transitive: Vec<&'a str>,
     },
     Invoke {
-        invoke: Level,
+        invoke: &'a Ability,
         by: &'a str,
         on: &'a str,
     },

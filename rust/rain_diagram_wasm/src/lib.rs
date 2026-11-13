@@ -68,13 +68,14 @@ pub fn set_region_note(source: &str, region: &str, note: &str) -> Result<String,
 
 /// Add `kind` (`"delegate"`, `"invoke"`, or `"revoke"`) as statement `at`,
 /// as when dragging between lifelines, returning the rewritten source. For
-/// a delegation or invocation, `from`/`to` are columns and `level` a level
-/// keyword; for a revocation, `from` is the revoker's column and `to` the
-/// revoked certificate's event index.
+/// a delegation or invocation, `from`/`to` are columns and `level` an
+/// ability (a level keyword, or a command path like `/crud/read`); for a revocation, `from` is the revoker's column and `to` the
+/// revoked certificate's event index. A delegation is over the `subject`
+/// column if given, else over what the issuer holds at that moment.
 ///
 /// # Errors
 ///
-/// Throws for an unknown kind or level, bad indices, or a result that
+/// Throws for an unknown kind or ability, bad indices, or a result that
 /// wouldn't parse.
 #[wasm_bindgen(js_name = insertStatement)]
 pub fn insert_statement(
@@ -84,24 +85,26 @@ pub fn insert_statement(
     from: f64,
     to: f64,
     level: &str,
+    subject: Option<f64>,
 ) -> Result<String, JsError> {
-    use rain_diagram_core::{edit::NewStatement, level::Level};
+    use rain_diagram_core::{ability::Ability, edit::NewStatement};
     let (at, from, to) = (whole("at", at)?, whole("from", from)?, whole("to", to)?);
     let level = || {
         level
-            .parse::<Level>()
+            .parse::<Ability>()
             .map_err(|e| JsError::new(&e.to_string()))
     };
     let new = match kind {
         "delegate" => NewStatement::Delegate {
             issuer: from,
             audience: to,
-            level: level()?,
+            subject: subject.map(|s| whole("subject", s)).transpose()?,
+            ability: level()?,
         },
         "invoke" => NewStatement::Invoke {
             by: from,
             on: to,
-            level: level()?,
+            ability: level()?,
         },
         "revoke" => NewStatement::Revoke {
             by: from,
@@ -318,11 +321,63 @@ impl RainDiagram {
     }
 
     /// Everything a principal can act on as of the last event, as JSON:
-    /// `{ "subjects": [{ "key", "level" }], "events": [index, …] }`, where
-    /// `events` are the certificates on the routes. Unknown keys reach
+    /// `{ "subjects": [{ "key", "level", "caveats" }], "events": [index, …] }`,
+    /// where `level` is the ability (a level keyword or command path), a
+    /// subject appears once per broadest ability held over it, `caveats` are
+    /// the `where` conditions along the way, and `events` are the
+    /// certificates on the routes. Unknown keys reach
     /// nothing.
     #[must_use]
     pub fn reach(&self, principal: &str) -> String {
+        self.reach_json(principal)
+    }
+
+    /// Principal names, by column.
+    #[must_use]
+    pub fn principals(&self) -> Vec<String> {
+        self.diagram
+            .principals()
+            .iter()
+            .map(|p| p.name().as_str().to_owned())
+            .collect()
+    }
+
+    /// What the principal in `column` holds just before statement `at`
+    /// (where a dragged statement would land), as JSON:
+    /// `[{ "subject": column, "level" }]`, one entry per broadest ability
+    /// over each subject. Its authority over itself isn't listed.
+    ///
+    /// # Errors
+    ///
+    /// Throws unless `column` and `at` are whole numbers ≥ 0.
+    #[wasm_bindgen(js_name = heldBefore)]
+    pub fn held_before(&self, column: f64, at: f64) -> Result<String, JsError> {
+        let (column, at) = (whole("column", column)?, whole("at", at)?);
+        let d = &self.diagram;
+        // Just before `at`: the event above it (the last, past the end)
+        let now = at
+            .min(d.events().len())
+            .checked_sub(1)
+            .and_then(|i| d.event_ix(i));
+        let held = d
+            .principal_ix(column)
+            .zip(now)
+            .map(|(holder, now)| d.reach(holder, now))
+            .unwrap_or_default();
+        let entries: Vec<String> = held
+            .iter()
+            .filter_map(|r| {
+                let level = serde_json::to_string(&r.ability.to_string()).ok()?;
+                Some(format!(
+                    r#"{{"subject":{},"level":{level}}}"#,
+                    r.subject.index()
+                ))
+            })
+            .collect();
+        Ok(format!("[{}]", entries.join(",")))
+    }
+
+    fn reach_json(&self, principal: &str) -> String {
         let d = &self.diagram;
         // A key (`alice`) or a display name (`Alice`)
         let holder = d.principal_by_key(principal).or_else(|| {
@@ -352,9 +407,15 @@ impl RainDiagram {
             .iter()
             .filter_map(|r| {
                 let key = serde_json::to_string(d.principal(r.subject)?.key()).ok()?;
+                let level = serde_json::to_string(&r.ability.to_string()).ok()?;
+                let caveats: Vec<String> = d
+                    .route_caveats(&r.route)
+                    .into_iter()
+                    .filter_map(|(_, c)| serde_json::to_string(c.as_str()).ok())
+                    .collect();
                 Some(format!(
-                    r#"{{"key":{key},"level":"{}"}}"#,
-                    r.level.keyword()
+                    r#"{{"key":{key},"level":{level},"caveats":[{}]}}"#,
+                    caveats.join(",")
                 ))
             })
             .collect();

@@ -29,6 +29,8 @@ Principals get round brackets, certificates get square ones (like the shapes in 
 | `(A)-[edit(S)]->(B)`              | A delegates Edit over S to B                                |
 | `(A)-[edit]->(B)`                 | Same, with S inferred from what A holds                     |
 | `(A)-[edit(S) via ta]->(B)`       | Force the route through `ta` (routes are otherwise derived) |
+| `(A)-[/crud/read(S)]->(B)`        | A command path instead of a level, as in UCAN               |
+| `(A)-[edit(S) where x < 3]->(B)`  | A caveat: a condition the authority is limited by           |
 | `label: (A)-[…]->(B)`             | Label a certificate, so revocations and `via` can name it   |
 | `(B)=[[edit]]=>(S)`               | B uses its Edit authority on S                              |
 | `(A)-<revoke>-x[label]`           | A revokes the certificate `label`                           |
@@ -38,6 +40,34 @@ Principals get round brackets, certificates get square ones (like the shapes in 
 | `title …`, `: note`, `// comment` | Annotations (`%%` comments work too)                       |
 
 Levels are `admin`, `edit`, `read`, and `relay` (or 👑 ✏️ 👀 📡).
+
+### Command paths and caveats
+
+Keyhive's levels are one strict hierarchy. UCAN and Biscuit attenuate differently: abilities form a tree of commands, and conditions stack up as authority is passed on. The same notation covers both, with no mode to switch:
+
+- _Command paths._ Wherever a level goes, a path can go instead: `/`, or segments like `/crud/read` (letters, digits, `-`, `_`, `.`). A path covers itself and the paths under it, so `/crud` covers `/crud/read` but not `/crudely`, and `/` covers every path. Levels and paths never cover each other.
+- _Caveats._ `where …` comes last inside the brackets, after the subject and any `via`, and runs to the `]`: `[/crud(Doc) via ta where path = "/docs"]`. Caveats are opaque text (anything but square brackets), so you can write them in UCAN policy syntax, Biscuit Datalog, or plain words. They're never evaluated.
+
+A delegation grants the narrower of what it claims and what its issuer holds, or nothing if neither covers the other. Every event is bound by the caveats on every certificate it relies on, so caveats only ever accumulate down a chain. When there's a choice of route, the broadest ability wins, then the one with the fewest caveats.
+
+```
+rain
+title A UCAN-style chain
+(Doc)-[/crud where path = "/docs"]->(Alice)  : Doc grants CRUD under /docs
+(Alice)-[/crud/read where size < 1MB]->(Bob) : Alice narrows to read, adds a limit
+(Bob)=[[/crud/read]]=>(Doc)                  : bound by both caveats
+(Bob)=[[/crud/write]]=>(Doc)                 : unauthorised: Bob only holds /crud/read
+```
+
+For Biscuit, think of each `where` as the check an attenuation block appends:
+
+```
+rain
+(Service)-[/(Service)]->(Alice)                            : the authority block
+(Alice)-[/(Service) where check if time($t), $t < 2026-12-01]->(Bob)
+(Bob)-[/(Service) where check if operation("read")]->(Carol)
+(Carol)=[[/]]=>(Service)                                   : must pass both checks
+```
 
 With no subject, `admin` is over the issuer itself (ownership, group membership: `(Team)-[admin]->(Alice)` adds Alice to Team), and anything else passes on the one subject the issuer holds. If it holds several, name the one you mean.
 

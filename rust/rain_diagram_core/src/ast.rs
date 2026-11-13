@@ -6,7 +6,7 @@
 //! inferring subjects, and checking references happens in
 //! [`crate::diagram`].
 
-use crate::level::Level;
+use crate::ability::Ability;
 use alloc::{string::String, vec::Vec};
 use core::{
     fmt::{self, Write as _},
@@ -165,7 +165,8 @@ impl fmt::Display for Statement {
     }
 }
 
-/// A certificate: the issuer grants the audience a level over a subject.
+/// A certificate: the issuer grants the audience an ability over a subject,
+/// perhaps with a caveat.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct Delegation {
@@ -176,7 +177,7 @@ pub struct Delegation {
     pub issuer: Name,
 
     /// The access granted.
-    pub level: Level,
+    pub ability: Ability,
 
     /// What the access is over. Omitted means "obvious from context".
     pub subject: Option<Name>,
@@ -184,6 +185,9 @@ pub struct Delegation {
     /// Certificates that carry the subject's authority to the issuer
     /// (transitive handles).
     pub via: Vec<CertId>,
+
+    /// A `where` condition the access is limited by.
+    pub caveat: Option<Caveat>,
 
     /// Who receives the certificate.
     pub audience: Name,
@@ -204,7 +208,7 @@ impl fmt::Display for Delegation {
         let (before, after) = runs(self.at);
         write!(f, "({})", self.issuer)?;
         write_run(f, '-', before)?;
-        write!(f, "[{}", self.level)?;
+        write!(f, "[{}", self.ability)?;
 
         if let Some(subject) = &self.subject {
             write!(f, "({subject})")?;
@@ -213,6 +217,10 @@ impl fmt::Display for Delegation {
         if !self.via.is_empty() {
             f.write_str(" via ")?;
             write_list(f, &self.via)?;
+        }
+
+        if let Some(caveat) = &self.caveat {
+            write!(f, " where {caveat}")?;
         }
 
         f.write_char(']')?;
@@ -230,7 +238,7 @@ pub struct Invocation {
     pub by: Name,
 
     /// The access being exercised.
-    pub level: Level,
+    pub ability: Ability,
 
     /// What is acted on.
     pub on: Name,
@@ -247,7 +255,7 @@ impl fmt::Display for Invocation {
         let (before, after) = runs(self.at);
         write!(f, "({})", self.by)?;
         write_run(f, '=', before)?;
-        write!(f, "[[{}]]", self.level)?;
+        write!(f, "[[{}]]", self.ability)?;
         write_run(f, '=', after)?;
         write!(f, ">({})", self.on)?;
         write_tail(f, self.note.as_ref())
@@ -421,6 +429,43 @@ impl fmt::Display for Text {
     }
 }
 
+/// A delegation's `where` condition: [`Text`] without square brackets.
+///
+/// Caveats are opaque: diagrams carry them along and show them, but never
+/// interpret them. That's enough to see how conditions pile up as authority
+/// is passed on, whatever language (UCAN policies, Biscuit checks) they're
+/// written in.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Caveat(Text);
+
+impl Caveat {
+    /// Check and wrap a caveat.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`InvalidCaveat`] if it isn't valid [`Text`], or contains
+    /// `[` or `]`.
+    pub fn new(text: &str) -> Result<Self, InvalidCaveat> {
+        if let Some(c) = text.chars().find(|c| matches!(c, '[' | ']')) {
+            return Err(InvalidCaveat::Bracket(c));
+        }
+
+        Ok(Self(Text::new(text)?))
+    }
+
+    /// The caveat as written.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        self.0.as_str()
+    }
+}
+
+impl fmt::Display for Caveat {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
 /// A byte range in the source text.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct Span {
@@ -509,6 +554,18 @@ pub enum InvalidText {
     /// A comment marker: `%%`, or `//` at the start or after a space.
     #[error("text contains a comment marker (`%%`, or `//` after a space)")]
     Comment,
+}
+
+/// Why a string is not a valid [`Caveat`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
+pub enum InvalidCaveat {
+    /// Not valid text.
+    #[error("caveat: {0}")]
+    Text(#[from] InvalidText),
+
+    /// A square bracket, which would end the certificate early.
+    #[error("caveat contains {0:?}; caveats can't contain square brackets")]
+    Bracket(char),
 }
 
 fn write_list<T: fmt::Display, I: IntoIterator<Item = T>>(
@@ -622,7 +679,8 @@ const fn runs(at: Option<Placement>) -> (u8, u8) {
 #[cfg(feature = "arbitrary")]
 mod arbitrary_impls {
     use super::{
-        CertId, Document, Kind, Name, NonZeroU8, Placement, Region, Span, Spanned, Statement, Text,
+        Caveat, CertId, Document, Kind, Name, NonZeroU8, Placement, Region, Span, Spanned,
+        Statement, Text,
     };
     use alloc::{string::String, vec::Vec};
     use arbitrary::{Arbitrary, Result, Unstructured};
@@ -670,6 +728,16 @@ mod arbitrary_impls {
             let raw = string_from(u, ALPHABET, 24)?;
             let raw = raw.replace("%%", "%");
             Ok(Self::new(raw.trim()).unwrap_or_else(|_| Self("note".into())))
+        }
+    }
+
+    impl<'a> Arbitrary<'a> for Caveat {
+        fn arbitrary(u: &mut Unstructured<'a>) -> Result<Self> {
+            const ALPHABET: &[char] = &[
+                'a', 'Z', '1', ' ', '<', '=', '(', ')', '.', ',', '"', '/', '→',
+            ];
+            let raw = string_from(u, ALPHABET, 16)?.replace("//", "/");
+            Ok(Self::new(raw.trim()).unwrap_or_else(|_| Self(Text("x > 1".into()))))
         }
     }
 
