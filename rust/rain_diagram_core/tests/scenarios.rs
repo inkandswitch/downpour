@@ -1234,3 +1234,282 @@ fn placed_labels_render_on_their_row() {
         );
     });
 }
+
+/// Rain SVG geometry: the coordinates the picture's meaning depends on.
+/// (Exact positions aren't pinned; relationships between shapes are.)
+#[allow(
+    clippy::cast_precision_loss,
+    clippy::many_single_char_names,
+    clippy::type_complexity,
+    reason = "small coordinates and short geometric names in a test"
+)]
+mod geometry {
+    use super::{Event, Scenario, check, common};
+    use std::collections::BTreeMap;
+
+    /// Every element's opening tag, as (name, attributes).
+    fn tags(svg: &str) -> Vec<(&str, BTreeMap<&str, &str>)> {
+        let mut out = Vec::new();
+        let mut rest = svg;
+        while let Some(start) = rest.find('<') {
+            let end = start + rest[start..].find('>').expect("tags close");
+            let tag = &rest[start + 1..end];
+            rest = &rest[end + 1..];
+            if tag.starts_with('/') || tag.starts_with('!') {
+                continue;
+            }
+            let name = tag.split([' ', '/']).next().unwrap_or_default();
+            let mut attrs = BTreeMap::new();
+            let mut body = tag[name.len()..].trim_end_matches('/');
+            while let Some(eq) = body.find("=\"") {
+                let key = body[..eq].trim();
+                let value_end = eq + 2 + body[eq + 2..].find('"').expect("quoted");
+                attrs.insert(key, &body[eq + 2..value_end]);
+                body = &body[value_end + 1..];
+            }
+            out.push((name, attrs));
+        }
+        out
+    }
+
+    fn num(attrs: &BTreeMap<&str, &str>, key: &str) -> f64 {
+        attrs[key]
+            .parse()
+            .unwrap_or_else(|_| panic!("{key}={:?}", attrs[key]))
+    }
+
+    /// The numbers in a path's `d`, as points (H/V carry one number).
+    fn points(d: &str) -> Vec<(f64, f64)> {
+        let mut out: Vec<(f64, f64)> = Vec::new();
+        let mut command = 'M';
+        for token in d.split_whitespace() {
+            let (head, rest) = match token.chars().next() {
+                Some(c) if c.is_ascii_alphabetic() => (Some(c), &token[1..]),
+                _ => (None, token),
+            };
+            if let Some(c) = head {
+                command = c;
+            }
+            let last = out.last().copied().unwrap_or((0.0, 0.0));
+            let mut numbers = rest.split(',').filter_map(|n| n.parse::<f64>().ok());
+            match command {
+                'H' => out.extend(numbers.next().map(|x| (x, last.1))),
+                'V' => out.extend(numbers.next().map(|y| (last.0, y))),
+                _ => {
+                    if let (Some(x), Some(y)) = (numbers.next(), numbers.next()) {
+                        out.push((x, y));
+                    }
+                }
+            }
+        }
+        out
+    }
+
+    /// A box, as (left, top, right, bottom).
+    type Bbox = (f64, f64, f64, f64);
+
+    fn grow((l, t, r, b): Bbox, by: f64) -> Bbox {
+        (l - by, t - by, r + by, b + by)
+    }
+
+    fn inside((x, y): (f64, f64), (l, t, r, b): Bbox) -> bool {
+        l <= x && x <= r && t <= y && y <= b
+    }
+
+    #[allow(clippy::too_many_lines)]
+    #[test]
+    fn rain_geometry_holds_together() {
+        check!().with_type::<Vec<u8>>().for_each(|bytes| {
+            let Some(scenario) = common::arbitrary::<Scenario>(bytes) else {
+                return;
+            };
+            let (source, d) = scenario.diagram();
+            let svg = d.to_rain_svg();
+            let all = tags(&svg);
+            let root = &all[0].1;
+            let (top, height) = (num(root, "data-rows-top"), num(root, "data-row-height"));
+            let view: Vec<f64> = root["viewBox"]
+                .split(' ')
+                .filter_map(|n| n.parse().ok())
+                .collect();
+            let frame = (0.0, 0.0, view[2], view[3]);
+
+            // Columns: left to right, evenly spaced; lifeline and head on it
+            let mut columns = Vec::new();
+            let mut current_group: Option<&BTreeMap<&str, &str>> = None;
+            let mut events: BTreeMap<usize, Vec<(&str, &BTreeMap<&str, &str>)>> = BTreeMap::new();
+            let mut event: Option<usize> = None;
+            for (name, attrs) in &all {
+                if *name == "g" {
+                    current_group = Some(attrs);
+                    event = attrs
+                        .get("class")
+                        .filter(|c| c.starts_with("event "))
+                        .and_then(|_| attrs.get("data-event"))
+                        .and_then(|n| n.parse().ok());
+                    if attrs.get("class") == Some(&"principal") {
+                        columns.push(num(attrs, "data-x"));
+                    }
+                    continue;
+                }
+                if let Some(i) = event {
+                    events.entry(i).or_default().push((name, attrs));
+                }
+                let in_principal =
+                    current_group.is_some_and(|g| g.get("class") == Some(&"principal"));
+                if in_principal {
+                    let x = *columns.last().expect("a principal");
+                    match *name {
+                        "line" => assert!(
+                            (num(attrs, "x1") - x).abs() < 0.05
+                                && (num(attrs, "x2") - x).abs() < 0.05,
+                            "{source}"
+                        ),
+                        "ellipse" => assert!((num(attrs, "cx") - x).abs() < 0.05, "{source}"),
+                        _ => {}
+                    }
+                }
+                // Everything inside the frame
+                for (kx, ky) in [("x", "y"), ("cx", "cy"), ("x1", "y1"), ("x2", "y2")] {
+                    if let (Some(x), Some(y)) = (attrs.get(kx), attrs.get(ky)) {
+                        let p = (x.parse().expect("x"), y.parse().expect("y"));
+                        assert!(
+                            inside(p, grow(frame, 0.5)),
+                            "{name} at {p:?} outside {frame:?}\n{source}"
+                        );
+                    }
+                }
+            }
+            assert_eq!(columns.len(), d.principals().len(), "{source}");
+            for pair in columns.windows(2) {
+                assert!(
+                    pair[1] > pair[0],
+                    "columns left to right: {columns:?}\n{source}"
+                );
+                assert!(
+                    ((pair[1] - pair[0]) - (columns[1] - columns[0])).abs() < 0.05,
+                    "even spacing: {columns:?}"
+                );
+            }
+            let column = |p: rain_diagram_core::diagram::PrincipalIx| columns[p.index()];
+
+            // Each event's label box: pills and diamonds
+            let boxes: BTreeMap<usize, Bbox> = events
+                .iter()
+                .filter_map(|(&i, parts)| {
+                    parts
+                        .iter()
+                        .find_map(|(name, a)| match (*name, a.get("class")) {
+                            ("rect", Some(&"pill")) => {
+                                let (x, y) = (num(a, "x"), num(a, "y"));
+                                Some((i, (x, y, x + num(a, "width"), y + num(a, "height"))))
+                            }
+                            ("path", Some(&"diamond")) => {
+                                let ps = points(a["d"]);
+                                let xs = ps.iter().map(|p| p.0);
+                                let ys = ps.iter().map(|p| p.1);
+                                Some((
+                                    i,
+                                    (
+                                        xs.clone().fold(f64::MAX, f64::min),
+                                        ys.clone().fold(f64::MAX, f64::min),
+                                        xs.fold(f64::MIN, f64::max),
+                                        ys.fold(f64::MIN, f64::max),
+                                    ),
+                                ))
+                            }
+                            _ => None,
+                        })
+                })
+                .collect();
+
+            for ix in d.event_ixs() {
+                let i = ix.index();
+                let row = top + height * (i as f64 + 0.5);
+                let parts = &events[&i];
+                let bbox = boxes[&i];
+                // On its row
+                assert!(
+                    (f64::midpoint(bbox.1, bbox.3) - row).abs() < 0.6,
+                    "#{i} off its row\n{source}"
+                );
+
+                if let Some(Event::Delegate(cert)) = d.event(ix) {
+                    let (a, b) = (column(cert.issuer), column(cert.audience));
+                    let line = parts
+                        .iter()
+                        .find(|(n, _)| *n == "line")
+                        .expect("an arrow")
+                        .1;
+                    assert!(
+                        (num(line, "x1") - a).abs() < 0.05 && (num(line, "x2") - b).abs() < 0.05,
+                        "#{i} arrow\n{source}"
+                    );
+                    assert!(
+                        (num(line, "y1") - row).abs() < 0.05,
+                        "#{i} arrow off its row\n{source}"
+                    );
+                    if cert.issuer != cert.audience {
+                        let (lo, hi) = (a.min(b), a.max(b));
+                        assert!(
+                            lo < bbox.0 && bbox.2 < hi,
+                            "#{i} label outside its arrow {bbox:?} vs {lo}..{hi}\n{source}"
+                        );
+                    }
+                }
+
+                if let Some(Event::Revoke(r)) = d.event(ix) {
+                    let cross = parts
+                        .iter()
+                        .find(|(n, a)| *n == "path" && a.get("class") == Some(&"cross"));
+                    assert_eq!(
+                        cross.is_some(),
+                        r.authority.is_authorized(),
+                        "#{i}\n{source}"
+                    );
+                    if let Some((_, cross)) = cross {
+                        let target = boxes[&r.target.index()];
+                        let ps = points(cross["d"]);
+                        let cx = ps.iter().map(|p| p.0).sum::<f64>() / ps.len() as f64;
+                        let cy = ps.iter().map(|p| p.1).fold(f64::MAX, f64::min);
+                        assert!(
+                            target.0 <= cx && cx <= target.2,
+                            "#{i} cross not under its target\n{source}"
+                        );
+                        assert!(
+                            cy >= target.3,
+                            "#{i} cross above its target's box\n{source}"
+                        );
+                    }
+                }
+            }
+
+            // Powerlines run from where authority comes from to the box it feeds
+            let handles: Vec<(f64, f64)> = all
+                .iter()
+                .filter(|(n, a)| *n == "circle" && a.get("class") == Some(&"handle"))
+                .map(|(_, a)| (num(a, "cx"), num(a, "cy")))
+                .collect();
+            for (_, a) in all.iter().filter(|(n, a)| {
+                *n == "path" && a.get("class").is_some_and(|c| c.starts_with("powerline"))
+            }) {
+                let ps = points(a["d"]);
+                let (start, end) = (ps[0], *ps.last().expect("points"));
+                let to: usize = a["data-to"].parse().expect("data-to");
+                let near_handle =
+                    |p: (f64, f64)| handles.iter().any(|h| (h.0 - p.0).hypot(h.1 - p.1) <= 7.0);
+                assert!(
+                    inside(end, grow(boxes[&to], 1.0)) || near_handle(end),
+                    "powerline into #{to} ends at {end:?}\n{source}"
+                );
+                if let Some(from) = a.get("data-from") {
+                    let from: usize = from.parse().expect("data-from");
+                    assert!(
+                        inside(start, grow(boxes[&from], 1.0)) || near_handle(start),
+                        "powerline from #{from} starts at {start:?}\n{source}"
+                    );
+                }
+            }
+        });
+    }
+}

@@ -240,6 +240,20 @@
             RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --all-features
           '';
 
+          # The docs as docs.rs builds them: nightly, every feature, and
+          # `--cfg docsrs`, so feature-gated items carry their badge. Its own
+          # target dir keeps nightly artifacts away from the stable builds
+          ci-docsrs = pkgs.writeShellApplication {
+            name = "rain-ci-docsrs";
+            runtimeInputs = [nightly-rustfmt-unwrapped pkgs.stdenv.cc pkgs.gnugrep];
+            text = ''
+              set -x
+              export CARGO_TARGET_DIR=target/docsrs
+              RUSTDOCFLAGS="--cfg docsrs -D warnings" cargo doc -p rain_diagram_core --all-features --no-deps
+              grep -q "crate feature <code>serde</code>" "$CARGO_TARGET_DIR/doc/rain_diagram_core/site_json/index.html"
+            '';
+          };
+
           # A target without `std` is the only real proof of no_std
           ci-no-std = mkCheck "ci-no-std" ''
             cargo check -p rain_diagram_core --no-default-features --features serde --target thumbv6m-none-eabi
