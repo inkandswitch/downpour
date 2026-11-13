@@ -110,10 +110,18 @@ struct Scenario {
     /// Regions, as (start, length) seeds over the statements
     regions: Vec<(u8, u8)>,
 
+    /// Labels placed by hand, as (statement, dashes before, dashes after)
+    /// seeds, so the placement paths get exercised too
+    placements: Vec<(u8, u8, u8)>,
+
     steps: Vec<Step>,
 }
 
 impl Scenario {
+    #[allow(
+        clippy::too_many_lines,
+        reason = "one pass building the source from generated steps"
+    )]
     fn source(&self) -> String {
         let pick = |i: u8| usize::from(i) % CAST.len();
         let mut source = String::from("rain\n");
@@ -200,6 +208,21 @@ impl Scenario {
             }
         }
 
+        // Some labels placed by hand: 1–4 dashes either side, at most one
+        // placement per statement
+        if !lines.is_empty() {
+            for &(n, before, after) in &self.placements {
+                let n = usize::from(n) % lines.len();
+                if !(lines[n].contains("--") || lines[n].contains("==")) {
+                    lines[n] = place(
+                        &lines[n],
+                        usize::from(before % 4) + 1,
+                        usize::from(after % 4) + 1,
+                    );
+                }
+            }
+        }
+
         // Regions over non-empty runs of statements, closed innermost first
         let len = lines.len();
         let regions: Vec<(usize, usize)> = if len == 0 {
@@ -239,6 +262,22 @@ impl Scenario {
             unreachable!("just asserted")
         };
         (source, diagram)
+    }
+}
+
+/// `line` with its label placed by hand: `before` and `after` dashes (or
+/// `=` for an invocation) either side of it.
+fn place(line: &str, before: usize, after: usize) -> String {
+    let (dash, dash_after) = ("-".repeat(before), "-".repeat(after));
+    let (eq, eq_after) = ("=".repeat(before), "=".repeat(after));
+    if line.contains("<revoke>") {
+        line.replacen("-<revoke>-x", &format!("{dash}<revoke>{dash_after}x"), 1)
+    } else if line.contains("=[[") {
+        line.replacen("=[[", &format!("{eq}[["), 1)
+            .replacen("]]=>", &format!("]]{eq_after}>"), 1)
+    } else {
+        line.replacen("-[", &format!("{dash}["), 1)
+            .replacen("]->", &format!("]{dash_after}>"), 1)
     }
 }
 
@@ -1051,8 +1090,9 @@ fn inserted_statements_land_where_asked() {
     });
 }
 
-/// Placing a label and putting it back gives the same statements (the
-/// spacing before a note may differ), and the placement is what was asked.
+/// Placing a label and putting it back to automatic gives the same
+/// statements as putting the original back (the spacing before a note may
+/// differ), and the placement is what was asked.
 #[test]
 fn placements_round_trip() {
     use rain_diagram_core::{ast::Placement, edit::set_position, parser::document};
@@ -1083,7 +1123,10 @@ fn placements_round_trip() {
         let back = set_position(&placed, n, None).expect("and put back");
         assert_eq!(
             document(&back).expect("parses").to_string(),
-            document(&source).expect("parses").to_string(),
+            // (the generated source may already have placed this one)
+            document(&set_position(&source, n, None).expect("unplaceable"))
+                .expect("parses")
+                .to_string(),
             "{source}\n→\n{placed}\n→\n{back}"
         );
     });
@@ -1244,7 +1287,7 @@ fn placed_labels_render_on_their_row() {
     reason = "small coordinates and short geometric names in a test"
 )]
 mod geometry {
-    use super::{Event, Scenario, check, common};
+    use super::{Event, Scenario, check, common, event_group};
     use std::collections::BTreeMap;
 
     /// Every element's opening tag, as (name, attributes).
@@ -1484,11 +1527,279 @@ mod geometry {
                 }
             }
 
-            // Powerlines run from where authority comes from to the box it feeds
+            // Exact positions: where each label goes, by the layout's rules
+            // (coordinates are written to 0.1, so allow a little rounding)
+            let near = |a: f64, b: f64| (a - b).abs() < 0.15;
+            let centre = |b: Bbox| f64::midpoint(b.0, b.2);
+            let half = |b: Bbox| (b.2 - b.0) / 2.0;
+            for ix in d.event_ixs() {
+                let i = ix.index();
+                let bbox = boxes[&i];
+                match d.event(ix) {
+                    Some(Event::Delegate(cert)) => {
+                        let (from, to) = (column(cert.issuer), column(cert.audience));
+                        let h = half(bbox);
+                        let (low, high) = (from.min(to) + h + 4.0, from.max(to) - h - 4.0);
+                        let dir = if to < from { -1.0 } else { 1.0 };
+                        let expected = match cert.at {
+                            Some(p) if low <= high => {
+                                (from + (to - from) * p.fraction()).clamp(low, high)
+                            }
+                            _ => from + dir * (h + 16.0).min((to - from).abs() / 2.0),
+                        };
+                        assert!(
+                            near(centre(bbox), expected),
+                            "#{i} label at {} not {expected}\n{source}",
+                            centre(bbox)
+                        );
+                    }
+                    Some(Event::Invoke(invoke)) => {
+                        let (by, on) = (column(invoke.by), column(invoke.on));
+                        let h = half(bbox);
+                        let (low, high) = (by.min(on) + h + 10.0, by.max(on) - h - 10.0);
+                        let dir = if on < by { -1.0 } else { 1.0 };
+                        let powered = invoke
+                            .authority
+                            .route()
+                            .and_then(|r| boxes.get(&r.held().index()))
+                            .map_or(by + dir * (h + 16.0), |b| centre(*b));
+                        let preferred =
+                            invoke.at.map_or(powered, |p| by + (on - by) * p.fraction());
+                        let expected = if low <= high {
+                            preferred.clamp(low, high)
+                        } else {
+                            f64::midpoint(by, on)
+                        };
+                        assert!(
+                            near(centre(bbox), expected),
+                            "#{i} box at {} not {expected}\n{source}",
+                            centre(bbox)
+                        );
+                    }
+                    Some(Event::Revoke(r)) => {
+                        let (x, tx) = (column(r.by), centre(boxes[&r.target.index()]));
+                        let expected = r.at.map_or(tx, |p| {
+                            let along = x + (tx - x) * p.fraction();
+                            let (low, high) = (x.min(tx) + 50.0, x.max(tx) - 50.0);
+                            if low <= high {
+                                along.clamp(low, high)
+                            } else {
+                                along
+                            }
+                        });
+                        assert!(
+                            near(centre(bbox), expected),
+                            "#{i} diamond at {} not {expected}\n{source}",
+                            centre(bbox)
+                        );
+                    }
+                    None => unreachable!("in range"),
+                }
+            }
+
+            // Region boxes: over exactly their rows, inset by lane, centred
+            // across the picture; regions sharing rows get different lanes
+            let mut regions: Vec<(&str, Bbox)> = Vec::new();
+            let mut region: Option<&str> = None;
+            for (name, a) in &all {
+                if *name == "g" {
+                    region = (a.get("class") == Some(&"region")).then(|| a["data-region"]);
+                } else if let (Some(id), "rect", Some(&"region-box")) =
+                    (region, *name, a.get("class"))
+                {
+                    let (x, y) = (num(a, "x"), num(a, "y"));
+                    regions.push((id, (x, y, x + num(a, "width"), y + num(a, "height"))));
+                }
+            }
+            assert_eq!(regions.len(), d.regions().len(), "{source}");
+            let mut insets = Vec::new();
+            for ((id, b), r) in regions.iter().zip(d.regions()) {
+                assert_eq!(*id, r.id.as_str(), "{source}");
+                let inset = b.0 - 12.0;
+                assert!(
+                    inset > -0.15 && near(inset / 5.0, (inset / 5.0).round()),
+                    "region {id} inset {inset}\n{source}"
+                );
+                assert!(
+                    near(b.2, view[2] - 12.0 - inset),
+                    "region {id} right edge\n{source}"
+                );
+                let first = top + height * r.first.index() as f64;
+                let last = top + height * (r.last.index() + 1) as f64;
+                assert!(
+                    near(b.1, first + 3.0 + inset),
+                    "region {id} top {} not {}\n{source}",
+                    b.1,
+                    first + 3.0 + inset
+                );
+                assert!(
+                    near(b.3, last - 3.0 - inset),
+                    "region {id} bottom\n{source}"
+                );
+                insets.push((r.first.index(), r.last.index(), inset));
+            }
+            for (k, a) in insets.iter().enumerate() {
+                for b in &insets[k + 1..] {
+                    if a.0 <= b.1 && b.0 <= a.1 {
+                        assert!(
+                            !near(a.2, b.2),
+                            "regions sharing rows share a lane\n{source}"
+                        );
+                    }
+                }
+            }
+
+            // Region grips sit on their box's top and bottom edges, as wide as it
+            for (_, a) in all
+                .iter()
+                .filter(|(n, a)| *n == "rect" && a.get("class") == Some(&"hit region-edge"))
+            {
+                let b = regions
+                    .iter()
+                    .find(|(id, _)| *id == a["data-region"])
+                    .expect("its region")
+                    .1;
+                let edge = if a["data-edge"] == "top" { b.1 } else { b.3 };
+                assert!(
+                    near(num(a, "x"), b.0) && near(num(a, "width"), b.2 - b.0),
+                    "grip width\n{source}"
+                );
+                assert!(
+                    near(num(a, "y"), edge - 5.0),
+                    "{} grip off its edge\n{source}",
+                    a["data-edge"]
+                );
+            }
+            // Regions without a colour of their own cycle through the palette
+            let fills: Vec<&str> = all
+                .iter()
+                .scan(None, |region: &mut Option<&str>, (name, a)| {
+                    if *name == "g" {
+                        *region = (a.get("class") == Some(&"region")).then(|| a["data-region"]);
+                    }
+                    Some((*region, *name, a))
+                })
+                .filter(|(_, name, a)| *name == "rect" && a.get("class") == Some(&"region-box"))
+                .zip(d.regions())
+                .filter(|(_, r)| r.colour.is_none())
+                .map(|((_, _, a), _)| a["fill"])
+                .take(5)
+                .collect();
+            let distinct: std::collections::BTreeSet<&str> = fills.iter().copied().collect();
+            assert_eq!(
+                distinct.len(),
+                fills.len(),
+                "uncoloured regions share a colour: {fills:?}\n{source}"
+            );
+
+            // Revocation lines run from the revoker's lifeline to just under
+            // the target's box
+            for ix in d.event_ixs() {
+                let Some(Event::Revoke(r)) = d.event(ix) else {
+                    continue;
+                };
+                let path = events[&ix.index()]
+                    .iter()
+                    .find(|(n, a)| *n == "path" && a.get("class") == Some(&"revocation"))
+                    .expect("a revocation line")
+                    .1;
+                let ps = points(path["d"]);
+                let row = top + height * (ix.index() as f64 + 0.5);
+                let target = boxes[&r.target.index()];
+                assert!(
+                    near(ps[0].0, column(r.by)) && near(ps[0].1, row),
+                    "#{} line starts at {:?}\n{source}",
+                    ix.index(),
+                    ps[0]
+                );
+                let end = *ps.last().expect("points");
+                assert!(
+                    near(end.0, centre(target)) && near(end.1, target.3 + 2.0),
+                    "#{} line ends at {end:?}\n{source}",
+                    ix.index()
+                );
+            }
+
+            // Handles: on their membership's arrow, n beads out from the box's
+            // audience-side edge; or, for authority that arrived later, on the
+            // member's lifeline at a row boundary
+            for (_, a) in all
+                .iter()
+                .filter(|(n, a)| *n == "circle" && a.get("class") == Some(&"handle"))
+            {
+                let (cx, cy) = (num(a, "cx"), num(a, "cy"));
+                let e: usize = a["data-event"].parse().expect("data-event");
+                let Some(Event::Delegate(cert)) = d.event_ix(e).and_then(|ix| d.event(ix)) else {
+                    panic!("handles are on certificates\n{source}");
+                };
+                let b = boxes[&e];
+                let dir = if column(cert.audience) < column(cert.issuer) {
+                    -1.0
+                } else {
+                    1.0
+                };
+                let bead = |x: f64| {
+                    let n = (x / 12.0).round();
+                    (0.0..8.0).contains(&n) && near(x, n * 12.0)
+                };
+                let on_arrow =
+                    near(cy, f64::midpoint(b.1, b.3)) && bead(dir * (cx - centre(b)) - half(b));
+                let lifeline = bead(cx - column(cert.audience))
+                    && near((cy - top) / height, ((cy - top) / height).round());
+                assert!(
+                    on_arrow || lifeline,
+                    "handle on #{e} at {cx},{cy}\n{source}"
+                );
+            }
+
+            // A certificate's tooltip mentions attenuation exactly when it
+            // grants less than it claims
+            for ix in d.event_ixs() {
+                let Some(Event::Delegate(cert)) = d.event(ix) else {
+                    continue;
+                };
+                let attenuated = d.granted(ix).is_some_and(|g| g < cert.level);
+                assert_eq!(
+                    event_group(&svg, ix).contains("(attenuated to"),
+                    attenuated,
+                    "#{}\n{source}",
+                    ix.index()
+                );
+            }
+
+            // Powerlines run from where authority comes from to the box it
+            // feeds, or exactly to the top of a handle; straight drops into
+            // invocations are vertical
             let handles: Vec<(f64, f64)> = all
                 .iter()
                 .filter(|(n, a)| *n == "circle" && a.get("class") == Some(&"handle"))
                 .map(|(_, a)| (num(a, "cx"), num(a, "cy")))
+                .collect();
+            let at_handle = |p: (f64, f64)| {
+                handles
+                    .iter()
+                    .any(|h| near(h.0, p.0) && near(h.1 - 5.0, p.1))
+            };
+            let roots: BTreeMap<usize, (f64, f64)> = all
+                .iter()
+                .filter(|(n, a)| *n == "circle" && a.get("class") == Some(&"root"))
+                .map(|(_, a)| {
+                    let e: usize = a["data-event"].parse().expect("data-event");
+                    let (cx, cy) = (num(a, "cx"), num(a, "cy"));
+                    let Some(Event::Delegate(cert)) = d.event_ix(e).and_then(|ix| d.event(ix))
+                    else {
+                        panic!("roots are on certificates\n{source}");
+                    };
+                    assert!(
+                        near(cx, column(cert.issuer)),
+                        "root #{e} off its issuer's lifeline\n{source}"
+                    );
+                    assert!(
+                        near(cy, top + height * e as f64 + 2.0),
+                        "root #{e} at {cy}\n{source}"
+                    );
+                    (e, (cx, cy))
+                })
                 .collect();
             for (_, a) in all.iter().filter(|(n, a)| {
                 *n == "path" && a.get("class").is_some_and(|c| c.starts_with("powerline"))
@@ -1496,17 +1807,46 @@ mod geometry {
                 let ps = points(a["d"]);
                 let (start, end) = (ps[0], *ps.last().expect("points"));
                 let to: usize = a["data-to"].parse().expect("data-to");
-                let near_handle =
-                    |p: (f64, f64)| handles.iter().any(|h| (h.0 - p.0).hypot(h.1 - p.1) <= 7.0);
+                // Authority arrives from above: into the box's upper half
+                let b = boxes[&to];
+                let upper = (
+                    b.0 - 1.0,
+                    b.1 - 1.0,
+                    b.2 + 1.0,
+                    f64::midpoint(b.1, b.3) + 0.15,
+                );
                 assert!(
-                    inside(end, grow(boxes[&to], 1.0)) || near_handle(end),
-                    "powerline into #{to} ends at {end:?}\n{source}"
+                    inside(end, upper) || at_handle(end),
+                    "powerline into #{to} ends at {end:?}, not in the top of {b:?}\n{source}"
                 );
                 if let Some(from) = a.get("data-from") {
                     let from: usize = from.parse().expect("data-from");
                     assert!(
-                        inside(start, grow(boxes[&from], 1.0)) || near_handle(start),
+                        inside(start, grow(boxes[&from], 1.0)) || at_handle(start),
                         "powerline from #{from} starts at {start:?}\n{source}"
+                    );
+                }
+                // Roots after the first row leave from the side of a small
+                // circle on the issuer's lifeline, facing the label
+                if !a.contains_key("data-from")
+                    && let Some((cx, cy)) = roots.get(&to)
+                {
+                    // (a self-delegation's label is centred on the lifeline)
+                    let side = if centre(b) < *cx - 0.5 { -1.0 } else { 1.0 };
+                    assert!(
+                        near(start.0, cx + side * 5.0) && near(start.1, *cy),
+                        "root #{to} leaves its circle at {start:?}\n{source}"
+                    );
+                }
+                let invoke = matches!(
+                    d.event_ix(to).and_then(|ix| d.event(ix)),
+                    Some(Event::Invoke(_))
+                );
+                if invoke && ps.len() == 2 && a["d"].contains('L') {
+                    assert!(
+                        // within the renderer's half-pixel "straight down", plus rounding
+                        (start.0 - end.0).abs() < 0.6,
+                        "a straight drop into #{to} isn't vertical\n{source}"
                     );
                 }
             }

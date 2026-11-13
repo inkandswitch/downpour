@@ -440,7 +440,16 @@ impl<'a> Svg<'a> {
         let (rx, ry) = DIAMOND;
         let tx = target.x;
         // Right under the target, unless placed along the red line by hand
-        let cx = revoke.at.map_or(tx, |p| x + (tx - x) * p.fraction());
+        // kept clear of the revoker's lifeline, as delegation labels are
+        let cx = revoke.at.map_or(tx, |p| {
+            let along = x + (tx - x) * p.fraction();
+            let (low, high) = (x.min(tx) + rx + 4.0, x.max(tx) - rx - 4.0);
+            if low <= high {
+                along.clamp(low, high)
+            } else {
+                along
+            }
+        });
         let near = if x < cx { cx - rx } else { cx + rx };
         let under = target.y + PILL / 2.0;
         let up = under + 2.0;

@@ -348,6 +348,12 @@ mod tests {
     }
 
     #[test]
+    fn accented_latin_is_narrower_than_cjk() {
+        assert!(text_width("é") < text_width("文"));
+        assert!(text_width("Zoë") < text_width("佐伊三"));
+    }
+
+    #[test]
     fn invisible_characters_take_none() {
         // U+FE0F only asks for the emoji presentation of ✏
         assert!((text_width("✏\u{fe0f}") - text_width("✏")).abs() < f64::EPSILON);

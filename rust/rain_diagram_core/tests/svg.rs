@@ -347,6 +347,168 @@ fn only_effective_revocations_strike_their_target() -> TestResult {
     Ok(())
 }
 
+/// Every number in the opening tag matching `needle`'s attribute `key`.
+fn attr(tag: &str, key: &str) -> Option<f64> {
+    let from = tag.find(&format!(r#" {key}=""#))? + key.len() + 3;
+    tag.get(from..from + tag[from..].find('"')?)?.parse().ok()
+}
+
+/// The opening tags of every element whose tag contains `needle`.
+fn tags_with<'a>(svg: &'a str, needle: &str) -> Vec<&'a str> {
+    svg.match_indices(needle)
+        .filter_map(|(at, _)| {
+            let start = svg[..at].rfind('<')?;
+            svg.get(start..=at + svg[at..].find('>')?)
+        })
+        .collect()
+}
+
+/// Exact handle positions, which generated scenarios rarely reach: beads
+/// on a membership's arrow start at the box's audience-side edge and step
+/// 12 px along it; a late route's handle sits on the member's lifeline, on
+/// the boundary below the row it comes from.
+#[test]
+fn handles_sit_exactly_where_they_should() -> TestResult {
+    let svg = parse(
+        "rain
+         (Doc)-[admin]->(Team)
+         (Team)-[admin]->(Eve)
+         (Eve)=[[edit]]=>(Doc)
+         db: (Doc)-[read]->(Bob)
+         (Eve)-<revoke>-x[db]",
+    )?
+    .to_rain_svg();
+    // The membership's own group (a root circle elsewhere also says event 1)
+    let pill = svg
+        .find(r#"<g class="event delegate valid" data-event="1""#)
+        .and_then(|at| tag_with(&svg[at..], r#"class="pill""#))
+        .ok_or("membership box")?;
+    let right = attr(pill, "x").ok_or("x")? + attr(pill, "width").ok_or("width")?;
+    let row = attr(pill, "y").ok_or("y")? + 11.0;
+    let mut beads: Vec<f64> = tags_with(&svg, r#"class="handle""#)
+        .iter()
+        .filter(|t| t.contains(r#"data-event="1""#))
+        .map(|t| {
+            assert!(
+                (attr(t, "cy").unwrap_or_default() - row).abs() < 0.11,
+                "{t}"
+            );
+            attr(t, "cx").unwrap_or_default() - right
+        })
+        .collect();
+    beads.sort_by(f64::total_cmp);
+    assert_eq!(beads.len(), 2, "{beads:?}");
+    assert!(
+        beads[0].abs() < 0.11 && (beads[1] - 12.0).abs() < 0.11,
+        "{beads:?}"
+    );
+    // Each route's arc arrives on top of its bead, not inside or under it
+    for bead in &beads {
+        let x = right + bead;
+        let arrives = tags_with(&svg, r#"data-to="1""#).iter().any(|t| {
+            t.contains("class=\"powerline")
+                && t.split(r#"d=""#)
+                    .nth(1)
+                    .and_then(|d| d.split('"').next())
+                    .and_then(|d| d.rsplit(' ').next())
+                    .and_then(|end| end.split_once(','))
+                    .and_then(|(ex, ey)| Some((ex.parse::<f64>().ok()?, ey.parse::<f64>().ok()?)))
+                    .is_some_and(|(ex, ey)| {
+                        (ex - x).abs() < 0.11 && (ey - (row - 5.0)).abs() < 0.11
+                    })
+        });
+        assert!(arrives, "no arc lands on top of the bead at {x}\n{svg}");
+    }
+
+    let late = parse(
+        "rain
+         zoe-alice: (Zoe)-[admin]->(Alice)
+         (Doc)-[read]->(Zoe)
+         (Alice)-[read(Doc)]->(Bob)",
+    )?
+    .to_rain_svg();
+    let alice = tag_with(&late, r#"data-principal="alice""#)
+        .and_then(|t| attr(t, "data-x"))
+        .ok_or("Alice's column")?;
+    let top = tag_with(&late, "data-rows-top")
+        .and_then(|t| attr(t, "data-rows-top"))
+        .ok_or("rows top")?;
+    let handle = tag_with(&late, r#"class="handle""#).ok_or("a handle")?;
+    assert!(
+        (attr(handle, "cx").ok_or("cx")? - alice).abs() < 0.11,
+        "{handle}"
+    );
+    // Below row 1 (Doc→Zoe), on the boundary with row 2
+    assert!(
+        (attr(handle, "cy").ok_or("cy")? - (top + 2.0 * 64.0)).abs() < 0.11,
+        "{handle}"
+    );
+    Ok(())
+}
+
+/// A revocation slid along its line by hand: the line runs from the
+/// revoker to the diamond's near side, carries on from its far side to the
+/// target's column, then up to just under the target.
+#[test]
+fn placed_revocations_route_around_their_diamond() -> TestResult {
+    // The target's label is placed near C, so a diamond a fifth of the way
+    // from A is well clear of both
+    let svg = parse("rain\nab: (A)------[read]->(C)\n(A)-<revoke>----x[ab]")?.to_rain_svg();
+    let line = tag_with(&svg, r#"class="revocation""#).ok_or("line")?;
+    let d = line
+        .split(r#"d=""#)
+        .nth(1)
+        .and_then(|d| d.split('"').next())
+        .ok_or("d")?;
+    let numbers: Vec<f64> = d
+        .split(|c: char| c.is_ascii_alphabetic() || c == ',' || c == ' ')
+        .filter_map(|n| n.parse().ok())
+        .collect();
+    // M x,y H near M far,y H tx V up
+    let [x, y, near, far, far_y, tx, up] = numbers[..] else {
+        return Err(format!("unexpected path {d}").into());
+    };
+    let diamond = tag_with(&svg, r#"class="diamond""#).ok_or("diamond")?;
+    let cx = diamond
+        .split(r#"d="M"#)
+        .nth(1)
+        .and_then(|d| d.split(',').next())
+        .and_then(|n| n.parse::<f64>().ok())
+        .ok_or("diamond centre")?;
+    assert!(x < near && (near - (cx - 46.0)).abs() < 0.11, "{d}");
+    assert!(
+        (far - (cx + 46.0)).abs() < 0.11 && (far_y - y).abs() < 0.11,
+        "{d}"
+    );
+    // Then up the page to the target, which is on an earlier row
+    assert!(tx > far && up < y, "{d}");
+    // A fifth of the way along, clamped clear of the revoker, not under it
+    assert!(cx < tx - 46.0, "{d}");
+
+    // And mirrored: revoking from the right goes the other way round
+    let svg = parse("rain\nprincipals: C, B, A\nab: (A)------[read]->(C)\n(A)-<revoke>----x[ab]")?
+        .to_rain_svg();
+    let line = tag_with(&svg, r#"class="revocation""#).ok_or("line")?;
+    let d = line
+        .split(r#"d=""#)
+        .nth(1)
+        .and_then(|d| d.split('"').next())
+        .ok_or("d")?;
+    let numbers: Vec<f64> = d
+        .split(|c: char| c.is_ascii_alphabetic() || c == ',' || c == ' ')
+        .filter_map(|n| n.parse().ok())
+        .collect();
+    let [x, _, near, far, _, tx, _] = numbers[..] else {
+        return Err(format!("unexpected path {d}").into());
+    };
+    assert!(x > near && near > far && far > tx, "right to left: {d}");
+    assert!(
+        (near - far - 92.0).abs() < 0.11,
+        "the diamond is 92 wide: {d}"
+    );
+    Ok(())
+}
+
 /// Inline SVG `<style>` is parsed as markup when a page inserts the SVG with
 /// `innerHTML`, so any `<` would cut the stylesheet short.
 #[test]
