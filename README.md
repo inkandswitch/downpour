@@ -222,6 +222,7 @@ It fires `rain-reach` and `rain-fallout` events, and the SVG's `data-*` hooks ar
 $ nix develop        # toolchain, wasm-pack, pnpm, and a command menu
 $ preview            # (in the shell) hot-reloading preview at http://127.0.0.1:8080
 $ nix run .#preview  # same, without entering the shell (PORT=… to change)
+$ nix run .#editor   # the collaborative editor (javascript/editor) at http://localhost:5173
 $ nix run .#site     # the preview as a static site in _site/, as deployed to GitHub Pages
 $ cargo test --workspace --exclude rain_diagram_wasm
 $ nix run .#ci-mutants -- my.diff   # mutation-test the lines a diff changes (no diff: everything, slowly)

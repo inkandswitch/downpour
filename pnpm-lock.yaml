@@ -31,6 +31,12 @@ importers:
       '@automerge/subduction':
         specifier: 0.27.0
         version: 0.27.0
+      '@codemirror/commands':
+        specifier: ^6.10.0
+        version: 6.11.1
+      '@codemirror/state':
+        specifier: ^6.7.6
+        version: 6.7.6
       '@inkandswitch/rain-diagram':
         specifier: workspace:*
         version: link:../rain-diagram

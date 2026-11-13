@@ -1,29 +1,90 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Downpour: shared editor</title>
-    <style>
-      body { margin: 0; font: 14px system-ui, sans-serif; display: grid; grid-template-rows: auto 1fr; height: 100vh; }
-      header { display: flex; gap: 12px; align-items: center; padding: 8px 12px; border-bottom: 1px solid #ddd; }
-      main { display: grid; grid-template-columns: minmax(320px, 1fr) 2fr; min-height: 0; }
-      #source { overflow: auto; border-right: 1px solid #ddd; }
-      #source .cm-editor { height: 100%; }
-      #picture { overflow: auto; padding: 12px; }
-      #status { color: #666; }
-    </style>
-  </head>
-  <body>
-    <header>
-      <strong>Downpour</strong>
-      <span id="status">connecting…</span>
-      <a id="share" href="#">share link</a>
-    </header>
-    <main>
-      <div id="source"></div>
-      <rain-diagram id="picture" editable></rain-diagram>
-    </main>
-    <script type="module" src="/src/main.js"></script>
-  </body>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Downpour Editor</title>
+  <script>
+    // Before first paint, so a chosen theme doesn't flash the other one.
+    // Per viewer: the theme isn't part of the shared document
+    try {
+      const theme = localStorage.getItem("rain-editor:theme");
+      if (theme === "light" || theme === "dark") document.documentElement.dataset.theme = theme;
+    } catch {}
+  </script>
+  <style>
+    #connection { white-space: nowrap; }
+    #connection.connected { color: var(--ok); }
+    #share {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      color: var(--muted);
+      font: 12px var(--mono);
+      user-select: all;
+    }
+    #source .cm-editor { flex: 1; height: 100%; }
+    @media (max-width: 800px) { #source { min-height: 50vh; } }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Downpour</h1>
+    <span id="connection">connecting…</span>
+    <a id="share" href="" title="Share this link to edit together"></a>
+    <div id="theme" role="group" aria-label="Colour scheme">
+      <button type="button" data-theme-choice="system">◐ System</button>
+      <button type="button" data-theme-choice="light">☀ Light</button>
+      <button type="button" data-theme-choice="dark">☾ Dark</button>
+    </div>
+  </header>
+
+  <main>
+    <section id="source-pane">
+      <h2 class="with-actions">Source
+        <span class="actions">
+          <button id="undo" title="Undo" aria-label="Undo" disabled>↶</button>
+          <button id="redo" title="Redo" aria-label="Redo" disabled>↷</button>
+          <button class="maximize" data-pane="source" title="Maximize">⤢</button>
+        </span>
+      </h2>
+      <div class="editor" id="source" aria-label="Diagram source"></div>
+    </section>
+
+    <div class="splitter" id="columns" role="separator" aria-orientation="vertical" aria-label="Resize source and output" tabindex="0"></div>
+
+    <section id="output-pane">
+      <h2 class="with-actions">Output <span class="actions"><button class="maximize" data-pane="output" title="Maximize">⤢</button></span></h2>
+      <div id="status">loading Wasm…</div>
+      <div class="toolbar" id="notation-bar" role="tablist" aria-label="Notation">
+        <button role="tab" data-notation="rain">Rain</button>
+        <button role="tab" data-notation="certflow">Certflow</button>
+        <span class="spacer"></span>
+        <span class="zoom" role="group" aria-label="Zoom">
+          <button id="zoom-out" title="Zoom out (Ctrl/⌘ + wheel)">−</button>
+          <button id="zoom-level" title="Reset to 100%">100%</button>
+          <button id="zoom-in" title="Zoom in (Ctrl/⌘ + wheel)">+</button>
+          <button id="zoom-fit" title="Fit the diagram to the pane">Fit</button>
+        </span>
+        <button class="maximize" data-pane="diagram" title="Maximize">⤢</button>
+      </div>
+      <rain-diagram id="picture" editable aria-label="Diagram"></rain-diagram>
+      <div class="splitter" id="rows" role="separator" aria-orientation="horizontal" aria-label="Resize diagram and export" tabindex="0"></div>
+      <ul id="warnings" aria-label="Warnings"></ul>
+      <div class="toolbar" id="export-bar" role="tablist">
+        <button role="tab" data-format="text">Text</button>
+        <button role="tab" data-format="svg">SVG</button>
+        <button role="tab" data-format="json">Site JSON</button>
+        <span class="spacer"></span>
+        <button id="copy">Copy</button>
+        <button id="download">Download</button>
+        <button class="maximize" data-pane="export" title="Maximize">⤢</button>
+      </div>
+      <pre id="output" aria-label="Output"></pre>
+    </section>
+  </main>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
 </html>

@@ -22,6 +22,8 @@
     "@automerge/automerge-repo-subduction-network-websocket": "3.0.0-alpha.2",
     "@automerge/automerge-repo-subduction-storage-indexeddb": "3.0.0-alpha.2",
     "@automerge/subduction": "0.27.0",
+    "@codemirror/commands": "^6.10.0",
+    "@codemirror/state": "^6.7.6",
     "@inkandswitch/rain-diagram": "workspace:*",
     "codemirror": "^6.0.2"
   },

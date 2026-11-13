@@ -156,7 +156,7 @@
               --out-dir "$out/rain-diagram/pkg" "$root/rust/rain_diagram_wasm"
             rm -f "$out/rain-diagram/pkg/.gitignore"
             cp "$root/javascript/rain-diagram/rain-diagram.js" "$out/rain-diagram/"
-            for file in index.html embed.html main.js highlight.js history.js split.js; do
+            for file in index.html embed.html main.js highlight.js history.js shell.js split.js style.css; do
               cp "$root/javascript/preview/$file" "$out/preview/"
             done
             cat > "$out/index.html" <<'HTML'
@@ -187,6 +187,35 @@
             license = with pkgs.lib.licenses; [asl20 mit];
             mainProgram = "rain-diagram";
           };
+        };
+
+        # The collaborative editor's dev server (javascript/editor): installs
+        # its dependencies if needed, builds the component's Wasm, then serves
+        # it with Vite at http://localhost:5173 (PORT to change). Run from the
+        # repo root, or anywhere inside `nix develop`.
+        editor = pkgs.writeShellApplication {
+          name = "rain-editor";
+          runtimeInputs = [
+            rust-toolchain
+            wasm-bindgen-cli
+            pkgs.binaryen
+            pkgs.nodejs
+            pkgs.pnpm
+            pkgs.wasm-pack
+          ];
+          text = ''
+            root="''${WORKSPACE_ROOT:-$PWD}"
+            if [ ! -f "$root/javascript/editor/index.html" ]; then
+              echo "run this from the downpour repo root" >&2
+              exit 1
+            fi
+            cd "$root"
+            [ -d javascript/editor/node_modules ] || pnpm install --frozen-lockfile
+            wasm-pack build --dev --target web --out-dir ../../javascript/rain-diagram/pkg rust/rain_diagram_wasm
+            cd javascript/editor
+            # Through node, not the .bin shim: its #!/bin/sh is not everywhere
+            exec node node_modules/vite/bin/vite.js --port "''${PORT:-5173}" --strictPort
+          '';
         };
 
         # wasm-bodge (github.com/alexjg/wasm-bodge) packages the Wasm bindings
@@ -430,7 +459,7 @@
             type = "app";
             program = pkgs.lib.getExe drv;
           })
-          (ci-checks // {inherit bodge preview rain-diagram site;});
+          (ci-checks // {inherit bodge editor preview rain-diagram site;});
 
         packages = {
           inherit rain-diagram wasm-bodge;
