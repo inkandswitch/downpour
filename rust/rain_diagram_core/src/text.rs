@@ -734,8 +734,14 @@ impl<'a> Layout<'a> {
                 let exit = source.bottom;
                 self.run((exit, line), below, exit, target - 1, (x, target));
             }
+            // Straight down from the input, unless a revocation's line
+            // already hangs there: then beside it, so the two don't merge
             Port::Drop { x, line: target } => {
-                let exit = source.input;
+                let exit = if self.struck(from) {
+                    source.bottom
+                } else {
+                    source.input
+                };
                 self.run((exit, line), below, exit, target - 1, (x, target));
             }
             // Straight into the handle; its `o` covers the last cell
@@ -744,6 +750,15 @@ impl<'a> Layout<'a> {
                 self.run((exit, line), below, exit, target, (x, target));
             }
         }
+    }
+}
+
+impl Layout<'_> {
+    /// Whether an effective revocation hangs its line under `ix`'s label.
+    fn struck(&self, ix: EventIx) -> bool {
+        self.diagram.events().iter().any(|e| {
+            matches!(&e.node, Event::Revoke(r) if r.target == ix && r.authority.is_authorized())
+        })
     }
 }
 
