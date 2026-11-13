@@ -44,6 +44,14 @@ team-eve: (Team)-[admin]->(Eve)  : Eve joins Team
 // `via` names the route explicitly (it's normally worked out for you).
 (Eve)-[relay(Doc) via team-eve]->(Server) : Eve lets a sync server relay it
 
+// Command paths, as in UCAN, work wherever a level does: `/crud` covers
+// `/crud/read`. `where` adds a caveat, opaque text that everything relying
+// on the certificate is bound by, so caveats pile up down a chain. Hover a
+// label in the picture to see every caveat it's bound by.
+(Doc)-[/crud(Doc) where path = "/docs"]->(Dan)     : The Doc grants Dan CRUD under /docs
+(Dan)-[/crud/read(Doc) where size < 1MB]->(Server) : Dan narrows it to reads, adds a limit
+(Server)=[[/crud/read]]=>(Doc)                : The Server reads, bound by both caveats
+
 // A revocation: (revoker)-<revoke>-x[label]. It's retroactive: everything
 // that relied on Bob→Carol goes void, even rows above this one. Drag the
 // dotted "now" line (or click its clock) to see any moment as certflow.

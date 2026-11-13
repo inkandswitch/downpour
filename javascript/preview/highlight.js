@@ -27,8 +27,10 @@ const principal = (name, colours) => {
 };
 
 const LEVEL = /^(admin|edit|read|relay|👑|✏️?|👀|📡)/i;
+// A command path, as in UCAN: `/`, or `/`-separated segments
+const COMMAND = /^\/[\p{L}\p{N}._\/-]*/u;
 
-/** A statement body and tail: arrows (any length), principals, levels, `: note`. */
+/** A statement body and tail: arrows (any length), principals, abilities, `where` caveats, `: note`. */
 const statement = (code, colours) => {
   let out = "";
   let rest = code;
@@ -45,7 +47,10 @@ const statement = (code, colours) => {
     [/^-+<revoke>-+x/, (m) => span("revoke", m[0])],
     [/^(=+\[\[|\]\]=+>|-+\[|\]-+>|\[|\])/, (m) => span("punct", m[0])],
     [LEVEL, (m) => span("level", m[0])],
+    [COMMAND, (m) => span("level", m[0])],
     [/^via\b/, (m) => span("keyword", m[0])],
+    // A caveat runs to the `]` (it can't contain brackets)
+    [/^(where)(\s[^\]]*)/, (m) => span("keyword", m[1]) + span("caveat", m[2])],
     [/^:.*/, (m) => span("punct", ":") + span("note", m[0].slice(1))],
     [/^\s+/, (m) => escape(m[0])],
     [/^[^\s()[\]:=-]+/, (m) => span("label", m[0])], // ids in [revoke target] and via lists

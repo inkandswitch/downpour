@@ -2027,6 +2027,14 @@ mod geometry {
                             },
                         );
                     }
+                    // A caveat under the label: the node grows 8 down and
+                    // the label rises 8 within it
+                    ("text", Some(&"caveat"), Some(e)) => {
+                        if let Some(Node::Box { c, half_h, .. }) = events.get_mut(&e) {
+                            c.1 += 8.0;
+                            *half_h += 8.0;
+                        }
+                    }
                     ("path", Some(&"diamond"), Some(e)) => {
                         let ps = points(a["d"]);
                         let c = (ps[0].0, ps[1].1);
@@ -2083,8 +2091,10 @@ mod geometry {
                 near(top_edge, 24.0 + title + frame),
                 "top edge {top_edge}\n{source}"
             );
+            // A long title can widen the canvas past the nodes
+            let fits = right + 24.0 + frame;
             assert!(
-                (view[2] - (right + 24.0 + frame)).abs() <= 0.6,
+                (view[2] - fits).abs() <= 0.6 || (d.title().is_some() && view[2] > fits),
                 "width {} for right edge {right}\n{source}",
                 view[2]
             );

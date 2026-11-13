@@ -1,0 +1,21 @@
+UCAN: command paths narrow, policies pile up
+
+ (Doc)           (Alice)           (Bob)           (Carol)           (Dan)
+   │╰┄┄┄╮ ╭┄┄┄┄┄┄┄┄┄┼┄┄┄┄╮           │                │                │
+   ├──[/crud]──────▶│    ┆           │                │                │   where path = "/docs"; Doc grants CRUD under /docs
+   │                │    ┆           │                │                │
+   │                │    ┆ ╭┄┄┄┄┄┄┄┄┄┼┄┄┄┄╮           │                │
+   │                ├──[/crud/read]─▶│    ┆           │                │   where size < 1MB; Alice narrows to read, adds a limit
+   │                │                │    ┆           │                │
+   │                │                │    ┆           │                │
+   │                │                ├──[/crud]──────▶│                │   Bob claims more than he holds
+   │                │                │    ┆           │                │
+   │                │                │    ┆           │                │
+   │◀═══════════════╪════════════════╪[[/crud/read]]══╡                │   bound by both caveats
+   │                │                │                │                │
+   │                │                │                │                │
+   │◀═══════════════╪[[/crud/write]]═╡                │                │   unauthorised: Bob only holds /crud/read
+   │                │                │                │                │
+   │                │                │                │                │
+   │                │                ├──[/msg]────────┼───────────────▶│   unrelated: grants nothing
+   │                │                │                │                │

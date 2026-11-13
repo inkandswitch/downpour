@@ -100,12 +100,12 @@ struct Label {
 }
 
 impl Label {
-    /// Over the top: just right or left of the input.
-    const fn top(&self, towards: isize) -> isize {
+    /// Over the top: just right or left of the input, within the label.
+    fn top(&self, towards: isize) -> isize {
         if towards > self.input {
-            self.input + 2
+            (self.input + 2).min(self.end)
         } else {
-            self.input - 2
+            (self.input - 2).max(self.start)
         }
     }
 
@@ -148,7 +148,22 @@ impl<'a> Layout<'a> {
             .iter()
             .map(|p| width(p.name().as_str()) + 2)
             .collect();
-        let spacing = widths.iter().map(|w| w + 3).fold(MIN_SPACING, isize::max);
+        // Wide enough for every name, and for every arrow's label (with
+        // room for the arrow either side) shared across the columns it spans
+        let labels = diagram.events().iter().filter_map(|e| match &e.node {
+            Event::Delegate(c) => {
+                Some((c.issuer, c.audience, width(&format!("{}", c.ability)) + 2))
+            }
+            Event::Invoke(i) => Some((i.by, i.on, width(&format!("{}", i.ability)) + 4)),
+            Event::Revoke(_) => None,
+        });
+        let spacing = labels
+            .map(|(a, b, w)| {
+                let span = to_isize(a.index().abs_diff(b.index()).max(1));
+                (w + 5 + span - 1) / span
+            })
+            .chain(widths.iter().map(|w| w + 3))
+            .fold(MIN_SPACING, isize::max);
         let first = widths.first().map_or(1, |w| w / 2 + 1);
 
         Self {
@@ -242,16 +257,20 @@ impl<'a> Layout<'a> {
         let notes = self.canvas.rightmost(1) + 4;
         self.regions(notes);
         for (row, event) in self.diagram.events().iter().enumerate() {
-            let note = match &event.node {
-                Event::Delegate(c) => c.note.as_ref(),
-                Event::Invoke(i) => i.note.as_ref(),
-                Event::Revoke(r) => r.note.as_ref(),
+            let (note, caveat) = match &event.node {
+                Event::Delegate(c) => (c.note.as_ref(), c.caveat.as_ref()),
+                Event::Invoke(i) => (i.note.as_ref(), None),
+                Event::Revoke(r) => (r.note.as_ref(), None),
             };
-            if let Some(note) = note {
-                let x = notes + 2 * self.depth(row);
-                self.canvas
-                    .text(x, event_line(to_isize(row)), note.as_str());
-            }
+            // A caveat is part of what the certificate says, so it leads
+            let text = match (note, caveat) {
+                (Some(note), Some(caveat)) => format!("where {caveat}; {note}"),
+                (None, Some(caveat)) => format!("where {caveat}"),
+                (Some(note), None) => note.as_str().into(),
+                (None, None) => continue,
+            };
+            let x = notes + 2 * self.depth(row);
+            self.canvas.text(x, event_line(to_isize(row)), &text);
         }
 
         let art = self.canvas.render();
@@ -460,8 +479,9 @@ impl<'a> Layout<'a> {
             self.canvas.text(to + 1, line, "◀");
             let label = self.boxed(end - w + 1, line, text, (to, from));
             Label {
-                input: end - 2,
-                bottom: end - 3,
+                // Within even the shortest label, `[/]`
+                input: (end - 2).max(end - w + 2),
+                bottom: (end - 3).max(end - w + 1),
                 leftward: true,
                 ..label
             }
@@ -562,8 +582,9 @@ impl<'a> Layout<'a> {
             start,
             end,
             line,
-            input: start + 2,
-            bottom: start + 3,
+            // Within even the shortest label, `[/]`
+            input: (start + 2).min(end - 1),
+            bottom: (start + 3).min(end),
             span,
             leftward: false,
         }

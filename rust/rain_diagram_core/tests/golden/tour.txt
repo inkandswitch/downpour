@@ -31,6 +31,15 @@ A Tour of Features
    │         ┆  │            │    │       │            │            │         ╰┄┄┼┄┄┄┄╮       │
    │         ┆  │            │    │       │            │            │            ├──[relay]──▶│   Eve lets a sync server relay it
    │         ┆  │            │    │       │            │            │            │            │
+   o┄┄┄┄╮ ╭┄┄┼┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┼┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄╮       │            │            │
+   ├──[/crud]┼──┼────────────┼────┼───────┼───────────▶│    ┆       │            │            │   where path = "/docs"; The Doc grants Dan CRUD under /docs
+   │         ┆  │            │    │       │            │    ┆       │            │            │
+   │         ┆  │            │    │       │            │    ┆       │            │            │
+   │         ┆  │            │    │       │            ├──[/crud/read]───────────┼───────────▶│   where size < 1MB; Dan narrows it to reads, adds a limit
+   │         ┆  │            │    │       │            │    ┆       │            │            │
+   │         ┆  │            │    │       │            │    ┆       │            │            │
+   │◀════════╪══╪════════════╪════╪═══════╪════════════╪═[[/crud/read]]══════════╪════════════╡   The Server reads, bound by both caveats
+   │         ┆  │            │    │       │            │            │            │            │
    │         ┆  │            │    │       │            │            │            │            │
    │         ╰┄┄o────────────┼─<revoke>   │            │            │            │            │   Alice revokes Bob→Carol, and all that relied on it
    │            │            │            │            │            │            │            │

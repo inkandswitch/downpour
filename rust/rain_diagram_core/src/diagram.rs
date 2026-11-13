@@ -11,7 +11,7 @@
 //! what was valid, revoked, or reachable at any moment.
 
 use crate::{
-    ability::Ability,
+    ability::{Ability, Command},
     ast::{
         Caveat, CertId, Delegation, Document, Kind, Name, Placement, Span, Spanned, Statement, Text,
     },
@@ -278,8 +278,8 @@ impl Diagram {
     ///
     /// let d = parse(
     ///     "rain
-    ///      (Doc)-[/crud where path = /docs]->(Alice)
-    ///      (Alice)-[/crud/read where size < 1MB]->(Bob)
+    ///      (Doc)-[/crud(Doc) where path = /docs]->(Alice)
+    ///      (Alice)-[/crud/read(Doc) where size < 1MB]->(Bob)
     ///      (Bob)=[[/crud/read]]=>(Doc)",
     /// )?;
     /// let read = d.event_ix(2).expect("three events");
@@ -641,7 +641,13 @@ impl Resolver {
         let audience = self.intern(&d.audience);
         let subject = match &d.subject {
             Some(subject) => self.intern(subject),
-            None => self.infer_subject(issuer, &d.ability)?,
+            None => match &d.ability {
+                // UCAN delegations always name their subject
+                Ability::Command(command) => {
+                    return Err(ResolveErrorKind::MissingSubject(command.clone()));
+                }
+                Ability::Level(_) => self.infer_subject(issuer, &d.ability)?,
+            },
         };
 
         // `via` is a chain: the first is held by the issuer, and each next
@@ -685,7 +691,7 @@ impl Resolver {
         Ok((cert, via))
     }
 
-    /// With no explicit subject:
+    /// With no explicit subject (only levels may leave it out):
     ///
     /// - Admin is over the issuer itself. Granting Admin is almost always
     ///   ownership or group membership: `(Team)-[admin]->(Alice)` adds Alice
@@ -852,6 +858,13 @@ pub enum ResolveErrorKind {
     /// No earlier certificate has this label.
     #[error("no earlier certificate is labelled `{0}`; write `{0}: ` before the one you mean")]
     UnknownCert(CertId),
+
+    /// A command path with no subject. Command paths come from UCAN, where
+    /// a delegation always names what it's over.
+    #[error(
+        "a delegation of {0} must name its subject, as in `[{0}(Doc)]`; only Keyhive levels can leave it out"
+    )]
+    MissingSubject(Command),
 
     /// The subject was omitted, but the issuer holds several.
     #[error(

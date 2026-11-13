@@ -24,7 +24,7 @@ mod rain;
 use crate::{
     ast::{Kind, Text},
     authority::Status,
-    diagram::{Diagram, Event, PrincipalIx, Region},
+    diagram::{Diagram, Event, EventIx, PrincipalIx, Region},
 };
 use alloc::{format, string::String};
 use core::fmt::Write as _;
@@ -160,6 +160,73 @@ fn colour(p: PrincipalIx) -> &'static str {
 }
 
 /// A certificate (or invocation, with `double`) box centred on `(x, y)`.
+/// How wide the canvas must be to fit the title (16px, semibold) and its
+/// margins.
+fn title_width(d: &Diagram) -> f64 {
+    d.title().map_or(0.0, |t| {
+        ceil(text_width(t.as_str()) * 16.0 / FONT * 1.08 + 2.0 * MARGIN)
+    })
+}
+
+/// The next whole number up, for a positive `x` (`f64::ceil` needs std).
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    reason = "canvas sizes are small"
+)]
+fn ceil(x: f64) -> f64 {
+    let whole = x as i64 as f64;
+    if whole < x { whole + 1.0 } else { whole }
+}
+
+/// A tooltip for a delegation or invocation: what it does and every caveat
+/// it must satisfy (its own, and those on everything it relies on).
+fn describe(d: &Diagram, ix: EventIx) -> String {
+    let name = |p| d.principal(p).map_or("", |p| p.name().as_str());
+    let mut text = match d.event(ix) {
+        Some(Event::Delegate(cert)) => {
+            let mut text = format!(
+                "{}: {} grants {} {} over {}",
+                cert.id,
+                name(cert.issuer),
+                name(cert.audience),
+                cert.ability,
+                name(cert.subject)
+            );
+            if let Some(granted) = d.granted(ix).filter(|&g| *g != cert.ability) {
+                let _ = write!(text, " (attenuated to {granted})");
+            }
+            text
+        }
+        Some(Event::Invoke(invoke)) => format!(
+            "{} uses {} on {}",
+            name(invoke.by),
+            invoke.ability,
+            name(invoke.on)
+        ),
+        Some(Event::Revoke(_)) | None => return String::new(),
+    };
+    let mut caveats = d.caveats(ix).peekable();
+    if caveats.peek().is_some() {
+        text.push_str("\nbound by:");
+        for (_, caveat) in caveats {
+            let _ = write!(text, "\n  where {caveat}");
+        }
+    }
+    text
+}
+
+/// A certificate's own caveat, in small type under its label at `(x, y)`.
+fn caveat_text(x: f64, y: f64, caveat: Option<&crate::ast::Caveat>) -> String {
+    caveat.map_or_else(String::new, |caveat| {
+        format!(
+            r#"<text class="caveat" x="{x:.1}" y="{:.1}" text-anchor="middle" dominant-baseline="central">where {}</text>"#,
+            y + PILL / 2.0 + 10.0,
+            escape(caveat.as_str())
+        )
+    })
+}
+
 fn pill(x: f64, y: f64, half: f64, text: &str, colour: &str, double: bool) -> String {
     let (left, top, w) = (x - half, y - PILL / 2.0, half * 2.0);
     let inner = if double {
@@ -199,6 +266,8 @@ const STYLE: &str = r"<style>
 .rain-diagram text { fill: #1d1c1a; }
 .rain-diagram .title { font-size: 16px; font-weight: 600; }
 .rain-diagram .notes text { fill: #6b6760; }
+/* Caveats sit under their label, haloed so lines behind stay readable */
+.rain-diagram text.caveat { fill: #6b6760; font-size: 11px; font-style: italic; paint-order: stroke; stroke: #fff; stroke-width: 3px; stroke-linejoin: round; }
 .rain-diagram .head, .rain-diagram .node { fill: #fff; stroke-width: 2; }
 .rain-diagram .lifeline { stroke-width: 1.5; }
 .rain-diagram .event line, .rain-diagram .event .wire { fill: none; stroke-width: 1.5; }
@@ -236,6 +305,7 @@ const STYLE: &str = r"<style>
 @media (prefers-color-scheme: dark) {
   .rain-diagram:not(.light) text { fill: #ecebe8; }
   .rain-diagram:not(.light) .notes text { fill: #9a958c; }
+  .rain-diagram:not(.light) text.caveat { fill: #9a958c; stroke: #1f1e1c; }
   .rain-diagram:not(.light) :is(.head, .node, .pill, .handle, .root) { fill: #1f1e1c; }
   .rain-diagram:not(.light) .event line.double-inner { stroke: #1f1e1c; }
   .rain-diagram:not(.light) .diamond { fill: #3a1f1f; }
@@ -243,6 +313,7 @@ const STYLE: &str = r"<style>
 }
 .rain-diagram.dark text { fill: #ecebe8; }
 .rain-diagram.dark .notes text { fill: #9a958c; }
+.rain-diagram.dark text.caveat { fill: #9a958c; stroke: #1f1e1c; }
 .rain-diagram.dark :is(.head, .node, .pill, .handle, .root) { fill: #1f1e1c; }
 .rain-diagram.dark .event line.double-inner { stroke: #1f1e1c; }
 .rain-diagram.dark .diamond { fill: #3a1f1f; }
@@ -329,8 +400,6 @@ fn escape(text: &str) -> String {
     out
 }
 
-/// A level as [Keyhive Lab Note #8](https://www.inkandswitch.com/keyhive/notebook/08/) labels it: `👑 Admin`, `✏️ Edit`, `👀 Read`,
-/// `📡 Relay`.
 #[cfg(test)]
 mod tests {
     use super::{FONT, text_width};

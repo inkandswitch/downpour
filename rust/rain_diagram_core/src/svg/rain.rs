@@ -20,7 +20,8 @@
 //! - The dotted line at the bottom is "now".
 
 use super::{
-    FONT, MARGIN, PILL, REVOKE, STYLE, colour, escape, index, note, pill, status_class, text_width,
+    FONT, MARGIN, PILL, REVOKE, STYLE, caveat_text, colour, describe, escape, index, note, pill,
+    status_class, text_width, title_width,
 };
 use crate::{
     authority::Authority,
@@ -170,7 +171,7 @@ impl<'a> Svg<'a> {
             .filter_map(|e| note(&e.node))
             .map(text_width)
             .fold(0.0, f64::max);
-        let width = notes_x + notes_width + MARGIN;
+        let width = (notes_x + notes_width + MARGIN).max(title_width(d));
         let height = bottom + MARGIN / 2.0;
 
         let _ = write!(
@@ -360,12 +361,13 @@ impl<'a> Svg<'a> {
             concat!(
                 r#"<g class="event delegate {status}" data-event="{ix}" data-cert="{id}" data-span="{from:.1} {to:.1}">{hit}"#,
                 r#"<line x1="{from:.1}" y1="{y:.1}" x2="{to:.1}" y2="{y:.1}" stroke="{colour}"/>"#,
-                "{head}{pill}",
+                "{head}{pill}{caveat}",
                 "<title>{title}</title>",
                 "</g>"
             ),
             status = status,
             ix = ix.index(),
+            caveat = caveat_text(rect.x, y, cert.caveat.as_ref()),
             hit = hit(from, to, y),
             id = escape(cert.id.as_str()),
             from = from,
@@ -374,7 +376,7 @@ impl<'a> Svg<'a> {
             colour = colour(issuer),
             head = chevron(to, y, dir, colour(issuer)),
             pill = pill(rect.x, rect.y, rect.half, text, colour(subject), false),
-            title = escape(&self.describe_cert(ix)),
+            title = escape(&describe(self.diagram, ix)),
         );
         rect
     }
@@ -411,10 +413,12 @@ impl<'a> Svg<'a> {
                 r#"<line class="double" x1="{by:.1}" y1="{y:.1}" x2="{on:.1}" y2="{y:.1}" stroke="{colour}"/>"#,
                 r#"<line class="double-inner" x1="{by:.1}" y1="{y:.1}" x2="{on:.1}" y2="{y:.1}"/>"#,
                 "{head}{pill}",
+                "<title>{title}</title>",
                 "</g>"
             ),
             status = status,
             ix = ix.index(),
+            title = escape(&describe(self.diagram, ix)),
             hit = hit(by, on, y),
             by = by,
             on = on,
@@ -518,26 +522,6 @@ impl<'a> Svg<'a> {
             half: rx,
             dir: if x < cx { 1.0 } else { -1.0 },
         })
-    }
-
-    fn describe_cert(&self, ix: EventIx) -> String {
-        let d = self.diagram;
-        let Some(cert) = d.cert(ix) else {
-            return String::new();
-        };
-        let name = |p| d.principal(p).map_or("", |p| p.name().as_str());
-        let mut text = format!(
-            "{}: {} grants {} {} over {}",
-            cert.id,
-            name(cert.issuer),
-            name(cert.audience),
-            cert.ability,
-            name(cert.subject)
-        );
-        if let Some(granted) = d.granted(ix).filter(|&g| *g != cert.ability) {
-            let _ = write!(text, " (attenuated to {granted})");
-        }
-        text
     }
 
     /// Place (and, the first time, draw) the handle where a `colour` route

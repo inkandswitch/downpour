@@ -23,6 +23,27 @@ diagram.free();                           // or `using diagram = …`
 
 Problems are thrown as `Error`s. A source that doesn't parse gives a message starting with `line:column:`. Numbers (statement indices, columns, percentages) must be whole numbers ≥ 0.
 
+## API
+
+| Export | Does |
+|---|---|
+| `renderSvg(source)`, `renderText(source)`, `toSiteJson(source)` | One-shot renders |
+| `validate(source)`, `diagnostics(source)` | Parse errors (thrown) and warnings (`["line:col: message", …]`) |
+| `insertStatement(source, at, kind, from, to, ability, subject?)` | Add a statement as row `at`. `kind` is `"delegate"`, `"invoke"`, or `"revoke"`; `from`/`to` are columns (for a revocation, `to` is the revoked certificate's row). `ability` is a level keyword or a command path like `/crud/read`. `subject` is the column a delegation is over; leave it out to use what the issuer holds |
+| `deleteStatement`, `moveStatement`, `movePrincipal`, `setPosition`, `setRegionRows`, `setRegionNote` | Other source edits; each returns the new source |
+| `new RainDiagram(source)` | Parse once for repeated queries (below); `free()` it when done |
+
+`RainDiagram` methods:
+
+| Method | Returns |
+|---|---|
+| `svg()`, `rainSvg()`, `certflowSvg()`, `rainSvgAt(n)`, `certflowSvgAt(n)`, `text()` | Renders, optionally after only `n` events |
+| `kind`, `events` | `"rain"` or `"certflow"`, and the event count |
+| `principals()` | Principal names, by column |
+| `reach(name)` | JSON `{ subjects: [{ key, level, caveats }], events }`: one entry per broadest ability held over each subject (`level` is the ability, so a subject can appear twice, as with `/crud/read` and `/msg`), the `where` caveats along the way, and the certificates on the routes |
+| `heldBefore(column, at)` | JSON `[{ subject, level }]`: what that principal holds just before row `at`, where a dragged statement would land. Its authority over itself isn't listed |
+| `movable(row)`, `dependents(row)` | Rows a statement can move to, as `[first, last]`, and the rows a revocation of it would void |
+
 ## Using it
 
 | Where | How | Checked |

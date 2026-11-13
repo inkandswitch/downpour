@@ -575,18 +575,22 @@ pub fn insert_statement(
                 .and_then(|i| d.event_ix(i))
                 .map(|now| d.reach(crate::diagram::PrincipalIx::new(issuer), now))
                 .unwrap_or_default();
-            let subject = chosen.or_else(|| {
-                held.iter()
-                    .max_by_key(|r| {
-                        (
-                            r.ability.covers(&ability),
-                            r.ability.level(),
-                            core::cmp::Reverse(r.subject),
-                        )
-                    })
-                    .and_then(|r| d.principal(r.subject))
-                    .map(|p| p.name().as_str())
-            });
+            let subject = chosen
+                .or_else(|| {
+                    held.iter()
+                        .max_by_key(|r| {
+                            (
+                                r.ability.covers(&ability),
+                                r.ability.level(),
+                                core::cmp::Reverse(r.subject),
+                            )
+                        })
+                        .and_then(|r| d.principal(r.subject))
+                        .map(|p| p.name().as_str())
+                })
+                // Command paths always name their subject: the issuer itself, if
+                // it holds nothing else
+                .or_else(|| ability.level().is_none().then_some(from));
 
             let short = alloc::format!("({from})-[{ability}]->({to})");
             let line = match subject {
@@ -964,6 +968,22 @@ alice-bob: (Alice)-[edit(Doc)]->(Bob) : 2
             },
         )?;
         assert!(out.ends_with("(Alice)-[read(Essay)]->(Bob)\n"), "{out}");
+
+        // Command paths always name their subject, even the issuer itself
+        let (out, _) = insert_statement(
+            "rain\nprincipals: Doc, Alice\n",
+            0,
+            NewStatement::Delegate {
+                issuer: 1,
+                audience: 0,
+                subject: None,
+                ability: "/crud/read".parse()?,
+            },
+        )?;
+        assert!(
+            out.ends_with("(Alice)-[/crud/read(Alice)]->(Doc)\n"),
+            "{out}"
+        );
 
         // A revocation dropped above its target goes just below it, and an
         // unlabelled target gets labelled first, by its display name

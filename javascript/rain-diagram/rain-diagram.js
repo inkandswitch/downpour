@@ -106,6 +106,7 @@ const STYLE = `
     font: 12px system-ui, sans-serif;
   }
   .menu-row { display: flex; align-items: center; gap: 4px; }
+  .menu .custom { width: 110px; padding: 3px 6px; border: 1px solid rgb(127 127 127 / 0.3); border-radius: 6px; background: transparent; color: inherit; font: 12px ui-monospace, monospace; }
   .menu-row span { min-width: 58px; max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; opacity: 0.7; }
   .menu button { padding: 3px 8px; border: 1px solid rgb(127 127 127 / 0.3); border-radius: 6px; background: transparent; color: inherit; font: inherit; cursor: pointer; }
   .menu button:hover, .menu button:focus-visible { background: rgb(61 125 216 / 0.15); outline: none; }
@@ -532,19 +533,21 @@ export class RainDiagramElement extends HTMLElement {
       for (const [label, run] of options) {
         const button = Object.assign(document.createElement("button"), { textContent: label });
         button.setAttribute("role", "menuitem");
-        button.addEventListener("click", () => {
-          close();
-          try {
-            const source = run();
-            this.source = source;
-            this.dispatchEvent(new CustomEvent("rain-edit", { bubbles: true, detail: { source } }));
-          } catch (err) {
-            this.dispatchEvent(new CustomEvent("rain-edit-refused", { bubbles: true, detail: { message: err.message ?? String(err) } }));
-          }
-        });
+        button.addEventListener("click", () => apply(run));
         line.append(button);
       }
       menu.append(line);
+      return line;
+    };
+    const apply = (run) => {
+      close();
+      try {
+        const source = run();
+        this.source = source;
+        this.dispatchEvent(new CustomEvent("rain-edit", { bubbles: true, detail: { source } }));
+      } catch (err) {
+        this.dispatchEvent(new CustomEvent("rain-edit-refused", { bubbles: true, detail: { message: err.message ?? String(err) } }));
+      }
     };
 
     if (target.kind === "cert") {
@@ -562,6 +565,24 @@ export class RainDiagramElement extends HTMLElement {
       // unauthorised attempt) if it holds nothing
       const over = holdings.get(target.to) ?? (target.to === from ? OWN : LEVELS.map(([level]) => level));
       row("Invoke", over.map((a) => [label(a), () => insertStatement(this.#text, at, "invoke", from, target.to, a)]));
+      // Any other ability, typed: a command path like /crud/read, or a level
+      const custom = Object.assign(document.createElement("input"), { className: "custom", placeholder: "/crud/read", spellcheck: false });
+      custom.setAttribute("aria-label", "Another ability");
+      const typed = (kind) => () => {
+        const ability = custom.value.trim();
+        if (!ability) throw new Error("type an ability first, like /crud/read or edit");
+        return insertStatement(this.#text, at, kind, from, target.to, ability);
+      };
+      custom.addEventListener("keydown", (ev) => {
+        if (ev.key === "Enter") {
+          ev.preventDefault();
+          apply(typed("delegate"));
+        }
+      });
+      row("Other", [
+        ["Delegate", typed("delegate")],
+        ["Invoke", typed("invoke")],
+      ]).querySelector("span").after(custom);
     }
 
     const host = this.getBoundingClientRect();

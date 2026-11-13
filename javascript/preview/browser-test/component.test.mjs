@@ -204,12 +204,23 @@ describe("the preview's <rain-diagram>", () => {
     const titles = await evaluate(() =>
       Array.from(document.getElementById("picture").shadowRoot.querySelectorAll(".menu-row span"), (s) => s.textContent),
     );
-    assert.deepEqual(titles, ["Delegate Carol (itself)", "Invoke"]);
-    assert.deepEqual(options, ["👑 Admin", "✏️ Edit", "👀 Read", "📡 Relay", "/", "👑 Admin", "✏️ Edit", "👀 Read", "📡 Relay"]);
-    // The last row is Invoke
-    const invoke = await centre(".menu .menu-row:last-child button:nth-of-type(2)");
+    assert.deepEqual(titles, ["Delegate Carol (itself)", "Invoke", "Other"]);
+    assert.deepEqual(options, [
+      ...["👑 Admin", "✏️ Edit", "👀 Read", "📡 Relay", "/"],
+      ...["👑 Admin", "✏️ Edit", "👀 Read", "📡 Relay"],
+      ...["Delegate", "Invoke"],
+    ]);
+    // The second-to-last row is Invoke
+    const invoke = await centre(".menu .menu-row:nth-last-child(2) button:nth-of-type(2)");
     await click(invoke);
     assert.match(await source(), /\n\(Carol\)=\[\[edit\]\]=>\(Doc\)\n/);
+
+    // Any other ability can be typed: Enter delegates it
+    await drag({ x: carol.x, y }, { x: doc.x, y });
+    await click(await centre(".menu .custom"));
+    await page.send("Input.insertText", { text: "/crud/read" });
+    await key("Enter", "Enter", 13);
+    assert.match(await source(), /\n\(Carol\)-\[\/crud\/read\(Carol\)\]->\(Doc\)\n/);
   });
 
   test("delete refuses what a revocation names, deletes the revocation, and undo/redo work", async () => {

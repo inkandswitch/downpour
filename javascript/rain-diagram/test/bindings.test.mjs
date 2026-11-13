@@ -65,7 +65,7 @@ describe("edits", () => {
     assert.match(wasm.insertStatement(SOURCE, 3, "revoke", 0, 1, ""), /alice-bob: \(Alice\)-\[edit\]->\(Bob\)[\s\S]*x\[alice-bob\]/);
     // An explicit subject: Alice passes on authority over herself, not Doc
     assert.match(wasm.insertStatement(SOURCE, 1, "delegate", 1, 2, "read", 1), /\(Alice\)-\[read\(Alice\)\]->\(Bob\)/);
-    assert.match(wasm.insertStatement(SOURCE, 1, "delegate", 1, 2, "/crud", 0), /\(Alice\)-\[\/crud\(Doc\)\]->\(Bob\)|\(Alice\)-\[\/crud\]->\(Bob\)/);
+    assert.match(wasm.insertStatement(SOURCE, 1, "delegate", 1, 2, "/crud", 0), /\(Alice\)-\[\/crud\(Doc\)\]->\(Bob\)/);
     throwsMatching(() => wasm.insertStatement(SOURCE, 0, "frobnicate", 0, 1, "read"), /unknown statement kind "frobnicate"/);
     throwsMatching(() => wasm.insertStatement(SOURCE, 0, "delegate", 0, 1, "write"), /unknown access level "write"/);
     throwsMatching(() => wasm.insertStatement(SOURCE, 0, "delegate", 9, 1, "read"), /there's no column 9/);
@@ -115,7 +115,7 @@ describe("RainDiagram", () => {
       assert.deepEqual(JSON.parse(d.heldBefore(1, 1)), [{ subject: 0, level: "edit" }]);
       assert.deepEqual(JSON.parse(d.heldBefore(9, 1)), []);
       // Command paths and caveats, as in UCAN: one entry per broadest ability
-      const u = new wasm.RainDiagram("rain\n(Doc)-[/crud where path = \"/a\"]->(Alice)\n(Doc)-[/msg]->(Alice)\n");
+      const u = new wasm.RainDiagram("rain\n(Doc)-[/crud(Doc) where path = \"/a\"]->(Alice)\n(Doc)-[/msg(Doc)]->(Alice)\n");
       try {
         assert.deepEqual(JSON.parse(u.reach("Alice")).subjects, [
           { key: "doc", level: "/crud", caveats: ["path = \"/a\""] },

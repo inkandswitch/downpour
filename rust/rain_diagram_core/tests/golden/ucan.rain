@@ -1,0 +1,8 @@
+rain
+title UCAN: command paths narrow, policies pile up
+(Doc)-[/crud(Doc) where path = "/docs"]->(Alice)  : Doc grants CRUD under /docs
+(Alice)-[/crud/read(Doc) where size < 1MB]->(Bob) : Alice narrows to read, adds a limit
+(Bob)-[/crud(Doc)]->(Carol)                  : Bob claims more than he holds
+(Carol)=[[/crud/read]]=>(Doc)                : bound by both caveats
+(Bob)=[[/crud/write]]=>(Doc)                 : unauthorised: Bob only holds /crud/read
+(Bob)-[/msg(Doc)]->(Dan)                     : unrelated: grants nothing

@@ -18,12 +18,15 @@
 
 mod layout;
 
-use super::{FONT, MARGIN, PILL, REVOKE, STYLE, colour, escape, pill, status_class, text_width};
+use super::{
+    FONT, MARGIN, PILL, REVOKE, STYLE, caveat_text, colour, describe, escape, pill, status_class,
+    text_width, title_width,
+};
 use crate::{
     authority::Authority,
     diagram::{Diagram, Event, EventIx, PrincipalIx},
 };
-use alloc::{string::String, vec, vec::Vec};
+use alloc::{format, string::String, vec, vec::Vec};
 use core::fmt::Write as _;
 use layout::{Point, sqrt, to_f64};
 
@@ -38,6 +41,12 @@ pub(super) fn render(diagram: &Diagram, happened: usize) -> String {
 const UNIT: f64 = 130.0;
 const GAP: f64 = 18.0;
 const DIAMOND: (f64, f64) = (22.0, 16.0);
+
+/// The caveat's font size, matching `text.caveat` in the stylesheet.
+const CAVEAT_FONT: f64 = 11.0;
+
+/// How far a label rises (and its node grows) to fit a caveat under it.
+const CAVEAT_RAISE: f64 = 8.0;
 
 /// A node's footprint: a circle, or a box (`half` width, `half_h` height).
 #[derive(Debug, Clone, Copy)]
@@ -117,9 +126,18 @@ impl<'a> Certflow<'a> {
                         *slot = Some(node);
                     }
                     nodes += 1;
+                    // A caveat goes under the label, inside the node
+                    let caveat = cert.caveat.as_ref().map_or(0.0, |c| {
+                        text_width(&format!("where {c}")) * CAVEAT_FONT / FONT / 2.0 + 6.0
+                    });
                     shapes.push(Shape::Box {
-                        half: text_width(&cert.ability.label()) / 2.0 + 12.0,
-                        half_h: PILL / 2.0,
+                        half: (text_width(&cert.ability.label()) / 2.0 + 12.0).max(caveat),
+                        half_h: PILL / 2.0
+                            + if cert.caveat.is_some() {
+                                CAVEAT_RAISE
+                            } else {
+                                0.0
+                            },
                     });
                     edges.push((principal_node(cert.issuer), node));
                     edges.push((node, principal_node(cert.audience)));
@@ -188,7 +206,10 @@ impl<'a> Certflow<'a> {
             .fold((0.0_f64, 0.0_f64), |(w, h), (p, s)| {
                 (w.max(p.0 + s.radius()), h.max(p.1 + s.radius()))
             });
-        let (width, height) = (width + MARGIN + self.frame, height + MARGIN + self.frame);
+        let (width, height) = (
+            (width + MARGIN + self.frame).max(title_width(self.diagram)),
+            height + MARGIN + self.frame,
+        );
 
         let _ = write!(
             self.out,
@@ -363,18 +384,27 @@ impl<'a> Certflow<'a> {
                 let Shape::Box { half, .. } = self.shape(node) else {
                     return;
                 };
+                // With a caveat, the label rises to make room for it
+                let pill_y = if cert.caveat.is_some() {
+                    cy - CAVEAT_RAISE
+                } else {
+                    cy
+                };
 
                 let _ = write!(
                     self.out,
                     concat!(
                         r#"<g class="event delegate {status}" data-event="{ix}" data-cert="{id}">"#,
                         r#"<path class="wire" d="M{fx:.1},{fy:.1} L{into_x:.1},{into_y:.1} M{ox:.1},{oy:.1} L{tx:.1},{ty:.1}" stroke="{stroke}"/>"#,
-                        "{head}{pill}",
+                        "{head}{pill}{caveat}",
+                        "<title>{title}</title>",
                         "</g>"
                     ),
                     status = status,
                     ix = ix.index(),
                     id = escape(cert.id.as_str()),
+                    caveat = caveat_text(cx, pill_y, cert.caveat.as_ref()),
+                    title = escape(&describe(d, ix)),
                     fx = from.0,
                     fy = from.1,
                     into_x = into.0,
@@ -385,7 +415,7 @@ impl<'a> Certflow<'a> {
                     ty = tip.1,
                     stroke = stroke,
                     head = arrowhead(tip, u, stroke),
-                    pill = pill(cx, cy, half, &cert.ability.label(), stroke, false),
+                    pill = pill(cx, pill_y, half, &cert.ability.label(), stroke, false),
                 );
             }
 

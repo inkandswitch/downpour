@@ -1,0 +1,15 @@
+Biscuit: each block appends a check
+
+ (Service)     (Alice)       (Bob)       (Carol)
+     │╰┄┄╮╭┄┄┄┄┄┄┄┼┄┄┄╮        │            │
+     ├──[/]──────▶│   ┆        │            │   the authority block
+     │            │   ┆        │            │
+     │            │   ┆╭┄┄┄┄┄┄┄┼┄┄┄╮        │
+     │            ├──[/]──────▶│   ┆        │   where check if time($t), $t < 2026-12-01; attenuation block 1
+     │            │            │   ┆        │
+     │            │            │   ┆        │
+     │            │            ├──[/]──────▶│   where check if operation("read"); attenuation block 2
+     │            │            │   ┆        │
+     │            │            │   ┆        │
+     │◀═══════════╪════════════╪═[[/]]══════╡   must pass both checks
+     │            │            │            │

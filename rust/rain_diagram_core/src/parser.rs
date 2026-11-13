@@ -19,6 +19,9 @@
 //! principal   = "(" name ")"
 //! ```
 //!
+//! A command-path delegation must name its subject (checked when resolving,
+//! since it's a rule about meaning, not shape); only levels may leave it out.
+//!
 //! Comments run to the end of the line: `//` (at the start of a line or
 //! after a space, so `https://` in a note is safe) or `%%`, as in Mermaid.
 

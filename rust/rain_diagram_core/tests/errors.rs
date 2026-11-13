@@ -48,6 +48,10 @@ fn common_mistakes_say_what_to_do() {
             "4:1: A holds authority over several subjects (E and C); name one, as in `[level(E)]`",
         ),
         (
+            "rain\n(Doc)-[/crud(Doc)]->(A)\n(A)-[/crud/read where n < 3]->(B)",
+            "3:1: a delegation of /crud/read must name its subject, as in `[/crud/read(Doc)]`; only Keyhive levels can leave it out",
+        ),
+        (
             "rain\nx: (A)=[[read]]=>(B)",
             "2:1: only delegations can be labelled",
         ),

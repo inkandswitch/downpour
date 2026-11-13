@@ -1115,8 +1115,8 @@ mod tests {
     fn command_paths_attenuate_by_prefix() -> TestResult {
         let d = parse(
             "rain
-             (Doc)-[/crud]->(Alice)
-             (Alice)-[/crud/read]->(Bob)
+             (Doc)-[/crud(Doc)]->(Alice)
+             (Alice)-[/crud/read(Doc)]->(Bob)
              (Bob)=[[/crud/read]]=>(Doc)
              (Bob)=[[/crud/write]]=>(Doc)",
         )?;
@@ -1141,8 +1141,8 @@ mod tests {
     fn claiming_more_than_a_path_grants_the_path() -> TestResult {
         let d = parse(
             "rain
-             (Doc)-[/crud/read]->(Alice)
-             (Alice)-[/crud]->(Bob)",
+             (Doc)-[/crud/read(Doc)]->(Alice)
+             (Alice)-[/crud(Doc)]->(Bob)",
         )?;
         assert_eq!(d.granted(ix(&d, 1)), Some(&ability("/crud/read")));
         assert_eq!(
@@ -1156,9 +1156,9 @@ mod tests {
     fn unrelated_abilities_grant_nothing() -> TestResult {
         let d = parse(
             "rain
-             (Doc)-[/msg]->(Alice)
+             (Doc)-[/msg(Doc)]->(Alice)
              (Doc)-[read]->(Alice)
-             (Alice)-[/crud]->(Bob)",
+             (Alice)-[/crud(Doc)]->(Bob)",
         )?;
         assert_eq!(d.granted(ix(&d, 2)), None);
         assert_eq!(
@@ -1186,9 +1186,9 @@ mod tests {
     fn reach_lists_each_broadest_ability() -> TestResult {
         let d = parse(
             "rain
-             (Doc)-[/crud/read]->(Alice)
-             (Doc)-[/msg]->(Alice)
-             (Doc)-[/msg/send]->(Alice)",
+             (Doc)-[/crud/read(Doc)]->(Alice)
+             (Doc)-[/msg(Doc)]->(Alice)
+             (Doc)-[/msg/send(Doc)]->(Alice)",
         )?;
         let alice = d.principal_by_key("alice").expect("Alice is in it");
         let held: Vec<String> = d
@@ -1204,8 +1204,8 @@ mod tests {
     fn caveats_pile_up_along_routes() -> TestResult {
         let d = parse(
             "rain
-             (Doc)-[/crud where path = /docs]->(Team)
-             (Team)-[/ where team.active]->(Alice)
+             (Doc)-[/crud(Doc) where path = /docs]->(Team)
+             (Team)-[/(Doc) where team.active]->(Alice)
              (Alice)-[/crud/read(Doc) where size < 1MB]->(Bob)
              (Bob)=[[/crud/read]]=>(Doc)",
         )?;
@@ -1220,10 +1220,10 @@ mod tests {
     fn routes_prefer_fewer_caveats_then_earlier() -> TestResult {
         let d = parse(
             "rain
-             (Doc)-[/ where x]->(Alice)
-             (Doc)-[/]->(Alice)
-             (Doc)-[/]->(Alice)
-             (Alice)-[/crud]->(Bob)",
+             (Doc)-[/(Doc) where x]->(Alice)
+             (Doc)-[/(Doc)]->(Alice)
+             (Doc)-[/(Doc)]->(Alice)
+             (Alice)-[/crud(Doc)]->(Bob)",
         )?;
         let route = d
             .cert(ix(&d, 3))
@@ -1238,9 +1238,9 @@ mod tests {
     fn breadth_beats_fewer_caveats() -> TestResult {
         let d = parse(
             "rain
-             (Doc)-[/crud/read]->(Alice)
-             (Doc)-[/crud where x]->(Alice)
-             (Alice)-[/crud]->(Bob)",
+             (Doc)-[/crud/read(Doc)]->(Alice)
+             (Doc)-[/crud(Doc) where x]->(Alice)
+             (Alice)-[/crud(Doc)]->(Bob)",
         )?;
         assert_eq!(d.granted(ix(&d, 2)), Some(&ability("/crud")));
         assert_eq!(d.caveats(ix(&d, 2)).count(), 1);
