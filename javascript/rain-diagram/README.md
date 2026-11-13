@@ -3,7 +3,7 @@
 `<rain-diagram>`, a web component that draws a rain or certflow diagram from the plain-text notation and makes it interactive. All the logic (parsing, authority analysis, drawing, and source edits) is the Rust core compiled to Wasm; `rain-diagram.js` only wires the SVG's `data-*` hooks to it.
 
 > [!NOTE]
-> Not published yet (`"private": true`). The preview (`nix run .#preview`) serves this directory at `/packages/rain-diagram/`, so it always runs this exact component.
+> Not published yet (`"private": true`). The [preview](../preview/) (`nix run .#preview`) imports it from here, so it always runs this exact component.
 
 ## Build
 

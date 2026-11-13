@@ -1,8 +1,8 @@
 [workspace]
 resolver = "3"
 members = [
-  "rain_diagram_core",
-  "rain_diagram_wasm",
+  "rust/rain_diagram_core",
+  "rust/rain_diagram_wasm",
 ]
 
 [workspace.package]
@@ -14,7 +14,7 @@ authors = ["Brooklyn Zelenka <hello@brooklynzelenka.com>"]
 
 [workspace.dependencies]
 # Internal crates
-rain_diagram_core = { version = "0.1.0", path = "rain_diagram_core", default-features = false }
+rain_diagram_core = { version = "0.1.0", path = "rust/rain_diagram_core", default-features = false }
 
 # External crates
 arbitrary = "1.4"

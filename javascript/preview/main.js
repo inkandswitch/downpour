@@ -1,5 +1,5 @@
-import init, { diagnostics, renderSvg, renderText, toSiteJson } from "/packages/rain-diagram/pkg/rain_diagram_wasm.js";
-import "/packages/rain-diagram/rain-diagram.js";
+import init, { diagnostics, renderSvg, renderText, toSiteJson } from "../rain-diagram/pkg/rain_diagram_wasm.js";
+import "../rain-diagram/rain-diagram.js";
 import { PALETTE, commentStart, highlight } from "./highlight.js";
 import { History } from "./history.js";
 import { splitter } from "./split.js";

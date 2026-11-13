@@ -14,7 +14,7 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/inkandswitch/downpour.git",
-    "directory": "packages/rain-diagram"
+    "directory": "javascript/rain-diagram"
   },
   "type": "module",
   "exports": {
@@ -32,6 +32,6 @@
     "./rain-diagram.js"
   ],
   "scripts": {
-    "build": "wasm-pack build ../../rain_diagram_wasm --release --target web --out-dir ../packages/rain-diagram/pkg"
+    "build": "wasm-pack build ../../rust/rain_diagram_wasm --release --target web --out-dir ../../javascript/rain-diagram/pkg"
   }
 }

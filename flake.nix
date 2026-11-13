@@ -108,8 +108,8 @@
         cmd = command-utils.cmd.${system};
 
         # Hot-reloading preview: rebuilds the Wasm when Rust sources change and
-        # reloads the page (see preview/serve.mjs). Run from the repo root, or
-        # anywhere inside `nix develop` (via WORKSPACE_ROOT).
+        # reloads the page (see javascript/preview/serve.mjs). Run from the
+        # repo root, or anywhere inside `nix develop` (via WORKSPACE_ROOT).
         preview = pkgs.writeShellApplication {
           name = "rain-preview";
           runtimeInputs = [
@@ -121,12 +121,12 @@
           ];
           text = ''
             root="''${WORKSPACE_ROOT:-$PWD}"
-            if [ ! -f "$root/preview/serve.mjs" ]; then
-              echo "run this from the rain repo root" >&2
+            if [ ! -f "$root/javascript/preview/serve.mjs" ]; then
+              echo "run this from the downpour repo root" >&2
               exit 1
             fi
 
-            exec node "$root/preview/serve.mjs"
+            exec node "$root/javascript/preview/serve.mjs"
           '';
         };
 
@@ -215,10 +215,10 @@
 
           # Syntax-check every script (there's no JS build step), then run the JS tests
           ci-js = mkCheck "ci-js" ''
-            for file in preview/*.js preview/*.mjs packages/*/*.js; do
+            for file in javascript/*/*.js javascript/*/*.mjs; do
               node --check "$file"
             done
-            node --test preview/*.test.mjs
+            node --test javascript/*/*.test.mjs
           '';
 
           ci-typos = mkCheck "ci-typos" ''

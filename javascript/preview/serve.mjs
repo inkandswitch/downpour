@@ -7,16 +7,17 @@
 //   - Server-Sent Events instead of WebSockets: the signal is one-way, and
 //     Node has no built-in WebSocket server.
 //   - Two watch sets. Rust sources trigger a Wasm rebuild and then a reload;
-//     preview/ and packages/ files only trigger a reload. Build output
-//     (packages/rain-diagram/pkg/) is never watched, so a build can't
+//     javascript/ files only trigger a reload. Build output
+//     (javascript/rain-diagram/pkg/) is never watched, so a build can't
 //     trigger another build.
-//   - /packages/… is served from packages/, so the preview runs the same
-//     component and Wasm the npm package ships.
+//   - The whole javascript/ directory is served, with / redirecting to
+//     /preview/, so the preview imports the component by the same relative
+//     path as on disk and runs exactly what the npm package ships.
 //   - Like their infinite-reload fix, a "change" only counts if the file's
 //     mtime actually moved. Some platforms (Linux inotify) report
 //     metadata-only changes too.
 //
-// Usage: node preview/serve.mjs   (env: PORT, default 8080)
+// Usage: node javascript/preview/serve.mjs   (env: PORT, default 8080)
 
 import { spawn } from "node:child_process"
 import * as FS from "node:fs"
@@ -24,9 +25,9 @@ import * as HTTP from "node:http"
 import * as Path from "node:path"
 
 const previewDir = Path.dirname(new URL(import.meta.url).pathname)
-const root = Path.dirname(previewDir)
-const packagesDir = Path.join(root, "packages")
-const pkgDir = Path.join(packagesDir, "rain-diagram", "pkg")
+const javascriptDir = Path.dirname(previewDir)
+const root = Path.dirname(javascriptDir)
+const pkgDir = Path.join(javascriptDir, "rain-diagram", "pkg")
 
 const MIME = {
   css: "text/css",
@@ -70,7 +71,7 @@ const build = () => {
   building = true
   log("building Wasm…")
 
-  const args = ["build", "--dev", "--target", "web", "--out-dir", pkgDir, Path.join(root, "rain_diagram_wasm")]
+  const args = ["build", "--dev", "--target", "web", "--out-dir", pkgDir, Path.join(root, "rust", "rain_diagram_wasm")]
   const child = spawn("wasm-pack", args, { cwd: root })
   let output = ""
   child.stdout.on("data", (d) => (output += d))
@@ -132,7 +133,7 @@ const watch = (dir, { ignore = () => false, onChange }) => {
   })
 }
 
-const rustDirs = ["rain_diagram_core", "rain_diagram_wasm"].map((crate) => Path.join(root, crate))
+const rustDirs = ["rain_diagram_core", "rain_diagram_wasm"].map((crate) => Path.join(root, "rust", crate))
 // Skip editor lock/backup files such as Emacs's `.#foo.rs` and `#foo.rs#`
 const isRustSource = (file) => {
   const base = Path.basename(file)
@@ -147,12 +148,10 @@ const reload = () => {
   log("preview changed, reloading")
   broadcast("reload")
 }
-watch(previewDir, {
-  ignore: (file) => file === "serve.mjs" || file.startsWith("."),
-  onChange: reload,
-})
-watch(packagesDir, {
-  ignore: (file) => file.split(Path.sep).some((part) => part === "pkg" || part === "node_modules" || part.startsWith(".")),
+watch(javascriptDir, {
+  ignore: (file) =>
+    file === Path.join("preview", "serve.mjs") ||
+    file.split(Path.sep).some((part) => part === "pkg" || part === "node_modules" || part.startsWith(".")),
   onChange: reload,
 })
 
@@ -175,12 +174,13 @@ const server = HTTP.createServer((req, res) => {
     return
   }
 
-  // /packages/… from packages/, everything else from preview/
-  const packaged = url.startsWith("/packages/")
-  const base = packaged ? packagesDir : previewDir
-  const path = packaged ? url.slice("/packages".length) : url
-  const file = Path.join(base, path.endsWith("/") ? path + "index.html" : path)
-  if (!file.startsWith(base + Path.sep)) {
+  if (url === "/") {
+    res.writeHead(302, { ...NO_CACHE, Location: "/preview/" }).end()
+    return
+  }
+
+  const file = Path.join(javascriptDir, url.endsWith("/") ? url + "index.html" : url)
+  if (!file.startsWith(javascriptDir + Path.sep)) {
     res.writeHead(403).end()
     return
   }

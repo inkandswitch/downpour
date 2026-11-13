@@ -8,7 +8,7 @@ categories = ["no-std", "parser-implementations", "visualization"]
 edition.workspace = true
 keywords = ["capabilities", "diagrams", "keyhive", "mermaid"]
 license.workspace = true
-readme = "../README.md"
+readme = "../../README.md"
 repository.workspace = true
 rust-version.workspace = true
 

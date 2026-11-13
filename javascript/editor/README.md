@@ -7,5 +7,5 @@ A collaborative editor for rain and certflow diagrams: the source text in an Aut
 
 Starting points in this repo:
 
-- `preview/` is the single-user version of this editor.
-- `preview/history.js` keeps undo as splices rather than snapshots, so each step can become an Automerge change and undo can revert only the local user's edits.
+- [`../preview/`](../preview/) is the single-user version of this editor.
+- [`../preview/history.js`](../preview/history.js) keeps undo as splices rather than snapshots, so each step can become an Automerge change and undo can revert only the local user's edits.

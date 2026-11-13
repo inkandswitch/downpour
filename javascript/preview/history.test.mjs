@@ -1,4 +1,4 @@
-// Undo history properties: `node --test preview/*.test.mjs` (or `nix run .#ci-js`).
+// Undo history properties: `node --test javascript/preview/*.test.mjs` (or `nix run .#ci-js`).
 
 import assert from "node:assert/strict";
 import { test } from "node:test";

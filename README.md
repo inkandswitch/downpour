@@ -75,6 +75,18 @@ flowchart TD
 
 Dashed boxes are planned.
 
+```
+rust/
+├── rain_diagram_core/   parser, authority analysis, renderers, source edits (no_std)
+└── rain_diagram_wasm/   JS bindings
+javascript/
+├── rain-diagram/        <rain-diagram> web component (@inkandswitch/rain-diagram)
+├── editor/              collaborative editor (planned)
+├── patchwork/           Patchwork tool (planned)
+└── preview/             hot-reloading single-user editor
+docs/                    README pictures, checked by the golden tests
+```
+
 | Crate / package      | Status    | Purpose                                                      |
 |----------------------|-----------|--------------------------------------------------------------|
 | `rain_diagram_core`  | Working   | Parser, resolver, authority analysis, renderers              |
@@ -127,7 +139,7 @@ And by `to_text`, matching the Lab Note's plain-text version character for chara
 
 ## Embedding
 
-`<rain-diagram>` renders the SVG and makes it interactive: hover a principal to trace everything it can reach, click a certificate to preview what revoking it would void. It lives in [`packages/rain-diagram/`](packages/rain-diagram/) (not published yet), and its README lists the attributes and events. See `preview/embed.html`, served at `/embed.html` by the preview.
+`<rain-diagram>` renders the SVG and makes it interactive: hover a principal to trace everything it can reach, click a certificate to preview what revoking it would void. It lives in [`javascript/rain-diagram/`](javascript/rain-diagram/) (not published yet), and its README lists the attributes and events. See [`javascript/preview/embed.html`](javascript/preview/embed.html), served at `/preview/embed.html` by the preview.
 
 ```html
 <script type="module" src="./rain-diagram.js"></script>

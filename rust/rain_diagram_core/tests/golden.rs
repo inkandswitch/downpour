@@ -54,7 +54,7 @@ fn readme_svg_is_current() -> Result<(), Box<dyn std::error::Error>> {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let source = fs::read_to_string(root.join("tests/golden/notebook-08.rain"))?;
     let svg = rain_diagram_core::parse(&source)?.to_svg();
-    let path = root.join("../docs/notebook-08.svg");
+    let path = root.join("../../docs/notebook-08.svg");
 
     if std::env::var_os("BLESS").is_some() {
         fs::write(&path, format!("{svg}\n"))?;
