@@ -503,7 +503,22 @@ impl<'a> Layout<'a> {
                 // comes next is supplied from it, not from that certificate
                 let mut handle_at = None;
                 for &handle in route.through() {
-                    if let Some(through) = self.label(handle) {
+                    // Authority that arrives after the membership was signed
+                    // joins on the member's lifeline, just below where it
+                    // comes from, so power never runs back up the page
+                    let member = self.diagram.cert(handle).map(|c| c.audience);
+                    if let (true, Some(member), Some(source)) =
+                        (from > handle, member, self.label(from))
+                    {
+                        let (x, line) = (self.x(member), source.line + 1);
+                        let port = Port::Side { x, line };
+                        match handle_at {
+                            Some(point) => self.connect_point(point, port),
+                            None => self.connect(from, port),
+                        }
+                        self.canvas.text(x, line, "o");
+                        handle_at = Some((x, line));
+                    } else if let Some(through) = self.label(handle) {
                         let x = if through.leftward {
                             through.start - 1
                         } else {

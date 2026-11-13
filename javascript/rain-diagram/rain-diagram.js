@@ -141,6 +141,20 @@ export class RainDiagramElement extends HTMLElement {
     // The snapshot popover is fixed to the viewport; keep it by its handle
     this.addEventListener("scroll", () => this.#popover());
     window.addEventListener("resize", () => this.#popover());
+    // Clicking anywhere but the card (or the "now" line, which drives it)
+    // closes it
+    window.addEventListener(
+      "pointerdown",
+      (e) => {
+        if (!this.#snapshot) return;
+        const inside = e.composedPath().some((el) => el.classList?.contains("snapshot") || el.classList?.contains("now"));
+        if (!inside) {
+          this.#snapshot = false;
+          this.#popover();
+        }
+      },
+      true,
+    );
   }
 
   connectedCallback() {
@@ -266,17 +280,12 @@ export class RainDiagramElement extends HTMLElement {
     snapshot?.removeAttribute("width");
     snapshot?.removeAttribute("height");
 
-    // Fixed to the viewport, so a scrolling container can't clip it: below
-    // the handle if there's room, otherwise above
+    // Fixed to the viewport, so a scrolling container can't clip it. It
+    // never covers the clock: below, above, left, or right of it, whichever
+    // fits first; if none does, squeezed into the side with the most room
     const at = handle.getBoundingClientRect();
-    card.style.right = `${Math.max(innerWidth - at.right, 8)}px`;
     this.shadowRoot.append(card);
-    const height = card.getBoundingClientRect().height;
-    if (at.bottom + 6 + height <= innerHeight) {
-      card.style.top = `${at.bottom + 6}px`;
-    } else {
-      card.style.top = `${Math.max(at.top - 6 - height, 8)}px`;
-    }
+    place(card, at);
   }
 
   #wire() {
@@ -900,6 +909,46 @@ export class RainDiagramElement extends HTMLElement {
     }
   }
 }
+
+/**
+ * Position a fixed `card` next to `at` (a DOMRect) without covering it:
+ * the first side it fits on, in reading order, else the roomiest side with
+ * the card shrunk to fit.
+ */
+const place = (card, at) => {
+  const gap = 6;
+  const margin = 8;
+  const { width, height } = card.getBoundingClientRect();
+  const clamp = (v, lo, hi) => Math.min(Math.max(v, lo), Math.max(lo, hi));
+  const room = {
+    below: innerHeight - at.bottom - gap - margin,
+    above: at.top - gap - margin,
+    left: at.left - gap - margin,
+    right: innerWidth - at.right - gap - margin,
+  };
+  const across = clamp(at.right - width, margin, innerWidth - width - margin);
+  const down = clamp(at.top + at.height / 2 - height / 2, margin, innerHeight - height - margin);
+  const sides = {
+    below: () => ({ top: at.bottom + gap, left: across }),
+    above: (h) => ({ top: at.top - gap - h, left: across }),
+    left: (_, w) => ({ top: down, left: at.left - gap - w }),
+    right: () => ({ top: down, left: at.right + gap }),
+  };
+  const fits = (side) => (side === "below" || side === "above" ? height <= room[side] : width <= room[side]);
+  let side = ["below", "above", "left", "right"].find(fits);
+  let [h, w] = [height, width];
+  if (!side) {
+    // Nothing fits whole: take the roomier of above and below, and shrink
+    side = room.below >= room.above ? "below" : "above";
+    h = Math.max(room[side], 80);
+    card.style.maxHeight = `${h}px`;
+    card.style.overflow = "auto";
+    const svg = card.querySelector("svg");
+    if (svg) svg.style.maxHeight = `${h - 40}px`;
+  }
+  const { top, left } = sides[side](h, w);
+  Object.assign(card.style, { top: `${top}px`, left: `${left}px`, right: "auto" });
+};
 
 /** Strip the common leading indentation from inline source. */
 const dedent = (text) => {

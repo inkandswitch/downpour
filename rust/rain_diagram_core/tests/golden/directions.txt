@@ -2,31 +2,31 @@
    │            │       ╭┄┄┄┄┼┄┄┄┄┄╮ ╭┄┄┄╯│
    │            │       ┆    │◀──[admin]──┤   leftward root
    │            │       ┆    │      ╰┄┄┄╮ │
-   │ ╭┄┄┄┬┄┄┄┄┄┄┼┄┄┄┬┄╮ ┆    │          ┆ │
-   │ ┆   ┆      │◀──o[edit]──┤          ┆ │   leftward feeding leftward: over the top
-   │ ┆   ┆      │ ╭┄╯   ┆    │          ┆ │
-   │ ┆   ┆      │ ┆     ┆    │          ┆ │
-   │ ┆   ┆      ╞═╪═[[edit]]═╪══════════╪▶│   rightward invocation
-   │ ┆   ┆      │ ┆          │          ┆ │
-   │ ┆   ┆      │ ┆          │          ┆ │
-   ╞═╪[[read]]══╪═╪══════════╪══════════╪▶│   unauthorised, so default placement
-   │ ┆   ┆      │ ┆          │          ┆ │
-   │ ┆   ┆      │ ┆          │       ╭┄┄┼┄o
-   │◀┼───┼──────┼─┼──────────┼────[read]┼─┤   a long leftward arrow
-   │ ┆   ┆      │ ┆          │       ┆  ┆ │
-   │ ┆   ┆      │ ┆          │       ┆  ┆ │
-   ╞═╪═══╪══════╪═╪══════════╪══[[read]]╪▶│   clamped: its power is labelled far away
-   │ ┆   ┆      │ ┆          │          ┆ │
-   │ ╰┄┄┄┼┄╮    │ ┆          │          ┆ │
-   │◀───[read]──┤ ┆          │          ┆ │   leftward again
-   │     ┆ ✗    │ ┆          │          ┆ │
-   │     ┆ │    │ ┆          │          ┆ │
-   │    <revoke>├─┼──────────o┄┄┄┄┄┄┄┄┄┄╯ │   power arrives from the right
-   │     ┆      │ ┆          │            │
-   o┄┄┄┄╮┆      │ ┆          │            │
-   ├──[read]────┼─┼──────────┼───────────▶│   rightward root
-   │     ┆      │ ┆          │            │
-   │            │ ┆          │       ╭┄┄┄┄o
+   │ ╭┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄╮ ┆    │          ┆ │
+   │ ┆          │◀───[edit]──┤          ┆ │   leftward feeding leftward: over the top
+   │ ┆          │       ┆    │          ┆ │
+   │ ┆          │       ┆    │          ┆ │
+   │ ┆          ╞═══[[edit]]═╪══════════╪▶│   rightward invocation
+   │ ┆          │            │          ┆ │
+   │ ┆          │            │          ┆ │
+   ╞═╪[[read]]══╪════════════╪══════════╪▶│   unauthorised, so default placement
+   │ ┆          │            │          ┆ │
+   │ ┆          │            │       ╭┄┄┼┄o
+   │◀┼──────────┼────────────┼────[read]┼─┤   a long leftward arrow
+   │ ┆          │            │       ┆  ┆ │
+   │ ┆          │            │       ┆  ┆ │
+   ╞═╪══════════╪════════════╪══[[read]]╪▶│   clamped: its power is labelled far away
+   │ ┆          │            │          ┆ │
+   │ ╰┄┄┄┄┄╮    │            │          ┆ │
+   │◀───[read]──┤            │          ┆ │   leftward again
+   │       ✗    │            │          ┆ │
+   │       │    │            │          ┆ │
+   │    <revoke>├────────────o┄┄┄┄┄┄┄┄┄┄╯ │   power arrives from the right
+   │            │            │            │
+   o┄┄┄┄╮       │            │            │
+   ├──[read]────┼────────────┼───────────▶│   rightward root
+   │     ╰┄┄┄┄┄┄o            │            │
+   │            ├┄╮          │       ╭┄┄┄┄o
    │            │◀┼──────────┼───[admin]──┤   Alice joins Zoé, leftward
    │            │ ┆          │            │
    │            │ ╰┄┄╮       │            │

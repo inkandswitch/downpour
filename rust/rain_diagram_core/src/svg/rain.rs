@@ -56,9 +56,9 @@ struct Svg<'a> {
     /// Transitive handles, drawn last so certificate boxes don't cover them.
     handles: String,
 
-    /// Each membership's handles so far, by colour: routes of one colour
-    /// share a handle, and each new colour gets the next bead along.
-    beads: Vec<(EventIx, &'static str)>,
+    /// Handles drawn so far, by spot and colour: routes of one colour share
+    /// a handle, and each new colour gets the next bead along.
+    beads: Vec<(Spot, &'static str)>,
 
     /// How many events are above the "now" line.
     happened: usize,
@@ -92,6 +92,17 @@ impl Pill {
         let along = n as f64 * (2.0 * HANDLE + 2.0);
         (self.x + self.dir * (self.half + along), self.y)
     }
+}
+
+/// Where a transitive handle sits.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Spot {
+    /// On the membership certificate's box.
+    Membership(EventIx),
+
+    /// On the member's lifeline just below event `after`, for authority
+    /// that reaches the membership only after it was signed.
+    Lifeline { membership: EventIx, after: EventIx },
 }
 
 impl<'a> Svg<'a> {
@@ -495,19 +506,69 @@ impl<'a> Svg<'a> {
         text
     }
 
-    /// Which bead on membership `ix` a `colour` route uses, and whether it
-    /// is new (so not yet drawn).
-    fn bead(&mut self, ix: EventIx, colour: &'static str) -> (usize, bool) {
+    /// Place (and, the first time, draw) the handle where a `colour` route
+    /// from `from` passes through membership `handle` (labelled `h`).
+    ///
+    /// Authority that arrives after the membership was signed joins on the
+    /// member's lifeline, just below where it comes from, so power never
+    /// runs back up the page. Its tooltip names the membership.
+    fn handle(
+        &mut self,
+        from: EventIx,
+        handle: EventIx,
+        h: Pill,
+        colour: &'static str,
+    ) -> (f64, f64) {
+        let d = self.diagram;
+        let late = d
+            .cert(handle)
+            .map(|c| c.audience)
+            .zip(self.label(from))
+            .filter(|_| from > handle);
+        let (spot, close) = if late.is_some() {
+            let name = d.cert(handle).map_or("", |c| c.id.as_str());
+            (
+                Spot::Lifeline {
+                    membership: handle,
+                    after: from,
+                },
+                alloc::format!("><title>through {}</title></circle>", escape(name)),
+            )
+        } else {
+            (Spot::Membership(handle), String::from("/>"))
+        };
+
+        let (n, new) = self.bead(spot, colour);
+        let (hx, hy) = if let Some((member, source)) = late {
+            #[allow(clippy::cast_precision_loss, reason = "a handful of beads")]
+            let beside = n as f64 * (2.0 * HANDLE + 2.0);
+            (self.lifeline(member) + beside, source.y + ROW / 2.0)
+        } else {
+            h.handle(n)
+        };
+        if new {
+            let _ = write!(
+                self.handles,
+                r#"<circle class="handle" cx="{hx:.1}" cy="{hy:.1}" r="{HANDLE}" stroke="{colour}" data-event="{}"{close}"#,
+                handle.index()
+            );
+        }
+        (hx, hy)
+    }
+
+    /// Which bead at `spot` a `colour` route uses, and whether it is new
+    /// (so not yet drawn).
+    fn bead(&mut self, spot: Spot, colour: &'static str) -> (usize, bool) {
         let mine: Vec<&str> = self
             .beads
             .iter()
-            .filter(|(at, _)| *at == ix)
+            .filter(|(at, _)| *at == spot)
             .map(|&(_, c)| c)
             .collect();
         if let Some(n) = mine.iter().position(|&c| c == colour) {
             return (n, false);
         }
-        self.beads.push((ix, colour));
+        self.beads.push((spot, colour));
         (mine.len(), true)
     }
 
@@ -537,16 +598,8 @@ impl<'a> Svg<'a> {
                     let (Some(start), Some(h)) = (exit, self.label(handle)) else {
                         continue;
                     };
-                    let (n, new) = self.bead(handle, colour);
-                    let (hx, hy) = h.handle(n);
+                    let (hx, hy) = self.handle(from, handle, h, colour);
                     self.arch(Some(from), handle, start, (hx, hy - HANDLE), colour);
-                    if new {
-                        let _ = write!(
-                            self.handles,
-                            r#"<circle class="handle" cx="{hx:.1}" cy="{hy:.1}" r="{HANDLE}" stroke="{colour}" data-event="{}"/>"#,
-                            handle.index()
-                        );
-                    }
                     exit = Some((hx, hy - HANDLE));
                     from = handle;
                 }

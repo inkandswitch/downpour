@@ -282,6 +282,39 @@ fn handles_through_one_membership_never_overlap() -> TestResult {
     Ok(())
 }
 
+/// Authority that reaches a membership after it was signed joins on the
+/// member's lifeline below its source, rather than climbing back up to the
+/// membership's box.
+#[test]
+fn late_authority_joins_on_the_members_lifeline() -> TestResult {
+    let svg = parse(
+        "rain
+         zoe-alice: (Zoe)-[admin]->(Alice)
+         (Doc)-[read]->(Zoe)
+         (Alice)-[read(Doc)]->(Bob)",
+    )?
+    .to_rain_svg();
+
+    let attr = |tag: &str, name: &str| -> Option<f64> {
+        let from = tag.find(&format!(r#" {name}=""#))? + name.len() + 3;
+        tag.get(from..from + tag[from..].find('"')?)?.parse().ok()
+    };
+    let handle = tag_with(&svg, r#"<circle class="handle""#).ok_or("a handle")?;
+    let after = svg
+        .find(r#"data-event="1""#)
+        .and_then(|at| tag_with(&svg[at..], r#"class="pill""#))
+        .ok_or("event 1's pill")?;
+
+    assert!(svg.contains("<title>through zoe-alice</title>"), "{svg}");
+    // On Alice's lifeline, and below Zoe's Read (where the authority comes from)
+    let alice = svg
+        .find(r#"data-principal="alice""#)
+        .and_then(|at| attr(&svg[at..], "data-x"));
+    assert_eq!(attr(handle, "cx"), alice);
+    assert!(attr(handle, "cy") > attr(after, "y"), "{handle} vs {after}");
+    Ok(())
+}
+
 /// Inline SVG `<style>` is parsed as markup when a page inserts the SVG with
 /// `innerHTML`, so any `<` would cut the stylesheet short.
 #[test]
