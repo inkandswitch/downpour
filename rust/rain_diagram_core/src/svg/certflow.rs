@@ -527,14 +527,18 @@ impl<'a> Certflow<'a> {
         });
         let _ = write!(
             self.out,
-            r#"<path class="powerline"{from} data-to="{to}" d="M{:.1},{:.1} Q{:.1},{:.1} {:.1},{:.1}" stroke="{stroke}"/>"#,
+            r#"<path class="powerline {status}"{from} data-to="{to}" d="M{:.1},{:.1} Q{:.1},{:.1} {:.1},{:.1}" stroke="{stroke}"/>"#,
             start.0,
             start.1,
             control.0,
             control.1,
             end.0,
             end.1,
-            to = to.index()
+            to = to.index(),
+            status = self
+                .now()
+                .and_then(|now| self.diagram.status(to, now))
+                .map_or("valid", status_class),
         );
     }
 }

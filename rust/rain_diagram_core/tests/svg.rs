@@ -42,7 +42,7 @@ fn every_event_is_hooked_with_its_status() -> TestResult {
 fn powerlines_follow_routes() -> TestResult {
     let svg = parse(REVOCATION)?.to_svg();
     let wires: Vec<(Option<&str>, &str)> = svg
-        .match_indices(r#"<path class="powerline""#)
+        .match_indices(r#"<path class="powerline "#)
         .filter_map(|(at, _)| {
             let tag = &svg[at..at + svg[at..].find('>')?];
             let attr = |name: &str| {
@@ -174,9 +174,14 @@ fn certflow_has_the_same_hooks_without_invocations() -> TestResult {
 fn certflow_powerlines_hop_between_certificates() -> TestResult {
     let svg = parse(REVOCATION)?.to_certflow_svg();
     let wires: Vec<_> = svg
-        .match_indices(r#"<path class="powerline""#)
+        .match_indices(r#"<path class="powerline "#)
         .filter_map(|(at, _)| svg.get(at..at + svg[at..].find(" d=")?))
-        .map(|tag| tag.trim_start_matches(r#"<path class="powerline""#).trim())
+        // Past the class (which carries a status), to the hooks
+        .map(|tag| {
+            tag.split_once(r#"" "#)
+                .map_or(tag, |(_, hooks)| hooks)
+                .trim()
+        })
         .collect();
     assert_eq!(
         wires,

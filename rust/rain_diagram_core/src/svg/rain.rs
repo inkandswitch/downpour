@@ -131,12 +131,22 @@ impl<'a> Svg<'a> {
     }
 
     /// The powerline class for a line into `to`.
-    const fn powerline_class(&self, to: EventIx) -> &'static str {
-        if self.future(to) {
-            "powerline future"
-        } else {
-            "powerline"
+    /// `ix`'s status class as of the "now" line (`future` below it).
+    fn status(&self, ix: EventIx) -> &'static str {
+        if self.future(ix) {
+            return "future";
         }
+        self.happened
+            .checked_sub(1)
+            .and_then(|i| self.diagram.event_ix(i))
+            .and_then(|now| self.diagram.status(ix, now))
+            .map_or("valid", status_class)
+    }
+
+    /// A powerline takes the status of the event it powers, so authority
+    /// stops visibly flowing into anything void or revoked.
+    fn powerline_class(&self, to: EventIx) -> String {
+        format!("powerline {}", self.status(to))
     }
 
     fn lifeline(&self, p: PrincipalIx) -> f64 {
@@ -319,16 +329,7 @@ impl<'a> Svg<'a> {
 
     fn event(&self, ix: EventIx, out: &mut String) -> Option<Pill> {
         // As of the "now" line; below it, nothing has happened yet
-        let now = self
-            .happened
-            .checked_sub(1)
-            .and_then(|i| self.diagram.event_ix(i));
-        let status = if self.future(ix) {
-            "future"
-        } else {
-            now.and_then(|now| self.diagram.status(ix, now))
-                .map_or("valid", status_class)
-        };
+        let status = self.status(ix);
 
         match self.diagram.event(ix)? {
             Event::Delegate(cert) => Some(self.delegation(ix, cert, status, out)),

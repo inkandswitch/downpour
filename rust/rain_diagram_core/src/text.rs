@@ -18,10 +18,12 @@
 //! The source certificate sends it over the top when the next holder's
 //! lane is beyond its arrow, and out of the bottom otherwise, for example
 //! to a revoker's `o` handle. Invocations sit under the certificate that
-//! powers them. A revocation's line ends under its target, and a `✗` marks
-//! the target.
+//! powers them. Labels placed by hand (`(A)---[edit]->(B)`) slide along
+//! their arrow instead, clear of the lifelines they cross. A revocation's
+//! line ends under its target, and a `✗` marks the target.
 
 use crate::{
+    ast::Placement,
     authority::Authority,
     diagram::{Diagram, Event, EventIx},
 };
@@ -114,6 +116,16 @@ impl Label {
     const fn width(&self) -> isize {
         self.end - self.start + 1
     }
+}
+
+/// What an invocation box is placed around: the label powering it (it
+/// sits underneath, by default), lines crossing its row (it keeps clear),
+/// and a placement by hand, which wins over sitting underneath.
+#[derive(Debug, Clone, Copy)]
+struct Around<'a> {
+    powered_by: Option<Label>,
+    crossing: &'a [isize],
+    at: Option<Placement>,
 }
 
 /// Where a powerline is headed.
@@ -309,7 +321,13 @@ impl<'a> Layout<'a> {
         match self.diagram.event(ix)? {
             Event::Delegate(cert) => {
                 let text = format!("[{}]", cert.level);
-                Some(self.arrow(self.x(cert.issuer), self.x(cert.audience), line, &text))
+                Some(self.arrow(
+                    self.x(cert.issuer),
+                    self.x(cert.audience),
+                    line,
+                    &text,
+                    cert.at,
+                ))
             }
 
             Event::Invoke(invoke) => {
@@ -335,23 +353,47 @@ impl<'a> Layout<'a> {
                     self.x(invoke.on),
                     line,
                     &text,
-                    powered_by,
-                    &crossing,
+                    Around {
+                        powered_by,
+                        crossing: &crossing,
+                        at: invoke.at,
+                    },
                 ))
             }
 
             Event::Revoke(revoke) => {
                 let target = self.label(revoke.target)?;
                 let x = self.x(revoke.by);
-                let start = target.input - 3;
+                let w = width("<revoke>");
+                // Under the target, unless slid along the line by hand; the
+                // line then carries on to the target's column
+                let start = revoke.at.map_or(target.input - 3, |p| {
+                    let (lo, hi) = if x < target.input {
+                        (x + 2, target.input - 1)
+                    } else {
+                        (target.input + 1 - w + 1, x - 1 - w)
+                    };
+                    self.placed(x, target.input, w, p.fraction(), (lo, hi))
+                });
                 let label = self.boxed(start, line, "<revoke>", (x.min(start), x.max(start)));
 
+                // From the revoker to the label, then on past it to the
+                // target's column if the label was slid short of it
+                let t = target.input;
                 if x < label.start {
                     self.canvas
                         .path(&[(x, line), (label.start - 1, line)], Stroke::Solid);
+                    if t > label.end {
+                        self.canvas
+                            .path(&[(label.end + 1, line), (t, line)], Stroke::Solid);
+                    }
                 } else if x > label.end {
                     self.canvas
                         .path(&[(label.end + 1, line), (x, line)], Stroke::Solid);
+                    if t < label.start {
+                        self.canvas
+                            .path(&[(t, line), (label.start - 1, line)], Stroke::Solid);
+                    }
                 }
                 // A revocation that has no effect (the revoker can't revoke
                 // this) mustn't look like it cut anything: no power arrives
@@ -370,11 +412,49 @@ impl<'a> Layout<'a> {
         }
     }
 
-    /// A delegation arrow: `├──[edit]───▶│` or `│◀───[edit]──┤`.
-    fn arrow(&mut self, from: isize, to: isize, line: isize, text: &str) -> Label {
+    /// Where a `w`-wide label starts when placed `fraction` of the way from
+    /// column `from` to `to`: within `lo..=hi`, and off any lifeline it
+    /// would hide, nearest first.
+    fn placed(
+        &self,
+        from: isize,
+        to: isize,
+        w: isize,
+        fraction: f64,
+        (lo, hi): (isize, isize),
+    ) -> isize {
+        let hi = hi.max(lo);
+        let centre = from + round(to_f64(to - from) * fraction);
+        let preferred = (centre - w / 2).clamp(lo, hi);
+        let (a, b) = (from.min(to), from.max(to));
+        let clear = |s: isize| {
+            !self
+                .lifelines
+                .iter()
+                .any(|&x| a < x && x < b && s <= x && x < s + w)
+        };
+        (0..=hi - lo)
+            .flat_map(|d| [preferred - d, preferred + d])
+            .find(|&s| (lo..=hi).contains(&s) && clear(s))
+            .unwrap_or(preferred)
+    }
+
+    /// A delegation arrow: `├──[edit]───▶│` or `│◀───[edit]──┤`, with the
+    /// label slid along it if placed by hand (`(A)---[edit]->(B)`).
+    fn arrow(
+        &mut self,
+        from: isize,
+        to: isize,
+        line: isize,
+        text: &str,
+        at: Option<Placement>,
+    ) -> Label {
         let w = width(text);
         if to < from {
-            let end = from - 3;
+            // At least one dash after `◀` and before the issuer's lifeline
+            let end = at.map_or(from - 3, |p| {
+                self.placed(from, to, w, p.fraction(), (to + 3, from - 1 - w)) + w - 1
+            });
             self.canvas
                 .path(&[(to + 1, line), (from, line)], Stroke::Solid);
             self.canvas.text(to + 1, line, "◀");
@@ -386,7 +466,12 @@ impl<'a> Layout<'a> {
                 ..label
             }
         } else {
-            let start = from + 3;
+            let start = match at {
+                Some(p) if to != from => {
+                    self.placed(from, to, w, p.fraction(), (from + 2, to - 2 - w))
+                }
+                _ => from + 3,
+            };
             let tip = if to == from { start - 1 } else { to - 1 };
             self.canvas
                 .path(&[(from, line), (tip, line)], Stroke::Solid);
@@ -404,8 +489,11 @@ impl<'a> Layout<'a> {
         on: isize,
         line: isize,
         text: &str,
-        powered_by: Option<Label>,
-        crossing: &[isize],
+        Around {
+            powered_by,
+            crossing,
+            at,
+        }: Around<'_>,
     ) -> Label {
         let w = width(text);
         let (low, high, default) = match on.cmp(&by) {
@@ -413,7 +501,11 @@ impl<'a> Layout<'a> {
             Ordering::Greater => (by + 2, on - 2 - w, by + 3),
             Ordering::Equal => (by + 2, by + 2, by + 2),
         };
-        let preferred = powered_by.map_or(default, |p| p.start + (p.width() - w).div_euclid(2));
+        // Placed by hand, or else under what powers it
+        let preferred = match at {
+            Some(p) => by + round(to_f64(on - by) * p.fraction()) - w / 2,
+            None => powered_by.map_or(default, |p| p.start + (p.width() - w).div_euclid(2)),
+        };
         let preferred = preferred.min(high).max(low);
 
         // Slide clear of lines crossing this row (revocations, and the
@@ -629,6 +721,22 @@ impl<'a> Layout<'a> {
 
 const fn event_line(row: isize) -> isize {
     ROW * row + 2
+}
+
+#[allow(clippy::cast_precision_loss, reason = "columns are small")]
+const fn to_f64(n: isize) -> f64 {
+    n as f64
+}
+
+/// Nearest whole column.
+#[allow(clippy::cast_possible_truncation, reason = "columns are small")]
+fn round(x: f64) -> isize {
+    // `f64::round` needs std; this is `no_std`
+    if x >= 0.0 {
+        (x + 0.5) as isize
+    } else {
+        (x - 0.5) as isize
+    }
 }
 
 fn to_isize(n: usize) -> isize {

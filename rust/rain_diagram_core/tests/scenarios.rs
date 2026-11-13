@@ -1157,3 +1157,80 @@ fn region_notes_round_trip() {
         );
     });
 }
+
+/// Every powerline carries the status of the event it feeds, so authority
+/// never visibly flows into something void or revoked (the stylesheet
+/// stops those animating). Checked in both notations.
+#[test]
+fn powerlines_carry_their_consumers_status() {
+    check!().with_type::<Vec<u8>>().for_each(|bytes| {
+        let Some(scenario) = common::arbitrary::<Scenario>(bytes) else {
+            return;
+        };
+        let (source, d) = scenario.diagram();
+        let Some(now) = d.now() else { return };
+        for svg in [d.to_rain_svg(), d.to_certflow_svg()] {
+            for (at, _) in svg.match_indices(r#"<path class="powerline"#) {
+                let tag = &svg[at..at + svg[at..].find("/>").expect("paths close")];
+                let to: usize = tag
+                    .split(r#"data-to=""#)
+                    .nth(1)
+                    .and_then(|rest| rest.split('"').next())
+                    .and_then(|n| n.parse().ok())
+                    .expect("powerlines say what they feed");
+                let ix = d.event_ix(to).expect("in range");
+                let expected = match d.status(ix, now).expect("happened") {
+                    Status::Valid => "valid",
+                    Status::Unauthorized => "unauthorized",
+                    Status::Revoked { .. } => "revoked",
+                    Status::Void { .. } => "void",
+                };
+                assert!(
+                    tag.starts_with(&format!(r#"<path class="powerline {expected}""#)),
+                    "{tag}\n{source}"
+                );
+            }
+        }
+    });
+}
+
+/// Wherever a label is placed by hand, the text art still draws it whole on
+/// its own row, and the grid keeps its shape.
+#[test]
+fn placed_labels_render_on_their_row() {
+    use rain_diagram_core::edit::set_position;
+
+    check!().with_type::<Vec<u8>>().for_each(|bytes| {
+        let Some((source, d, c)) = scenario_and_choices(bytes) else {
+            return;
+        };
+        if d.events().is_empty() {
+            return;
+        }
+        let n = usize::from(c.at) % d.events().len();
+        let placed = set_position(&source, n, Some(u16::from(c.percent) % 101)).expect("placeable");
+        let after = parse(&placed).expect("placements are checked");
+        let text = after.to_text();
+        let lines: Vec<&str> = text.lines().collect();
+
+        // Header, then three lines per event (after any title)
+        let title = usize::from(after.title().is_some()) * 2;
+        assert_eq!(
+            lines.len(),
+            title + 1 + 3 * after.events().len(),
+            "{placed}\n{text}"
+        );
+
+        let label = match after.event(after.event_ix(n).expect("in range")) {
+            Some(Event::Delegate(cert)) => format!("[{}]", cert.level),
+            Some(Event::Invoke(invoke)) => format!("[[{}]]", invoke.level),
+            Some(Event::Revoke(_)) => String::from("<revoke>"),
+            None => unreachable!("in range"),
+        };
+        let row = lines[title + 2 + 3 * n];
+        assert!(
+            row.contains(&label),
+            "{label} missing from row {n}: {row:?}\n{placed}\n{text}"
+        );
+    });
+}

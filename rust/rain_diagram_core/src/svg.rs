@@ -9,6 +9,7 @@
 //! | `data-cert`           | delegation groups                      | the certificate's label                           |
 //! | `data-from`/`data-to` | powerlines                             | event indices (`data-from` is absent for roots)   |
 //! | `class`               | event groups                           | `event delegate`/`invoke`/`revoke` and a status   |
+//! | `class`               | powerlines                             | `powerline` and the status of the event it feeds  |
 //!
 //! Statuses are `valid`, `revoked`, `void`, and `unauthorized`, as of the
 //! last event.
@@ -213,6 +214,7 @@ const STYLE: &str = r"<style>
    periods per loop, so it's seamless) */
 .rain-diagram .powerline { animation: rain-flow 1.4s linear infinite; }
 @keyframes rain-flow { to { stroke-dashoffset: -18; } }
+.rain-diagram .powerline.void, .rain-diagram .powerline.revoked { animation: none; }
 @media (prefers-reduced-motion: reduce) { .rain-diagram .powerline { animation: none; } }
 .rain-diagram .revocation, .rain-diagram .cross { fill: none; stroke: #d33; stroke-width: 1.75; }
 .rain-diagram .diamond { fill: #fde8e8; stroke: #d33; stroke-width: 1.75; }
