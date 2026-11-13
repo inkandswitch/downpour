@@ -30,6 +30,7 @@ jobs:
           - ci-docsrs
           - ci-fmt
           - ci-js
+          - ci-mdbook
           - ci-msrv
           - ci-no-std
           - ci-package

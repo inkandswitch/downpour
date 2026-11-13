@@ -1,6 +1,7 @@
 [workspace]
 resolver = "3"
 members = [
+  "rust/rain_diagram_cli",
   "rust/rain_diagram_core",
   "rust/rain_diagram_wasm",
 ]
@@ -19,6 +20,7 @@ rain_diagram_core = { version = "0.1.0", path = "rust/rain_diagram_core", defaul
 # External crates
 arbitrary = "1.4"
 bolero = "0.13.4"
+clap = { version = "4.6", features = ["derive"] }
 serde = { version = "1.0", default-features = false }
 serde_json = { version = "1.0", default-features = false, features = ["alloc"] }
 testresult = "0.4.1"

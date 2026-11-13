@@ -1,0 +1,34 @@
+[package]
+name = "rain_diagram_cli"
+version = "0.1.0"
+description = "Command-line renderer and mdBook preprocessor for certflow and rain capability diagrams"
+
+authors.workspace = true
+categories = ["command-line-utilities", "visualization"]
+edition.workspace = true
+keywords = ["capabilities", "diagrams", "keyhive", "mdbook"]
+license.workspace = true
+readme = "README.md"
+repository.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "rain-diagram"
+path = "src/main.rs"
+
+[[bin]]
+name = "mdbook-rain-diagram"
+path = "src/bin/mdbook-rain-diagram.rs"
+
+[dependencies]
+clap = { workspace = true }
+rain_diagram_core = { workspace = true, features = ["serde", "std"] }
+serde_json = { workspace = true, features = ["std"] }
+thiserror = { workspace = true, features = ["std"] }
+
+[dev-dependencies]
+bolero = { workspace = true }
+testresult = { workspace = true }
+
+[lints]
+workspace = true

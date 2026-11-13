@@ -1,0 +1,6 @@
+# A small book showing (and testing, via `nix run .#ci-mdbook`) the
+# preprocessor: `mdbook build` with `mdbook-rain-diagram` on the PATH.
+[book]
+title = "Rain diagrams in mdBook"
+
+[preprocessor.rain-diagram]

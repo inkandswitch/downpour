@@ -95,6 +95,7 @@ flowchart TD
     core --> svg["SVG<br/>(rain, certflow)"]
     core --> site["site JSON<br/>(Lab Note renderer)"]
     core --> wasm["rain_diagram_wasm<br/>(JS bindings)"]
+    core --> cli["rain_diagram_cli<br/>(CLI, mdBook preprocessor)"]
 
     wasm --> component["&lt;rain-diagram&gt;<br/>(interactive embed)"]
     wasm --> mermaid["Mermaid plugin"]
@@ -110,6 +111,7 @@ Dashed boxes are planned.
 
 ```
 rust/
+├── rain_diagram_cli/    rain-diagram CLI and mdbook-rain-diagram preprocessor
 ├── rain_diagram_core/   parser, authority analysis, renderers, source edits (no_std)
 └── rain_diagram_wasm/   JS bindings
 javascript/
@@ -125,6 +127,7 @@ docs/                    README pictures, checked by the golden tests
 |----------------------|-----------|--------------------------------------------------------------|
 | `rain_diagram_core`  | Working   | Parser, resolver, authority analysis, renderers              |
 | `rain_diagram_wasm`  | Working   | JS bindings (`renderSvg`, `renderText`, `toSiteJson`, …)     |
+| `rain_diagram_cli`   | Working   | `rain-diagram` CLI and `mdbook-rain-diagram` preprocessor    |
 | Text renderer        | Working   | Unicode art matching [Keyhive Lab Note #8][rain] exactly     |
 | SVG renderer         | Working   | Static export, with `data-*` hooks for the interactive embed |
 | certflow renderer    | Working   | Snapshot view with automatic (stress majorization) layout    |
@@ -140,7 +143,7 @@ docs/                    README pictures, checked by the golden tests
 | SVG        | `Diagram::to_svg`       | `renderSvg`   | Rain or certflow, as the header says (or choose: see below) |
 | Site JSON  | `Diagram::to_site_json` | `toSiteJson`  | The renderer in the [Keyhive Lab Notes][rain]               |
 
-From JavaScript, [`@inkandswitch/rain-diagram-wasm`](javascript/rain-diagram-wasm/) has all of these and loads in Node, bundlers, plain pages, and `<script>` tags; its README covers setup for each. `to_site_json` needs the crate's `serde` feature (`rain_diagram_core = { …, features = ["serde"] }`); the Wasm bindings always include it. `to_rain_svg` and `to_certflow_svg` pick a notation regardless of the header. The preview has Copy and Download for each, and `cargo run --example render [-- --svg | --json] < diagram.rain` does the same from a shell.
+From JavaScript, [`@inkandswitch/rain-diagram-wasm`](javascript/rain-diagram-wasm/) has all of these and loads in Node, bundlers, plain pages, and `<script>` tags; its README covers setup for each. `to_site_json` needs the crate's `serde` feature (`rain_diagram_core = { …, features = ["serde"] }`); the Wasm bindings always include it. `to_rain_svg` and `to_certflow_svg` pick a notation regardless of the header. The preview has Copy and Download for each, and the [`rain-diagram` CLI](rust/rain_diagram_cli/) does the same from a shell (`rain-diagram render doc.rain -o doc.svg`).
 
 Here's the example from [Keyhive Lab Note #8][rain], drawn by `to_svg`:
 
@@ -170,6 +173,10 @@ And by `to_text`, matching the Lab Note's plain-text version character for chara
    │     ╰┄┄┄┄┄┄o────────────┼────────────┼─<revoke>   │   6. Alice revokes Carol→Dan
    │            │            │            │            │
 ```
+
+## In a book
+
+`mdbook-rain-diagram` turns code blocks fenced as `rain` or `certflow` into diagrams in an [mdBook](https://rust-lang.github.io/mdBook/): SVG in the HTML output, text art elsewhere. Add `[preprocessor.rain-diagram]` to `book.toml`; see [`rust/rain_diagram_cli/`](rust/rain_diagram_cli/) for the details and installing (`nix profile install github:inkandswitch/downpour` puts both binaries on the `PATH`).
 
 ## Embedding
 

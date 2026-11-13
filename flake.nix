@@ -170,6 +170,25 @@
           '';
         };
 
+        # The `rain-diagram` CLI and the `mdbook-rain-diagram` preprocessor:
+        # `nix run github:inkandswitch/downpour -- render doc.rain`
+        rain-diagram = pkgs.rustPlatform.buildRustPackage {
+          pname = "rain-diagram";
+          inherit ((builtins.fromTOML (builtins.readFile ./rust/rain_diagram_cli/Cargo.toml)).package) version;
+          src = pkgs.lib.fileset.toSource {
+            root = ./.;
+            fileset = pkgs.lib.fileset.unions [./Cargo.lock ./Cargo.toml ./README.md ./rust];
+          };
+          cargoLock.lockFile = ./Cargo.lock;
+          cargoBuildFlags = ["-p" "rain_diagram_cli"];
+          cargoTestFlags = ["-p" "rain_diagram_cli"];
+          meta = {
+            description = "Render certflow and rain capability diagrams, and an mdBook preprocessor for them";
+            license = with pkgs.lib.licenses; [asl20 mit];
+            mainProgram = "rain-diagram";
+          };
+        };
+
         # wasm-bodge (github.com/alexjg/wasm-bodge) packages the Wasm bindings
         # as one npm package that loads in Node, bundlers, browsers, workers,
         # and script tags. Not in nixpkgs, so pinned here.
@@ -285,6 +304,18 @@
           # The package in a real Vite app, from a committed lockfile: build it
           # with no Wasm configuration, then load the production build in
           # headless Chromium and check the Wasm ran
+          # The preprocessor in a real mdBook build: both diagrams in the
+          # example book become SVG, and the Rust block stays a code block
+          ci-mdbook = mkCheckWith [pkgs.coreutils pkgs.gnugrep pkgs.mdbook] "ci-mdbook" ''
+            cargo build -p rain_diagram_cli
+            out="$(mktemp -d)"
+            trap 'rm -rf "$out"' EXIT
+            PATH="$PWD/target/debug:$PATH" mdbook build rust/rain_diagram_cli/book -d "$out"
+            test "$(grep -c '<div class="rain-diagram"' "$out/diagrams.html")" -eq 2
+            grep -q 'class="rain-diagram certflow"' "$out/diagrams.html"
+            grep -q 'not a diagram' "$out/diagrams.html"
+          '';
+
           ci-vite = mkCheckWith [pkgs.chromium pkgs.pnpm] "ci-vite" ''
             ${pkgs.lib.getExe bodge}
             pnpm install --frozen-lockfile
@@ -370,9 +401,12 @@
             type = "app";
             program = pkgs.lib.getExe drv;
           })
-          (ci-checks // {inherit bodge preview site;});
+          (ci-checks // {inherit bodge preview rain-diagram site;});
 
-        packages = {inherit wasm-bodge;};
+        packages = {
+          inherit rain-diagram wasm-bodge;
+          default = rain-diagram;
+        };
 
         devShells.default = pkgs.mkShell {
           name = "rain_shell";
