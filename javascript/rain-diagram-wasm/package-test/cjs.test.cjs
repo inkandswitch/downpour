@@ -4,8 +4,8 @@ const { test } = require("node:test");
 const { renderText, RainDiagram } = require("@inkandswitch/rain-diagram-wasm");
 
 test("require: ready to use, no init", () => {
-  assert.match(renderText("rain\n(A)-[read]->(B)"), /\(A\)\s+\(B\)/);
-  const d = new RainDiagram("rain\n(A)-[read]->(B)");
+  assert.match(renderText("rain\n(A)-[read(A)]->(B)"), /\(A\)\s+\(B\)/);
+  const d = new RainDiagram("rain\n(A)-[read(A)]->(B)");
   try {
     assert.equal(d.kind, "rain");
   } finally {

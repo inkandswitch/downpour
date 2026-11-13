@@ -63,8 +63,15 @@ enum Step {
         issuer: u8,
         audience: u8,
         subject: Target,
+        /// Also decides the caveat (bits 5–6), so caveats cost no input
         ability: u8,
-        caveat: u8,
+    },
+    /// Someone who holds something admits a member to itself, so the
+    /// member reaches what it holds through it (a transitive route)
+    Join {
+        group: u8,
+        member: u8,
+        ability: u8,
     },
     Invoke {
         by: u8,
@@ -93,12 +100,16 @@ impl<'a> Arbitrary<'a> for Target {
 impl<'a> Arbitrary<'a> for Step {
     fn arbitrary(u: &mut Unstructured<'a>) -> arbitrary::Result<Self> {
         Ok(match u8::arbitrary(u)? % 8 {
-            0..=4 => Self::Delegate {
+            0..=3 => Self::Delegate {
                 issuer: u8::arbitrary(u)?,
                 audience: u8::arbitrary(u)?,
                 subject: Target::arbitrary(u)?,
                 ability: u8::arbitrary(u)?,
-                caveat: u8::arbitrary(u)?,
+            },
+            4 => Self::Join {
+                group: u8::arbitrary(u)?,
+                member: u8::arbitrary(u)?,
+                ability: u8::arbitrary(u)?,
             },
             5..=6 => Self::Invoke {
                 by: u8::arbitrary(u)?,
@@ -112,7 +123,7 @@ impl<'a> Arbitrary<'a> for Step {
         })
     }
 }
-#[derive(Debug, Arbitrary)]
+#[derive(Debug)]
 struct Scenario {
     title: bool,
 
@@ -133,13 +144,45 @@ struct Scenario {
     steps: Vec<Step>,
 }
 
+/// The most steps one scenario takes, keeping the layout properties quick.
+const MAX_STEPS: usize = 20;
+
+/// By hand, because `arbitrary` decodes a `Vec` by reading a "keep going?"
+/// byte before each element and stopping at the first odd one: steps would
+/// average about one, however long the input. Here every remaining byte
+/// goes into steps.
+impl<'a> Arbitrary<'a> for Scenario {
+    fn arbitrary(u: &mut Unstructured<'a>) -> arbitrary::Result<Self> {
+        let (title, vocabulary, swap) = (bool::arbitrary(u)?, u8::arbitrary(u)?, u8::arbitrary(u)?);
+        let (regions, placements) = (u8::arbitrary(u)? % 4, u8::arbitrary(u)? % 4);
+        let regions = (0..regions)
+            .map(|_| <(u8, u8)>::arbitrary(u))
+            .collect::<arbitrary::Result<_>>()?;
+        let placements = (0..placements)
+            .map(|_| <(u8, u8, u8)>::arbitrary(u))
+            .collect::<arbitrary::Result<_>>()?;
+        let mut steps = Vec::new();
+        while !u.is_empty() && steps.len() < MAX_STEPS {
+            steps.push(Step::arbitrary(u)?);
+        }
+        Ok(Self {
+            title,
+            vocabulary,
+            swap,
+            regions,
+            placements,
+            steps,
+        })
+    }
+}
+
 impl Scenario {
     fn ability(&self, seed: u8) -> String {
         let level = || Level::ALL[usize::from(seed) % Level::ALL.len()].to_string();
         let command = || COMMANDS[usize::from(seed) % COMMANDS.len()].to_string();
         match self.vocabulary % 8 {
-            0..=4 => level(),
-            5..=6 => command(),
+            0..=5 => level(),
+            6 => command(),
             _ if seed & 0x80 == 0 => level(),
             _ => command(),
         }
@@ -181,7 +224,6 @@ impl Scenario {
                     audience,
                     subject,
                     ability,
-                    caveat,
                 } => {
                     // Half the time, pass on something already received, so
                     // chains (and so transitive routes and revocation
@@ -193,8 +235,8 @@ impl Scenario {
                     };
                     let audience = pick(audience);
                     let subject = aim(&grants, issuer, subject);
-                    let caveat = if caveat % 4 == 0 {
-                        format!(" where n < {caveat}")
+                    let caveat = if ability & 0x60 == 0 {
+                        format!(" where n < {}", ability & 0x1f)
                     } else {
                         String::new()
                     };
@@ -208,6 +250,34 @@ impl Scenario {
                     ));
                     grants.push((audience, subject));
                     subjects.push(subject);
+                }
+                Step::Join {
+                    group,
+                    member,
+                    ability,
+                } => {
+                    // Only a group that holds something makes a route
+                    // through it; joining yourself is no membership
+                    let groups: Vec<usize> = grants.iter().map(|&(holder, _)| holder).collect();
+                    let (Some(&group), member) = (
+                        groups.get(usize::from(group) % groups.len().max(1)),
+                        pick(member),
+                    ) else {
+                        continue;
+                    };
+                    if group == member {
+                        continue;
+                    }
+                    lines.push(format!(
+                        "c{}: ({})-[{}({})]->({}) : step {n}",
+                        subjects.len(),
+                        CAST[group],
+                        self.ability(ability),
+                        CAST[group],
+                        CAST[member]
+                    ));
+                    grants.push((member, group));
+                    subjects.push(group);
                 }
                 Step::Invoke { by, on, ability } => {
                     let by = pick(by);
@@ -332,7 +402,7 @@ fn actor(event: &Event) -> Option<(PrincipalIx, PrincipalIx)> {
 /// claims or than its route carries.
 #[test]
 fn routes_are_causal_chains_and_attenuate() {
-    check!().with_type::<Vec<u8>>().for_each(|bytes| {
+    check!().with_generator(story()).for_each(|bytes| {
         let Some(scenario) = common::arbitrary::<Scenario>(bytes) else {
             return;
         };
@@ -409,7 +479,7 @@ fn routes_are_causal_chains_and_attenuate() {
 /// events never become valid; nothing has a status before it happens.
 #[test]
 fn status_only_gets_worse_with_time() {
-    check!().with_type::<Vec<u8>>().for_each(|bytes| {
+    check!().with_generator(story()).for_each(|bytes| {
         let Some(scenario) = common::arbitrary::<Scenario>(bytes) else {
             return;
         };
@@ -439,7 +509,7 @@ fn status_only_gets_worse_with_time() {
 /// event is something it depends on, and dependents always come later.
 #[test]
 fn void_means_a_dependency_was_revoked() {
-    check!().with_type::<Vec<u8>>().for_each(|bytes| {
+    check!().with_generator(story()).for_each(|bytes| {
         let Some(scenario) = common::arbitrary::<Scenario>(bytes) else {
             return;
         };
@@ -486,7 +556,7 @@ fn void_means_a_dependency_was_revoked() {
 /// least at the level it grants.
 #[test]
 fn valid_certificates_are_reachable() {
-    check!().with_type::<Vec<u8>>().for_each(|bytes| {
+    check!().with_generator(story()).for_each(|bytes| {
         let Some(scenario) = common::arbitrary::<Scenario>(bytes) else {
             return;
         };
@@ -513,7 +583,7 @@ fn valid_certificates_are_reachable() {
 /// whitespace, and unbroken lifelines.
 #[test]
 fn text_art_is_a_grid() {
-    check!().with_type::<Vec<u8>>().for_each(|bytes| {
+    check!().with_generator(story()).for_each(|bytes| {
         let Some(scenario) = common::arbitrary::<Scenario>(bytes) else {
             return;
         };
@@ -567,7 +637,7 @@ fn generator_is_not_vacuous() {
     static ATTENUATED: AtomicUsize = AtomicUsize::new(0);
     static VOID: AtomicUsize = AtomicUsize::new(0);
 
-    check!().with_type::<Vec<u8>>().for_each(|bytes| {
+    check!().with_generator(story()).for_each(|bytes| {
         let Some(scenario) = common::arbitrary::<Scenario>(bytes) else {
             return;
         };
@@ -599,6 +669,13 @@ fn generator_is_not_vacuous() {
     assert!(counts.iter().all(|&n| n > 0), "{counts:?}");
 }
 
+/// Fuzzer bytes for a scenario. Bolero's default `Vec<u8>` is short, and a
+/// transitive route alone takes three delegations in the right shape, so
+/// allow long stories.
+fn story() -> impl bolero::ValueGenerator<Output = Vec<u8>> {
+    bolero::produce::<Vec<u8>>().with().len(0usize..=512)
+}
+
 /// Everyone `actor` holds authority over, through any chain of grants.
 fn holdings(grants: &[(usize, usize)], actor: usize) -> Vec<usize> {
     let mut held = std::collections::BTreeSet::new();
@@ -617,7 +694,7 @@ fn holdings(grants: &[(usize, usize)], actor: usize) -> Vec<usize> {
 /// and notes contain.
 #[test]
 fn svg_is_well_formed() {
-    check!().with_type::<Vec<u8>>().for_each(|bytes| {
+    check!().with_generator(story()).for_each(|bytes| {
         let Some(scenario) = common::arbitrary::<Scenario>(bytes) else {
             return;
         };
@@ -656,7 +733,7 @@ fn svg_is_well_formed() {
 /// Names and notes are escaped in the SVG.
 #[test]
 fn svg_escapes_markup() -> Result<(), rain_diagram_core::Error> {
-    let d = parse("rain\n(<b>&\"x\")-[edit]->(Bob) : 1 < 2 & \"so\" <script>")?;
+    let d = parse("rain\n(<b>&\"x\")-[edit(<b>&\"x\")]->(Bob) : 1 < 2 & \"so\" <script>")?;
     let svg = d.to_svg();
     assert!(!svg.contains("<b>") && !svg.contains("<script>"));
     assert!(svg.contains("&lt;b&gt;&amp;&quot;x&quot;"));
@@ -735,7 +812,7 @@ fn uses(d: &Diagram, ix: EventIx) -> Vec<EventIx> {
 /// certificate ends up equally valid.
 #[test]
 fn shuffling_is_harmless() {
-    check!().with_type::<Vec<u8>>().for_each(|bytes| {
+    check!().with_generator(story()).for_each(|bytes| {
         let Some(scenario) = common::arbitrary::<Scenario>(bytes) else {
             return;
         };
@@ -795,7 +872,7 @@ fn shuffling_is_harmless() {
 /// whatever the layout has to cope with.
 #[test]
 fn certflow_is_well_formed() {
-    check!().with_type::<Vec<u8>>().for_each(|bytes| {
+    check!().with_generator(story()).for_each(|bytes| {
         let Some(scenario) = common::arbitrary::<Scenario>(bytes) else {
             return;
         };
@@ -834,7 +911,7 @@ fn certflow_is_well_formed() {
 fn moves_within_range_rearrange_the_source() {
     use rain_diagram_core::edit::{MoveError, move_statement};
 
-    check!().with_type::<Vec<u8>>().for_each(|bytes| {
+    check!().with_generator(story()).for_each(|bytes| {
         let Some(scenario) = common::arbitrary::<Scenario>(bytes) else {
             return;
         };
@@ -874,7 +951,7 @@ fn moves_within_range_rearrange_the_source() {
 fn deleting_removes_exactly_one_statement() {
     use rain_diagram_core::edit::{DeleteError, delete_statement};
 
-    check!().with_type::<Vec<u8>>().for_each(|bytes| {
+    check!().with_generator(story()).for_each(|bytes| {
         let Some(scenario) = common::arbitrary::<Scenario>(bytes) else {
             return;
         };
@@ -911,7 +988,7 @@ fn deleting_removes_exactly_one_statement() {
 /// come, and the certflow snapshot of that moment is well-formed.
 #[test]
 fn every_moment_renders() {
-    check!().with_type::<Vec<u8>>().for_each(|bytes| {
+    check!().with_generator(story()).for_each(|bytes| {
         let Some(scenario) = common::arbitrary::<Scenario>(bytes) else {
             return;
         };
@@ -950,7 +1027,7 @@ fn every_moment_renders() {
 fn regions_can_cover_any_rows() {
     use rain_diagram_core::edit::{RegionError, set_region_rows};
 
-    check!().with_type::<Vec<u8>>().for_each(|bytes| {
+    check!().with_generator(story()).for_each(|bytes| {
         let Some(scenario) = common::arbitrary::<Scenario>(bytes) else {
             return;
         };
@@ -997,7 +1074,8 @@ struct Choices {
 }
 
 fn scenario_and_choices(bytes: &[u8]) -> Option<(String, Diagram, Choices)> {
-    let (scenario, choices) = common::arbitrary::<(Scenario, Choices)>(bytes)?;
+    // Choices first: the scenario takes every byte left
+    let (choices, scenario) = common::arbitrary::<(Choices, Scenario)>(bytes)?;
     let (source, d) = scenario.diagram();
     Some((source, d, choices))
 }
@@ -1016,7 +1094,7 @@ fn event_group(svg: &str, ix: EventIx) -> &str {
 /// checked overall, since crosses aren't tied to their revocation there.)
 #[test]
 fn ineffective_revocations_never_strike() {
-    check!().with_type::<Vec<u8>>().for_each(|bytes| {
+    check!().with_generator(story()).for_each(|bytes| {
         let Some(scenario) = common::arbitrary::<Scenario>(bytes) else {
             return;
         };
@@ -1044,7 +1122,7 @@ fn ineffective_revocations_never_strike() {
 /// Every event's SVG class is its status as of the last event.
 #[test]
 fn svg_classes_match_statuses() {
-    check!().with_type::<Vec<u8>>().for_each(|bytes| {
+    check!().with_generator(story()).for_each(|bytes| {
         let Some(scenario) = common::arbitrary::<Scenario>(bytes) else {
             return;
         };
@@ -1078,7 +1156,7 @@ fn svg_classes_match_statuses() {
 fn inserted_statements_land_where_asked() {
     use rain_diagram_core::edit::{InsertError, NewStatement, delete_statement, insert_statement};
 
-    check!().with_type::<Vec<u8>>().for_each(|bytes| {
+    check!().with_generator(story()).for_each(|bytes| {
         let Some((source, d, c)) = scenario_and_choices(bytes) else {
             return;
         };
@@ -1171,7 +1249,7 @@ fn inserted_statements_land_where_asked() {
 fn placements_round_trip() {
     use rain_diagram_core::{ast::Placement, edit::set_position, parser::document};
 
-    check!().with_type::<Vec<u8>>().for_each(|bytes| {
+    check!().with_generator(story()).for_each(|bytes| {
         let Some((source, d, c)) = scenario_and_choices(bytes) else {
             return;
         };
@@ -1212,7 +1290,7 @@ fn placements_round_trip() {
 fn moving_principals_only_reorders() {
     use rain_diagram_core::edit::move_principal;
 
-    check!().with_type::<Vec<u8>>().for_each(|bytes| {
+    check!().with_generator(story()).for_each(|bytes| {
         let Some((source, d, c)) = scenario_and_choices(bytes) else {
             return;
         };
@@ -1252,7 +1330,7 @@ fn moving_principals_only_reorders() {
 fn region_notes_round_trip() {
     use rain_diagram_core::edit::set_region_note;
 
-    check!().with_type::<Vec<u8>>().for_each(|bytes| {
+    check!().with_generator(story()).for_each(|bytes| {
         let Some((source, d, c)) = scenario_and_choices(bytes) else {
             return;
         };
@@ -1280,7 +1358,7 @@ fn region_notes_round_trip() {
 /// stops those animating). Checked in both notations.
 #[test]
 fn powerlines_carry_their_consumers_status() {
-    check!().with_type::<Vec<u8>>().for_each(|bytes| {
+    check!().with_generator(story()).for_each(|bytes| {
         let Some(scenario) = common::arbitrary::<Scenario>(bytes) else {
             return;
         };
@@ -1317,7 +1395,7 @@ fn powerlines_carry_their_consumers_status() {
 fn placed_labels_render_on_their_row() {
     use rain_diagram_core::edit::set_position;
 
-    check!().with_type::<Vec<u8>>().for_each(|bytes| {
+    check!().with_generator(story()).for_each(|bytes| {
         let Some((source, d, c)) = scenario_and_choices(bytes) else {
             return;
         };
@@ -1436,7 +1514,7 @@ mod geometry {
     #[allow(clippy::too_many_lines)]
     #[test]
     fn rain_geometry_holds_together() {
-        check!().with_type::<Vec<u8>>().for_each(|bytes| {
+        check!().with_generator(crate::story()).for_each(|bytes| {
             let Some(scenario) = common::arbitrary::<Scenario>(bytes) else {
                 return;
             };
@@ -1981,7 +2059,7 @@ mod geometry {
     #[allow(clippy::too_many_lines)]
     #[test]
     fn certflow_geometry_holds_together() {
-        check!().with_type::<Vec<u8>>().for_each(|bytes| {
+        check!().with_generator(crate::story()).for_each(|bytes| {
             let Some(scenario) = common::arbitrary::<Scenario>(bytes) else {
                 return;
             };
@@ -2094,7 +2172,10 @@ mod geometry {
             // A long title can widen the canvas past the nodes
             let fits = right + 24.0 + frame;
             assert!(
-                (view[2] - fits).abs() <= 0.6 || (d.title().is_some() && view[2] > fits),
+                // The width is rounded up to a whole number, from positions
+                // printed to one decimal
+                (fits - 0.6..=fits + 1.1).contains(&view[2])
+                    || (d.title().is_some() && view[2] > fits),
                 "width {} for right edge {right}\n{source}",
                 view[2]
             );

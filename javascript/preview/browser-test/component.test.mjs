@@ -184,7 +184,7 @@ describe("the preview's <rain-diagram>", () => {
     await drag(row, { x: row.x, y: row.y + height * zoom });
     const lines = (await source()).split("\n");
     const invoke = lines.findIndex((l) => l.startsWith("(Bob)=[[edit]]=>(Doc)"));
-    const bc = lines.findIndex((l) => l.startsWith("bc: (Bob)-[edit]->(Carol)"));
+    const bc = lines.findIndex((l) => l.startsWith("bc: (Bob)-[edit(Doc)]->(Carol)"));
     assert.ok(invoke > bc, `the invocation should now follow bc:\n${lines.join("\n")}`);
   });
 

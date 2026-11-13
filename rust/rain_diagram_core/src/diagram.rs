@@ -11,12 +11,11 @@
 //! what was valid, revoked, or reachable at any moment.
 
 use crate::{
-    ability::{Ability, Command},
+    ability::Ability,
     ast::{
         Caveat, CertId, Delegation, Document, Kind, Name, Placement, Span, Spanned, Statement, Text,
     },
     authority::{Authority, Diagnostic, Ledger, Reach, Route, Status},
-    level::Level,
 };
 use alloc::{
     collections::{BTreeMap, BTreeSet},
@@ -46,8 +45,8 @@ impl Diagram {
     ///
     /// let doc = parser::document(
     ///     "rain
-    ///      (Doc)-[edit]->(Alice)
-    ///      (Alice)-[read]->(Bob)",
+    ///      (Doc)-[edit(Doc)]->(Alice)
+    ///      (Alice)-[read(Doc)]->(Bob)",
     /// )?;
     /// let diagram = Diagram::resolve(&doc)?;
     ///
@@ -639,16 +638,7 @@ impl Resolver {
     fn delegate(&mut self, d: &Delegation) -> Result<(Cert, Vec<EventIx>), ResolveErrorKind> {
         let issuer = self.intern(&d.issuer);
         let audience = self.intern(&d.audience);
-        let subject = match &d.subject {
-            Some(subject) => self.intern(subject),
-            None => match &d.ability {
-                // UCAN delegations always name their subject
-                Ability::Command(command) => {
-                    return Err(ResolveErrorKind::MissingSubject(command.clone()));
-                }
-                Ability::Level(_) => self.infer_subject(issuer, &d.ability)?,
-            },
-        };
+        let subject = self.intern(&d.subject);
 
         // `via` is a chain: the first is held by the issuer, and each next
         // one by the previous one's subject
@@ -691,43 +681,6 @@ impl Resolver {
         Ok((cert, via))
     }
 
-    /// With no explicit subject (only levels may leave it out):
-    ///
-    /// - Admin is over the issuer itself. Granting Admin is almost always
-    ///   ownership or group membership: `(Team)-[admin]->(Alice)` adds Alice
-    ///   to Team, even if Team already holds a Doc.
-    /// - Anything else passes on the one other subject the issuer holds, as
-    ///   in `(Alice)-[edit]->(Bob)`, or is over the issuer if it holds none.
-    fn infer_subject(
-        &self,
-        issuer: PrincipalIx,
-        ability: &Ability,
-    ) -> Result<PrincipalIx, ResolveErrorKind> {
-        if ability.level() == Some(Level::Admin) {
-            return Ok(issuer);
-        }
-
-        let held: BTreeSet<PrincipalIx> = self
-            .certs()
-            .filter(|(_, cert)| cert.audience == issuer && cert.subject != issuer)
-            .map(|(_, cert)| cert.subject)
-            .collect();
-
-        let mut held = held.into_iter();
-        match (held.next(), held.next()) {
-            (None, _) => Ok(issuer),
-            (Some(subject), None) => Ok(subject),
-            (Some(first), Some(second)) => Err(ResolveErrorKind::AmbiguousSubject {
-                issuer: self.name(issuer),
-                candidates: [first, second]
-                    .into_iter()
-                    .chain(held)
-                    .map(|ix| self.name(ix))
-                    .collect(),
-            }),
-        }
-    }
-
     /// Find the earlier certificate labelled `id` (labels are unique).
     fn lookup(&self, id: &CertId) -> Result<EventIx, ResolveErrorKind> {
         self.certs()
@@ -750,10 +703,6 @@ impl Resolver {
         self.certs().find(|&(i, _)| i == ix).map(|(_, cert)| cert)
     }
 
-    fn name(&self, ix: PrincipalIx) -> Name {
-        self.name_ref(ix).clone()
-    }
-
     fn name_ref(&self, ix: PrincipalIx) -> &Name {
         self.principals
             .get(ix.0)
@@ -764,16 +713,6 @@ impl Resolver {
         let key = |ix: PrincipalIx| self.principals.get(ix.0).map_or("", |p| p.key.as_str());
         CertId::new(&format!("{}-{}", key(issuer), key(audience)))
             .unwrap_or_else(|_| unreachable!("keys are non-empty slugs"))
-    }
-}
-
-/// `A, B, and C`, for messages.
-fn names(names: &[Name]) -> String {
-    let names: Vec<&str> = names.iter().map(Name::as_str).collect();
-    match names.as_slice() {
-        [] => String::new(),
-        [one] => (*one).into(),
-        [rest @ .., last] => format!("{} and {last}", rest.join(", ")),
     }
 }
 
@@ -859,27 +798,6 @@ pub enum ResolveErrorKind {
     #[error("no earlier certificate is labelled `{0}`; write `{0}: ` before the one you mean")]
     UnknownCert(CertId),
 
-    /// A command path with no subject. Command paths come from UCAN, where
-    /// a delegation always names what it's over.
-    #[error(
-        "a delegation of {0} must name its subject, as in `[{0}(Doc)]`; only Keyhive levels can leave it out"
-    )]
-    MissingSubject(Command),
-
-    /// The subject was omitted, but the issuer holds several.
-    #[error(
-        "{issuer} holds authority over several subjects ({}); name one, as in `[level({})]`",
-        names(.candidates),
-        .candidates.first().map_or("Subject", Name::as_str)
-    )]
-    AmbiguousSubject {
-        /// The issuer whose subject was omitted.
-        issuer: Name,
-
-        /// The subjects it could have meant.
-        candidates: Vec<Name>,
-    },
-
     /// A `via` certificate isn't held by the issuer (for the first) or by
     /// the previous one's subject (for the rest).
     #[error("`{via}` is not a certificate to {holder}, so it can't carry authority for them")]
@@ -918,9 +836,9 @@ mod tests {
         let d = resolve(
             "rain
              participant Bob
-             (Comment Thread 1)-[admin]->(Commenters)
-             (Commenters)-[admin]->(Bob)
-             (bob)-[read]->(📱)",
+             (Comment Thread 1)-[admin(Comment Thread 1)]->(Commenters)
+             (Commenters)-[admin(Commenters)]->(Bob)
+             (bob)-[read(bob)]->(📱)",
         )?;
 
         assert_eq!(
@@ -932,14 +850,14 @@ mod tests {
 
     #[test]
     fn colliding_keys_get_suffixes() -> TestResult {
-        let d = resolve("rain\n(A)-[read]->(a)\n(a!)-[read]->(Ä)")?;
+        let d = resolve("rain\n(A)-[read(A)]->(a)\n(a!)-[read(a!)]->(Ä)")?;
         assert_eq!(keys(&d), ["a", "a-2", "a-3", "ä"]);
         Ok(())
     }
 
     #[test]
     fn event_indices_are_checked() -> TestResult {
-        let d = resolve("rain\n(A)-[read]->(B)\n(B)=[[read]]=>(A)")?;
+        let d = resolve("rain\n(A)-[read(A)]->(B)\n(B)=[[read]]=>(A)")?;
         assert_eq!(d.event_ix(1), Some(EventIx(1)));
         assert_eq!(d.event_ix(2), None);
         assert_eq!(d.now(), Some(EventIx(1)));
@@ -948,41 +866,11 @@ mod tests {
     }
 
     #[test]
-    fn infers_subjects() -> TestResult {
-        let d = resolve(
-            "rain
-             (Doc)-[edit]->(Alice)
-             (Alice)-[edit]->(Bob)
-             (Bob)-[read]->(Carol)",
-        )?;
-
-        let subjects: Vec<_> = (0..3)
-            .filter_map(|i| d.cert(EventIx(i)))
-            .map(|c| d.key(c.subject))
-            .collect();
-        assert_eq!(subjects, ["doc", "doc", "doc"]);
-        Ok(())
-    }
-
-    #[test]
-    fn ambiguous_subject() {
-        assert!(matches!(
-            resolve_err(
-                "rain
-                 (Essay)-[admin]->(Alice)
-                 (Commenters)-[admin]->(Alice)
-                 (Alice)-[read]->(Bob)",
-            ),
-            Some(ResolveErrorKind::AmbiguousSubject { candidates, .. }) if candidates.len() == 2
-        ));
-    }
-
-    #[test]
     fn revocations_name_explicit_labels() -> TestResult {
         let d = resolve(
             "rain
-             da: (Doc)-[edit]->(Alice)
-             cd: (Alice)-[read]->(Dan)
+             da: (Doc)-[edit(Doc)]->(Alice)
+             cd: (Alice)-[read(Doc)]->(Dan)
              (Alice)-<revoke>-x[cd]
              (Alice)-<revoke>-x[da]",
         )?;
@@ -1005,7 +893,7 @@ mod tests {
             resolve_err(
                 "rain
                  (Alice)-<revoke>-x[cd]
-                 cd: (Alice)-[read]->(Dan)",
+                 cd: (Alice)-[read(Doc)]->(Dan)",
             ),
             Some(ResolveErrorKind::UnknownCert(_))
         ));
@@ -1017,7 +905,7 @@ mod tests {
         assert!(matches!(
             resolve_err(
                 "rain
-                 (Doc)-[edit]->(Alice)
+                 (Doc)-[edit(Doc)]->(Alice)
                  (Doc)-<revoke>-x[doc-alice]",
             ),
             Some(ResolveErrorKind::UnknownCert(_))
@@ -1027,7 +915,7 @@ mod tests {
     #[test]
     fn duplicate_label() {
         assert!(matches!(
-            resolve_err("rain\nx: (A)-[read]->(B)\nx: (A)-[read]->(C)"),
+            resolve_err("rain\nx: (A)-[read(A)]->(B)\nx: (A)-[read(A)]->(C)"),
             Some(ResolveErrorKind::DuplicateLabel(_))
         ));
     }
@@ -1036,8 +924,8 @@ mod tests {
     fn via_must_reach_the_issuer() -> TestResult {
         let ok = resolve(
             "rain
-             (Doc)-[edit]->(Team)
-             ta: (Team)-[admin]->(Alice)
+             (Doc)-[edit(Doc)]->(Team)
+             ta: (Team)-[admin(Team)]->(Alice)
              (Alice)-[edit(Doc) via ta]->(Bob)",
         )?;
         assert_eq!(
@@ -1050,7 +938,7 @@ mod tests {
         assert!(matches!(
             resolve_err(
                 "rain
-                 dt: (Doc)-[edit]->(Team)
+                 dt: (Doc)-[edit(Doc)]->(Team)
                  (Alice)-[edit(Doc) via dt]->(Bob)",
             ),
             Some(ResolveErrorKind::ViaNotHeld { .. })
@@ -1064,7 +952,7 @@ mod tests {
     fn hand_built_regions_are_checked() -> TestResult {
         use crate::ast::Region as AstRegion;
 
-        let base = crate::parser::document("rain\n(A)-[read]->(B)\n(B)-[read]->(C)")?;
+        let base = crate::parser::document("rain\n(A)-[read(A)]->(B)\n(B)-[read(A)]->(C)")?;
         let region = |id: &str,
                       statements: core::ops::Range<usize>|
          -> Result<_, crate::ast::InvalidCertId> {
@@ -1118,16 +1006,16 @@ mod tests {
         // inside r0 and must go above it, not back down to lane 0
         let d = resolve(
             "rain
-             (Doc)-[read]->(Alice)
+             (Doc)-[read(Doc)]->(Alice)
              >>> r1
              >>> r3
              (Alice)-[read(Doc)]->(Team)
              <<< r1
              >>> r0
-             (Bob)-[read]->(Alice)
+             (Bob)-[read(Bob)]->(Alice)
              <<< r3
              >>> r2
-             (Team)-[relay]->(Alice)
+             (Team)-[relay(Doc)]->(Alice)
              <<< r2
              <<< r0",
         )?;

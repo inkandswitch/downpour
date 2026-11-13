@@ -16,12 +16,12 @@ Try it in the browser: [inkandswitch.github.io/downpour](https://inkandswitch.gi
 rain                                    // or `certflow`
 title Revoking two hops downstream
 
-(Doc)-[edit]->(Alice)                   : The Doc grants Alice Edit
-(Alice)-[edit(Doc)]->(Bob)              : Alice passes Edit to Bob
-(Bob)=[[edit]]=>(Doc)                   : Bob edits the Doc
-(Bob)-[read]->(Carol)                   : Bob gives Carol Read
-cd: (Carol)-[read]->(Dan)               : Carol shares Read with Dan
-(Alice)-<revoke>-x[cd]                  : Alice revokes Carol→Dan
+(Doc)-[edit(Doc)]->(Alice)     : The Doc grants Alice Edit
+(Alice)-[edit(Doc)]->(Bob)     : Alice passes Edit to Bob
+(Bob)=[[edit]]=>(Doc)          : Bob edits the Doc
+(Bob)-[read(Doc)]->(Carol)     : Bob gives Carol Read
+cd: (Carol)-[read(Doc)]->(Dan) : Carol shares Read with Dan
+(Alice)-<revoke>-x[cd]         : Alice revokes Carol→Dan
 ```
 
 Principals get round brackets, certificates get square ones (like the shapes in the diagrams), and invocations get double lines.
@@ -29,14 +29,13 @@ Principals get round brackets, certificates get square ones (like the shapes in 
 | Form                              | Meaning                                                     |
 |-----------------------------------|-------------------------------------------------------------|
 | `(A)-[edit(S)]->(B)`              | A delegates Edit over S to B                                |
-| `(A)-[edit]->(B)`                 | Same, with S inferred from what A holds (levels only)       |
 | `(A)-[edit(S) via ta]->(B)`       | Force the route through `ta` (routes are otherwise derived) |
 | `(A)-[/crud/read(S)]->(B)`        | A command path instead of a level, as in UCAN               |
 | `(A)-[edit(S) where x < 3]->(B)`  | A caveat: a condition the authority is limited by           |
 | `label: (A)-[…]->(B)`             | Label a certificate, so revocations and `via` can name it   |
 | `(B)=[[edit]]=>(S)`               | B uses its Edit authority on S                              |
 | `(A)-<revoke>-x[label]`           | A revokes the certificate `label`                           |
-| `(A)---[edit]->(B)`               | More dashes before the label slide it towards B (here ¾)    |
+| `(A)---[edit(S)]->(B)`            | More dashes before the label slide it towards B (here ¾)    |
 | `>>> A (P): note` … `<<< A`       | A captioned region; `(P)` takes principal P's colour        |
 | `principals: A, B`                | Fix column order (`participant A, B` works too)             |
 | `title …`, `: note`, `// comment` | Annotations (`%%` comments work too)                       |
@@ -48,7 +47,6 @@ Levels are `admin`, `edit`, `read`, and `relay` (or 👑 ✏️ 👀 📡).
 Keyhive's levels are one strict hierarchy. UCAN and Biscuit attenuate differently: abilities form a tree of commands, and conditions stack up as authority is passed on. The same notation covers both, with no mode to switch:
 
 - _Command paths._ Wherever a level goes, a path can go instead: `/`, or segments like `/crud/read` (letters, digits, `-`, `_`, `.`). A path covers itself and the paths under it, so `/crud` covers `/crud/read` but not `/crudely`, and `/` covers every path. Levels and paths never cover each other.
-- _Subjects._ A command-path delegation always names its subject, as a UCAN does (`sub`): `[/crud/read(Doc)]`, never just `[/crud/read]`. Only Keyhive levels can leave the subject to be inferred.
 - _Caveats._ `where …` comes last inside the brackets, after the subject and any `via`, and runs to the `]`: `[/crud(Doc) via ta where path = "/docs"]`. Caveats are opaque text (anything but square brackets), so you can write them in UCAN policy syntax, Biscuit Datalog, or plain words. They're never evaluated.
 
 A delegation grants the narrower of what it claims and what its issuer holds, or nothing if neither covers the other. Every event is bound by the caveats on every certificate it relies on, so caveats only ever accumulate down a chain. When there's a choice of route, the broadest ability wins, then the one with the fewest caveats. Revocation works the same for every ability: whoever issued a certificate that another relies on can revoke it. Only the `admin` level also lets you revoke any certificate over its subject; `/` doesn't, since neither UCAN nor Biscuit has an equivalent power.
@@ -60,21 +58,21 @@ rain
 title A UCAN-style chain
 (Doc)-[/crud(Doc) where path = "/docs"]->(Alice)  : Doc grants CRUD under /docs
 (Alice)-[/crud/read(Doc) where size < 1MB]->(Bob) : Alice narrows to read, adds a limit
-(Bob)=[[/crud/read]]=>(Doc)                  : bound by both caveats
-(Bob)=[[/crud/write]]=>(Doc)                 : unauthorised: Bob only holds /crud/read
+(Bob)=[[/crud/read]]=>(Doc)                       : bound by both caveats
+(Bob)=[[/crud/write]]=>(Doc)                      : unauthorised: Bob only holds /crud/read
 ```
 
 For Biscuit, think of each `where` as the check an attenuation block appends:
 
 ```
 rain
-(Service)-[/(Service)]->(Alice)                            : the authority block
+(Service)-[/(Service)]->(Alice) : the authority block
 (Alice)-[/(Service) where check if time($t), $t < 2026-12-01]->(Bob)
 (Bob)-[/(Service) where check if operation("read")]->(Carol)
-(Carol)=[[/]]=>(Service)                                   : must pass both checks
+(Carol)=[[/]]=>(Service)        : must pass both checks
 ```
 
-With no subject, `admin` is over the issuer itself (ownership, group membership: `(Team)-[admin]->(Alice)` adds Alice to Team), and anything else passes on the one subject the issuer holds. If it holds several, name the one you mean.
+Every delegation names its subject, the principal in brackets after the level. A principal passing on authority over itself writes its own name: `(Doc)-[edit(Doc)]->(Alice)` is the Doc granting Edit, and `(Team)-[admin(Team)]->(Alice)` adds Alice to Team (ownership, group membership). Leaving the subject out is a parse error, so a diagram never depends on guessing which of several things someone meant.
 
 Regions are closed by name, so they can nest or overlap. In the SVG they're tinted boxes with the note in a tab; in the text art, an outline in the notes column: the caption, then a `║` bar beside the rows it covers, with their notes indented. Powerlines in the SVG animate (dashes march in the direction authority flows) unless the viewer prefers reduced motion.
 
@@ -182,8 +180,8 @@ And by `to_text`, matching the Lab Note's plain-text version character for chara
 
 <rain-diagram><script type="text/rain">
   rain
-  doc-alice: (Doc)-[edit]->(Alice)
-  (Alice)-[edit]->(Bob)
+  doc-alice: (Doc)-[edit(Doc)]->(Alice)
+  (Alice)-[edit(Doc)]->(Bob)
   (Doc)-<revoke>-x[doc-alice]
 </script></rain-diagram>
 
@@ -204,7 +202,7 @@ $ preview            # (in the shell) hot-reloading preview at http://127.0.0.1:
 $ nix run .#preview  # same, without entering the shell (PORT=… to change)
 $ nix run .#site     # the preview as a static site in _site/, as deployed to GitHub Pages
 $ cargo test --workspace --exclude rain_diagram_wasm
-$ nix run .#ci-clippy   # also: ci-fmt, ci-test, ci-doc, ci-no-std, ci-bolero, ci-deny, ci-msrv, ci-typos
+$ nix run .#ci-clippy   # also: ci-bolero, ci-browser, ci-deny, ci-doc, ci-docsrs, ci-fmt, ci-js, ci-msrv, ci-no-std, ci-package, ci-test, ci-typos, ci-vite
 ```
 
 ## License

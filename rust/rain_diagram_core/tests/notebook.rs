@@ -24,11 +24,11 @@ fn ids(d: &Diagram) -> Vec<&str> {
 fn rain_plain_text_example() -> TestResult {
     let d = parse(
         "rain
-         (Doc)-[edit]->(Alice)            : 1. The Doc grants Alice Edit
-         (Alice)-[edit]->(Bob)            : 2. Alice passes Edit to Bob
+         (Doc)-[edit(Doc)]->(Alice)            : 1. The Doc grants Alice Edit
+         (Alice)-[edit(Doc)]->(Bob)            : 2. Alice passes Edit to Bob
          (Bob)=[[edit]]=>(Doc)            : 3. Bob edits the Doc
-         (Bob)-[read]->(Carol)            : 4. Bob gives Carol Read
-         carol-dan: (Carol)-[read]->(Dan) : 5. Carol shares Read with Dan
+         (Bob)-[read(Doc)]->(Carol)            : 4. Bob gives Carol Read
+         carol-dan: (Carol)-[read(Doc)]->(Dan) : 5. Carol shares Read with Dan
          (Alice)-<revoke>-x[carol-dan]    : 6. Alice revokes Carol→Dan",
     )?;
 
@@ -61,13 +61,13 @@ fn certflow_commenters_example() -> TestResult {
         "certflow
          title An essay with comment threads
 
-         (Essay)-[admin]->(Alice)
+         (Essay)-[admin(Essay)]->(Alice)
          (Alice)-[read(Essay)]->(Commenters)
-         (Commenters)-[admin]->(Alice)
+         (Commenters)-[admin(Commenters)]->(Alice)
          (Alice)-[edit(Commenters)]->(Bob)
          (Alice)-[edit(Commenters)]->(Carol)
-         (Comment Thread 1)-[admin]->(Commenters)
-         (Comment Thread 2)-[admin]->(Commenters)",
+         (Comment Thread 1)-[admin(Comment Thread 1)]->(Commenters)
+         (Comment Thread 2)-[admin(Comment Thread 2)]->(Commenters)",
     )?;
 
     assert_eq!(
@@ -90,8 +90,8 @@ fn certflow_commenters_example() -> TestResult {
 fn transitive_handle() -> TestResult {
     let d = parse(
         "rain
-         (Doc)-[edit]->(Team)
-         team-alice: (Team)-[admin]->(Alice)
+         (Doc)-[edit(Doc)]->(Team)
+         team-alice: (Team)-[admin(Team)]->(Alice)
          (Alice)-[edit(Doc) via team-alice]->(Bob)",
     )?;
 

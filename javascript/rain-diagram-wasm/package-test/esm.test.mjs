@@ -10,7 +10,7 @@ import { test } from "node:test";
 import { RainDiagram, renderSvg, renderText, validate } from "@inkandswitch/rain-diagram-wasm";
 import * as slim from "@inkandswitch/rain-diagram-wasm/slim";
 
-const SOURCE = "rain\nl: (Doc)-[edit]->(Alice)\n(Doc)-<revoke>-x[l]\n";
+const SOURCE = "rain\nl: (Doc)-[edit(Doc)]->(Alice)\n(Doc)-<revoke>-x[l]\n";
 
 test("import: ready to use, no init", () => {
   assert.equal(validate(SOURCE), undefined);

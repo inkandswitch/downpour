@@ -41,8 +41,8 @@
 //!
 //! let d = parse(
 //!     "rain
-//!      doc-alice: (Doc)-[edit]->(Alice)
-//!      (Alice)-[edit]->(Bob)
+//!      doc-alice: (Doc)-[edit(Doc)]->(Alice)
+//!      (Alice)-[edit(Doc)]->(Bob)
 //!      (Bob)=[[edit]]=>(Doc)
 //!      (Doc)-<revoke>-x[doc-alice]",
 //! )?;
@@ -875,8 +875,8 @@ mod tests {
     fn attenuates_to_what_the_issuer_holds() -> TestResult {
         let d = parse(
             "rain
-             (Doc)-[read]->(Alice)
-             (Alice)-[edit]->(Bob)",
+             (Doc)-[read(Doc)]->(Alice)
+             (Alice)-[edit(Doc)]->(Bob)",
         )?;
         assert_eq!(d.granted(ix(&d, 1)), Some(&Level::Read.into()));
         assert_eq!(
@@ -899,7 +899,7 @@ mod tests {
     fn derives_transitive_handles() -> TestResult {
         let d = parse(
             "rain
-             (Doc)-[edit]->(Team)
+             (Doc)-[edit(Doc)]->(Team)
              (Team)-[read(Team)]->(Alice)
              (Alice)-[edit(Doc)]->(Bob)",
         )?;
@@ -920,10 +920,10 @@ mod tests {
     fn revoking_downstream() -> TestResult {
         let d = parse(
             "rain
-             (Doc)-[edit]->(Alice)
-             (Alice)-[edit]->(Bob)
-             (Bob)-[read]->(Carol)
-             carol-dan: (Carol)-[read]->(Dan)
+             (Doc)-[edit(Doc)]->(Alice)
+             (Alice)-[edit(Doc)]->(Bob)
+             (Bob)-[read(Doc)]->(Carol)
+             carol-dan: (Carol)-[read(Doc)]->(Dan)
              (Alice)-<revoke>-x[carol-dan]",
         )?;
         let revocation = ix(&d, 4);
@@ -955,10 +955,10 @@ mod tests {
     fn revocation_is_retrocausal() -> TestResult {
         let d = parse(
             "rain
-             (Doc)-[admin]->(Alice)
-             (Alice)-[edit]->(Bob)
+             (Doc)-[admin(Doc)]->(Alice)
+             (Alice)-[edit(Doc)]->(Bob)
              (Bob)=[[edit]]=>(Doc)
-             bob-carol: (Bob)-[edit]->(Carol)
+             bob-carol: (Bob)-[edit(Doc)]->(Carol)
              (Carol)=[[edit]]=>(Doc)
              (Alice)-<revoke>-x[bob-carol]
              (Bob)=[[edit]]=>(Doc)",
@@ -993,10 +993,10 @@ mod tests {
     fn revoked_certificates_back_nothing_new() -> TestResult {
         let d = parse(
             "rain
-             (Doc)-[edit]->(Alice)
-             alice-bob: (Alice)-[read]->(Bob)
+             (Doc)-[edit(Doc)]->(Alice)
+             alice-bob: (Alice)-[read(Doc)]->(Bob)
              (Doc)-<revoke>-x[alice-bob]
-             (Bob)-[read]->(Carol)",
+             (Bob)-[read(Doc)]->(Carol)",
         )?;
         assert_eq!(statuses(&d).last(), Some(&Some(Status::Unauthorized)));
         Ok(())
@@ -1006,11 +1006,11 @@ mod tests {
     fn only_upstream_or_admins_can_revoke() -> TestResult {
         let d = parse(
             "rain
-             (Doc)-[edit]->(Alice)
-             alice-bob: (Alice)-[read]->(Bob)
-             (Doc)-[read]->(Dan)
+             (Doc)-[edit(Doc)]->(Alice)
+             alice-bob: (Alice)-[read(Doc)]->(Bob)
+             (Doc)-[read(Doc)]->(Dan)
              (Dan)-<revoke>-x[alice-bob]
-             (Doc)-[admin]->(Eve)
+             (Doc)-[admin(Doc)]->(Eve)
              (Eve)-<revoke>-x[alice-bob]",
         )?;
         let [.., dan, _, eve] = statuses(&d)[..] else {
@@ -1037,7 +1037,7 @@ mod tests {
     fn invoking_beyond_what_you_hold() -> TestResult {
         let d = parse(
             "rain
-             (Doc)-[read]->(Alice)
+             (Doc)-[read(Doc)]->(Alice)
              (Alice)=[[read]]=>(Doc)
              (Alice)=[[edit]]=>(Doc)",
         )?;
@@ -1060,8 +1060,8 @@ mod tests {
     fn reach_only_sees_the_past() -> TestResult {
         let d = parse(
             "rain
-             (Doc)-[read]->(Alice)
-             (Doc)-[edit]->(Alice)",
+             (Doc)-[read(Doc)]->(Alice)
+             (Doc)-[edit(Doc)]->(Alice)",
         )?;
         let alice = d.principal_by_key("alice").expect("Alice is in it");
         let level = |now| d.reach(alice, now).first().map(|r| r.ability.clone());
@@ -1075,12 +1075,12 @@ mod tests {
     fn reach_through_groups() -> TestResult {
         let d = parse(
             "certflow
-             (Thread 1)-[admin]->(Commenters)
-             (Commenters)-[admin]->(Alice)
+             (Thread 1)-[admin(Thread 1)]->(Commenters)
+             (Commenters)-[admin(Commenters)]->(Alice)
              (Alice)-[edit(Commenters)]->(Carol)
              (Alice)-[edit(Commenters)]->(Bob)
-             (Thread 2)-[admin]->(Commenters)
-             (Essay)-[admin]->(Alice)
+             (Thread 2)-[admin(Thread 2)]->(Commenters)
+             (Essay)-[admin(Essay)]->(Alice)
              (Alice)-[read(Essay)]->(Commenters)",
         )?;
         let bob = d
@@ -1157,7 +1157,7 @@ mod tests {
         let d = parse(
             "rain
              (Doc)-[/msg(Doc)]->(Alice)
-             (Doc)-[read]->(Alice)
+             (Doc)-[read(Doc)]->(Alice)
              (Alice)-[/crud(Doc)]->(Bob)",
         )?;
         assert_eq!(d.granted(ix(&d, 2)), None);
@@ -1174,7 +1174,7 @@ mod tests {
     fn levels_and_paths_dont_mix_along_a_chain() -> TestResult {
         let d = parse(
             "rain
-             (Doc)-[edit]->(Team)
+             (Doc)-[edit(Doc)]->(Team)
              (Team)-[/(Team)]->(Alice)
              (Alice)-[edit(Doc)]->(Bob)",
         )?;

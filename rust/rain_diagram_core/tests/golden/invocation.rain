@@ -1,9 +1,9 @@
 rain
 // Keyhive Lab Note #8 (https://www.inkandswitch.com/keyhive/notebook/08/), "Invocation": revocation voids an earlier edit
-(Doc)-[admin]->(Alice)
+(Doc)-[admin(Doc)]->(Alice)
 (Alice)-[edit(Doc)]->(Bob)
-(Bob)=[[edit]]=>(Doc)            : Bob edits
+(Bob)=[[edit]]=>(Doc)   : Bob edits
 bob-carol: (Bob)-[edit(Doc)]->(Carol)
-(Carol)=[[edit]]=>(Doc)          : Carol edits (void after the revocation)
+(Carol)=[[edit]]=>(Doc) : Carol edits (void after the revocation)
 (Alice)-<revoke>-x[bob-carol]
-(Bob)=[[edit]]=>(Doc)            : Bob edits again
+(Bob)=[[edit]]=>(Doc)   : Bob edits again

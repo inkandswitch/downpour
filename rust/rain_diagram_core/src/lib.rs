@@ -14,23 +14,22 @@
 //! rain                                    // or `certflow`
 //! title Revoking two hops downstream
 //!
-//! (Doc)-[edit]->(Alice)                   : The Doc grants Alice Edit
-//! (Alice)-[edit(Doc)]->(Bob)              : Alice passes Edit to Bob
-//! (Bob)=[[edit]]=>(Doc)                   : Bob edits the Doc
-//! (Bob)-[read]->(Carol)                   : Bob gives Carol Read
-//! cd: (Carol)-[read]->(Dan)               : Carol shares Read with Dan
-//! (Alice)-<revoke>-x[cd]                  : Alice revokes Carol→Dan
+//! (Doc)-[edit(Doc)]->(Alice)     : The Doc grants Alice Edit
+//! (Alice)-[edit(Doc)]->(Bob)     : Alice passes Edit to Bob
+//! (Bob)=[[edit]]=>(Doc)          : Bob edits the Doc
+//! (Bob)-[read(Doc)]->(Carol)     : Bob gives Carol Read
+//! cd: (Carol)-[read(Doc)]->(Dan) : Carol shares Read with Dan
+//! (Alice)-<revoke>-x[cd]         : Alice revokes Carol→Dan
 //! ```
 //!
 //! | Form                              | Meaning                                                    |
 //! |-----------------------------------|------------------------------------------------------------|
 //! | `(A)-[edit(S)]->(B)`              | A delegates Edit over S to B                               |
-//! | `(A)-[edit]->(B)`                 | Same, with S inferred (`admin`: A itself; else what A has) |
 //! | `(A)-[edit(S) via ta]->(B)`       | Route A's authority through certificate `ta`               |
 //! | `label: (A)-[…]->(B)`             | Label a certificate, so revocations and `via` can name it  |
 //! | `(B)=[[edit]]=>(S)`               | B uses its Edit authority on S                             |
 //! | `(A)-<revoke>-x[label]`           | A revokes the certificate `label`                          |
-//! | `(A)---[edit]->(B)`               | More dashes before the label slide it towards B (here ¾)   |
+//! | `(A)---[edit(S)]->(B)`            | More dashes before the label slide it towards B (here ¾)   |
 //! | `>>> A (P): note` … `<<< A`       | A captioned region, optionally in principal P's colour        |
 //! | `principals: A, B`                | Fix column order (`participant A, B` works too)            |
 //! | `title …`, `: note`, `// comment` | Annotations (`%%` comments work too)                      |
@@ -53,7 +52,7 @@
 //! ```
 //! let diagram = rain_diagram_core::parse(
 //!     "rain
-//!      (Doc)-[edit]->(Alice)
+//!      (Doc)-[edit(Doc)]->(Alice)
 //!      (Alice)=[[edit]]=>(Doc)",
 //! )?;
 //!

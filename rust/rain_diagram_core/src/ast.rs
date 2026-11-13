@@ -1,10 +1,9 @@
 //! Syntax tree for the textual notation, exactly as written.
 //!
-//! The AST keeps what the author wrote: omitted subjects stay omitted and
-//! certificate references stay names. That lets it print back out as the
-//! same source (see the [`Display`](fmt::Display) impls). Resolving names,
-//! inferring subjects, and checking references happens in
-//! [`crate::diagram`].
+//! The AST keeps what the author wrote: certificate references stay names.
+//! That lets it print back out as the same source (see the
+//! [`Display`](fmt::Display) impls). Resolving names and checking references
+//! happens in [`crate::diagram`].
 
 use crate::ability::Ability;
 use alloc::{string::String, vec::Vec};
@@ -179,8 +178,9 @@ pub struct Delegation {
     /// The access granted.
     pub ability: Ability,
 
-    /// What the access is over. Omitted means "obvious from context".
-    pub subject: Option<Name>,
+    /// What the access is over. Always written: `[edit(Doc)]`, or
+    /// `[admin(Team)]` for the issuer's own authority.
+    pub subject: Name,
 
     /// Certificates that carry the subject's authority to the issuer
     /// (transitive handles).
@@ -210,9 +210,7 @@ impl fmt::Display for Delegation {
         write_run(f, '-', before)?;
         write!(f, "[{}", self.ability)?;
 
-        if let Some(subject) = &self.subject {
-            write!(f, "({subject})")?;
-        }
+        write!(f, "({})", self.subject)?;
 
         if !self.via.is_empty() {
             f.write_str(" via ")?;
@@ -342,7 +340,7 @@ impl fmt::Display for Name {
     }
 }
 
-/// A certificate label, such as `cd` in `cd: (Carol)-[read]->(Dan)`.
+/// A certificate label, such as `cd` in `cd: (Carol)-[read(Doc)]->(Dan)`.
 ///
 /// Labels are letters, digits, `-`, `_`, and `.`.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -602,7 +600,7 @@ fn write_tail(f: &mut fmt::Formatter<'_>, note: Option<&Text>) -> fmt::Result {
 }
 
 /// Where a row's label sits along its arrow, written as the runs of dashes
-/// (`=` for an invocation) either side of it: `(Alice)---[edit]->(Bob)`
+/// (`=` for an invocation) either side of it: `(Alice)---[edit(Doc)]->(Bob)`
 /// puts it three quarters of the way to Bob. One each side is automatic
 /// placement, so a `Placement` is never 1:1.
 ///

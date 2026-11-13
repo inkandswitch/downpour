@@ -13,11 +13,11 @@ fn tag_with<'a>(svg: &'a str, needle: &str) -> Option<&'a str> {
 }
 
 const REVOCATION: &str = "rain
-(Doc)-[edit]->(Alice)
-(Alice)-[edit]->(Bob)
+(Doc)-[edit(Doc)]->(Alice)
+(Alice)-[edit(Doc)]->(Bob)
 (Bob)=[[edit]]=>(Doc)
-(Bob)-[read]->(Carol)
-carol-dan: (Carol)-[read]->(Dan)
+(Bob)-[read(Doc)]->(Carol)
+carol-dan: (Carol)-[read(Doc)]->(Dan)
 (Alice)-<revoke>-x[carol-dan]";
 
 #[test]
@@ -81,7 +81,7 @@ fn colours_follow_subjects_and_revocations_are_red() -> TestResult {
 fn void_and_unauthorized_are_marked() -> TestResult {
     let svg = parse(
         "rain
-         (Doc)-[admin]->(Alice)
+         (Doc)-[admin(Doc)]->(Alice)
          alice-bob: (Alice)-[edit(Doc)]->(Bob)
          (Bob)-[edit(Doc)]->(Carol)
          (Carol)=[[edit]]=>(Doc)
@@ -99,8 +99,8 @@ fn void_and_unauthorized_are_marked() -> TestResult {
 fn transitive_handles_are_drawn() -> TestResult {
     let svg = parse(
         "rain
-         (Doc)-[edit]->(Team)
-         (Team)-[admin]->(Alice)
+         (Doc)-[edit(Doc)]->(Team)
+         (Team)-[admin(Team)]->(Alice)
          (Alice)-[edit(Doc)]->(Bob)",
     )?
     .to_svg();
@@ -114,8 +114,9 @@ fn transitive_handles_are_drawn() -> TestResult {
 
 #[test]
 fn titles_and_notes_widen_the_picture() -> TestResult {
-    let plain = parse("rain\n(A)-[read]->(B)")?.to_svg();
-    let noted = parse("rain\ntitle T\n(A)-[read]->(B) : a rather long note about this")?.to_svg();
+    let plain = parse("rain\n(A)-[read(A)]->(B)")?.to_svg();
+    let noted =
+        parse("rain\ntitle T\n(A)-[read(A)]->(B) : a rather long note about this")?.to_svg();
     let width = |svg: &str| -> Option<f64> {
         let start = svg.find(r#"width=""#)? + 7;
         svg[start..start + svg[start..].find('"')?].parse().ok()
@@ -133,8 +134,8 @@ fn titles_and_notes_widen_the_picture() -> TestResult {
 fn roots_start_on_the_issuers_lifeline() -> TestResult {
     let svg = parse(
         "rain
-         (Doc)-[edit]->(Alice)
-         (Team)-[admin]->(Alice)",
+         (Doc)-[edit(Doc)]->(Alice)
+         (Team)-[admin(Team)]->(Alice)",
     )?
     .to_svg();
     assert_eq!(svg.matches(r#"<circle class="root""#).count(), 1);
@@ -200,9 +201,9 @@ fn certflow_powerlines_hop_between_certificates() -> TestResult {
 fn regions_are_hooked_boxes_in_both_notations() -> TestResult {
     let d = parse(
         "rain
-         (Doc)-[edit]->(Alice)
+         (Doc)-[edit(Doc)]->(Alice)
          >>> A: Alice <does> stuff
-         (Alice)-[edit]->(Bob)
+         (Alice)-[edit(Doc)]->(Bob)
          >>> B
          (Bob)=[[edit]]=>(Doc)
          <<< B
@@ -228,8 +229,8 @@ fn regions_are_hooked_boxes_in_both_notations() -> TestResult {
 fn regions_can_take_a_principals_colour() -> TestResult {
     let d = parse(
         "rain
-         (Doc)-[edit]->(Alice)
-         (Alice)-[edit]->(Bob)
+         (Doc)-[edit(Doc)]->(Alice)
+         (Alice)-[edit(Doc)]->(Bob)
          >>> A (Bob): Bob does stuff
          (Bob)=[[edit]]=>(Doc)
          <<< A",
@@ -245,7 +246,7 @@ fn regions_can_take_a_principals_colour() -> TestResult {
     );
 
     assert!(matches!(
-        parse("rain\n(A)-[read]->(B)\n>>> A (Zed)\n(B)-[read]->(C)\n<<< A"),
+        parse("rain\n(A)-[read(A)]->(B)\n>>> A (Zed)\n(B)-[read(B)]->(C)\n<<< A"),
         Err(rain_diagram_core::Error::Resolve(e))
             if matches!(e.kind(), rain_diagram_core::diagram::ResolveErrorKind::UnknownPrincipal(_))
     ));
@@ -258,11 +259,11 @@ fn regions_can_take_a_principals_colour() -> TestResult {
 fn handles_through_one_membership_never_overlap() -> TestResult {
     let svg = parse(
         "rain
-         (Doc)-[admin]->(Team)
-         (Team)-[admin]->(Eve)
+         (Doc)-[admin(Doc)]->(Team)
+         (Team)-[admin(Team)]->(Eve)
          (Eve)=[[edit]]=>(Doc)
          (Eve)=[[read]]=>(Doc)
-         doc-bob: (Doc)-[read]->(Bob)
+         doc-bob: (Doc)-[read(Doc)]->(Bob)
          (Eve)-<revoke>-x[doc-bob]",
     )?
     .to_rain_svg();
@@ -294,8 +295,8 @@ fn handles_through_one_membership_never_overlap() -> TestResult {
 fn late_authority_joins_on_the_members_lifeline() -> TestResult {
     let svg = parse(
         "rain
-         zoe-alice: (Zoe)-[admin]->(Alice)
-         (Doc)-[read]->(Zoe)
+         zoe-alice: (Zoe)-[admin(Zoe)]->(Alice)
+         (Doc)-[read(Doc)]->(Zoe)
          (Alice)-[read(Doc)]->(Bob)",
     )?
     .to_rain_svg();
@@ -325,8 +326,8 @@ fn late_authority_joins_on_the_members_lifeline() -> TestResult {
 /// the SVG and the text art.
 #[test]
 fn only_effective_revocations_strike_their_target() -> TestResult {
-    let effective = parse("rain\nab: (A)-[read]->(B)\n(A)-<revoke>-x[ab]")?;
-    let ineffective = parse("rain\nab: (A)-[read]->(B)\n(C)-<revoke>-x[ab]")?;
+    let effective = parse("rain\nab: (A)-[read(A)]->(B)\n(A)-<revoke>-x[ab]")?;
+    let ineffective = parse("rain\nab: (A)-[read(A)]->(B)\n(C)-<revoke>-x[ab]")?;
 
     let svg = effective.to_rain_svg();
     assert!(svg.contains(r#"<path class="cross""#), "{svg}");
@@ -371,10 +372,10 @@ fn tags_with<'a>(svg: &'a str, needle: &str) -> Vec<&'a str> {
 fn handles_sit_exactly_where_they_should() -> TestResult {
     let svg = parse(
         "rain
-         (Doc)-[admin]->(Team)
-         (Team)-[admin]->(Eve)
+         (Doc)-[admin(Doc)]->(Team)
+         (Team)-[admin(Team)]->(Eve)
          (Eve)=[[edit]]=>(Doc)
-         db: (Doc)-[read]->(Bob)
+         db: (Doc)-[read(Doc)]->(Bob)
          (Eve)-<revoke>-x[db]",
     )?
     .to_rain_svg();
@@ -422,8 +423,8 @@ fn handles_sit_exactly_where_they_should() -> TestResult {
 
     let late = parse(
         "rain
-         zoe-alice: (Zoe)-[admin]->(Alice)
-         (Doc)-[read]->(Zoe)
+         zoe-alice: (Zoe)-[admin(Zoe)]->(Alice)
+         (Doc)-[read(Doc)]->(Zoe)
          (Alice)-[read(Doc)]->(Bob)",
     )?
     .to_rain_svg();
@@ -453,7 +454,7 @@ fn handles_sit_exactly_where_they_should() -> TestResult {
 fn placed_revocations_route_around_their_diamond() -> TestResult {
     // The target's label is placed near C, so a diamond a fifth of the way
     // from A is well clear of both
-    let svg = parse("rain\nab: (A)------[read]->(C)\n(A)-<revoke>----x[ab]")?.to_rain_svg();
+    let svg = parse("rain\nab: (A)------[read(A)]->(C)\n(A)-<revoke>----x[ab]")?.to_rain_svg();
     let line = tag_with(&svg, r#"class="revocation""#).ok_or("line")?;
     let d = line
         .split(r#"d=""#)
@@ -486,8 +487,9 @@ fn placed_revocations_route_around_their_diamond() -> TestResult {
     assert!(cx < tx - 46.0, "{d}");
 
     // And mirrored: revoking from the right goes the other way round
-    let svg = parse("rain\nprincipals: C, B, A\nab: (A)------[read]->(C)\n(A)-<revoke>----x[ab]")?
-        .to_rain_svg();
+    let svg =
+        parse("rain\nprincipals: C, B, A\nab: (A)------[read(A)]->(C)\n(A)-<revoke>----x[ab]")?
+            .to_rain_svg();
     let line = tag_with(&svg, r#"class="revocation""#).ok_or("line")?;
     let d = line
         .split(r#"d=""#)
@@ -513,7 +515,7 @@ fn placed_revocations_route_around_their_diamond() -> TestResult {
 /// `innerHTML`, so any `<` would cut the stylesheet short.
 #[test]
 fn stylesheet_survives_inline_parsing() -> TestResult {
-    let svg = parse("rain\n(A)-[read]->(B)")?.to_svg();
+    let svg = parse("rain\n(A)-[read(A)]->(B)")?.to_svg();
     let css = svg
         .split("<style>")
         .nth(1)
@@ -521,5 +523,42 @@ fn stylesheet_survives_inline_parsing() -> TestResult {
         .unwrap_or_default();
     assert!(!css.is_empty());
     assert!(!css.contains('<'), "{css}");
+    Ok(())
+}
+
+/// Found by the scenario generator: an invocation sitting right under the
+/// handle its authority last passed through gets a straight drop, and it
+/// must start at that handle, not at the membership's label off to the side.
+#[test]
+fn straight_drops_start_at_their_handle() -> TestResult {
+    let d = parse(
+        "rain
+         c0: (Alice)-[read(Alice)]->(Doc)
+         c1: (Team)-[edit(Team)]---->(Doc)
+         c2: (Doc)-[read(Doc)]->(Team)
+         c3: (Doc)-[read(Bob)]->(Doc)
+         c4: (Alice)-[admin(Bob)]->(Bob)
+         (Alice)=[[edit]]=>(Alice)
+         c5: (Doc)-[relay(Doc)]->(Bob)
+         c6: (Bob)-[relay(Alice)]->(Doc)
+         (Bob)=[[relay]]=>(Bob)
+         c7: (Doc)-[relay(Team)]->(Alice)
+         c8: (Doc)-[edit(Doc)]->(Alice)
+         (Team)=[[relay]]====>(Alice)",
+    )?;
+    let svg = d.to_svg();
+    let drop = svg
+        .split("<path ")
+        .find(|p| p.contains(r#"data-to="11""#) && p.contains("powerline"))
+        .expect("the invocation is powered");
+    let d_attr = &drop[drop.find(r#" d="M"#).expect("a path") + 5..];
+    let coords: Vec<f64> = d_attr[..d_attr.find('"').expect("closed")]
+        .split(|c: char| !(c.is_ascii_digit() || c == '.'))
+        .filter_map(|n| n.parse().ok())
+        .collect();
+    assert!(
+        matches!(coords[..], [x1, _, x2, _] if (x1 - x2).abs() < 0.5),
+        "not a vertical line: {drop}"
+    );
     Ok(())
 }

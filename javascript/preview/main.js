@@ -7,14 +7,14 @@ import { splitter } from "./split.js";
 const BASIC = `rain
 title Basic Example
 
-(Doc)-[admin]->(Alice)           : The Doc grants Alice Admin
-(Alice)-[edit(Doc)]->(Bob)       : Alice passes Edit to Bob
-(Bob)=[[edit]]=>(Doc)            : Bob edits the Doc
+(Doc)-[admin(Doc)]->(Alice)    : The Doc grants Alice Admin
+(Alice)-[edit(Doc)]->(Bob)     : Alice passes Edit to Bob
+(Bob)=[[edit]]=>(Doc)          : Bob edits the Doc
 >>> C (Carol): Carol joins in
-bc: (Bob)-[edit]->(Carol)        : Bob gives Carol Edit
-(Carol)=[[edit]]=>(Doc)          : Carol edits the Doc
+bc: (Bob)-[edit(Doc)]->(Carol) : Bob gives Carol Edit
+(Carol)=[[edit]]=>(Doc)        : Carol edits the Doc
 <<< C
-(Alice)-<revoke>-x[bc]           : Alice revokes Bob→Carol
+(Alice)-<revoke>-x[bc]         : Alice revokes Bob→Carol
 `;
 
 const TOUR = `rain
@@ -35,31 +35,31 @@ principals: Doc, Alice, Bob, Carol, Dan, Team, Eve, Server
 // \`: note\` shown beside the row. Levels, most to least: admin 👑, edit ✏️,
 // read 👀, relay 📡. With no (subject), admin means "over myself" and any
 // other level passes on what the issuer already holds.
-(Doc)-[admin]->(Alice)           : The Doc grants Alice Admin
-(Alice)-[edit(Doc)]->(Bob)       : Alice passes Edit to Bob
+(Doc)-[admin(Doc)]->(Alice) : The Doc grants Alice Admin
+(Alice)-[edit(Doc)]->(Bob)  : Alice passes Edit to Bob
 
 // Regions group rows: \`>>> name (Principal): caption\` … \`<<< name\`. The
 // (Principal) is optional and gives the region that principal's colour.
 // In the preview, double-click a caption to edit it; drag an edge to resize.
 >>> A (Bob): Bob does stuff
 // An invocation: someone using their authority, (actor)=[[level]]=>(subject).
-(Bob)=[[edit]]=>(Doc)            : Bob edits the Doc
+(Bob)=[[edit]]=>(Doc)          : Bob edits the Doc
 // \`label:\` names a certificate so revocations and \`via\` can refer to it.
 // Only labelled certificates can be referred to; unlabelled ones need none.
-bc: (Bob)-[edit]->(Carol)        : Bob gives Carol Edit
-(Carol)=[[edit]]=>(Doc)          : Carol edits the Doc
+bc: (Bob)-[edit(Doc)]->(Carol) : Bob gives Carol Edit
+(Carol)=[[edit]]=>(Doc)        : Carol edits the Doc
 <<< A
 
-(Carol)-[read]->(Dan)            : Carol shares Read with Dan
+(Carol)-[read(Doc)]->(Dan) : Carol shares Read with Dan
 // More dashes on one side slide a row's label along its arrow: here one
 // before and two after put it a third of the way. One each is automatic.
 // In the preview, drag a label sideways to set it.
-(Dan)=[[read]]==>(Doc)           : Dan reads the Doc
+(Dan)=[[read]]==>(Doc)     : Dan reads the Doc
 
 // Groups: authority flows through membership. Eve reaches the Doc through
 // Team; the small circle on Team→Eve is the transitive handle.
-(Doc)-[read]->(Team)             : The Doc lets Team read it
-team-eve: (Team)-[admin]->(Eve)  : Eve joins Team
+(Doc)-[read(Doc)]->(Team)                 : The Doc lets Team read it
+team-eve: (Team)-[admin(Team)]->(Eve)     : Eve joins Team
 // \`via\` names the route explicitly (it's normally worked out for you).
 (Eve)-[relay(Doc) via team-eve]->(Server) : Eve lets a sync server relay it
 
@@ -69,7 +69,7 @@ team-eve: (Team)-[admin]->(Eve)  : Eve joins Team
 // label in the picture to see every caveat it's bound by.
 (Doc)-[/crud(Doc) where path = "/docs"]->(Dan)     : The Doc grants Dan CRUD under /docs
 (Dan)-[/crud/read(Doc) where size < 1MB]->(Server) : Dan narrows it to reads, adds a limit
-(Server)=[[/crud/read]]=>(Doc)                : The Server reads, bound by both caveats
+(Server)=[[/crud/read]]=>(Doc)                     : The Server reads, bound by both caveats
 
 // A revocation: (revoker)-<revoke>-x[label]. It's retroactive: everything
 // that relied on Bob→Carol goes void, even rows above this one. Drag the

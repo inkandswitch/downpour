@@ -19,8 +19,8 @@
 mod layout;
 
 use super::{
-    FONT, MARGIN, PILL, REVOKE, STYLE, caveat_text, colour, describe, escape, pill, status_class,
-    text_width, title_width,
+    FONT, MARGIN, PILL, REVOKE, STYLE, caveat_text, ceil, colour, describe, escape, pill,
+    status_class, text_width, title_width,
 };
 use crate::{
     authority::Authority,
@@ -207,7 +207,7 @@ impl<'a> Certflow<'a> {
                 (w.max(p.0 + s.radius()), h.max(p.1 + s.radius()))
             });
         let (width, height) = (
-            (width + MARGIN + self.frame).max(title_width(self.diagram)),
+            ceil((width + MARGIN + self.frame).max(title_width(self.diagram))),
             height + MARGIN + self.frame,
         );
 

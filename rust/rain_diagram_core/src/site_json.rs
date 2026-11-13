@@ -21,7 +21,7 @@ impl Diagram {
     /// Serialize to the [Keyhive Lab Notes'](https://www.inkandswitch.com/keyhive/notebook/08/) rain diagram JSON.
     ///
     /// ```
-    /// let diagram = rain_diagram_core::parse("rain\n(Doc)-[edit]->(Alice)")?;
+    /// let diagram = rain_diagram_core::parse("rain\n(Doc)-[edit(Doc)]->(Alice)")?;
     /// assert_eq!(
     ///     diagram.to_site_json()?,
     ///     r#"{"agents":[{"id":"doc","label":"Doc"},{"id":"alice","label":"Alice"}],"events":[{"id":"doc-alice","from":"doc","to":"alice","level":"edit"}]}"#

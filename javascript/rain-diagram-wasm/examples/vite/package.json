@@ -1,0 +1,16 @@
+{
+  "name": "rain-diagram-wasm-vite-example",
+  "private": true,
+  "description": "@inkandswitch/rain-diagram-wasm in a Vite app with no Wasm configuration; `nix run .#ci-vite` builds and loads it",
+  "type": "module",
+  "scripts": {
+    "build": "vite build",
+    "dev": "vite"
+  },
+  "dependencies": {
+    "@inkandswitch/rain-diagram-wasm": "file:../.."
+  },
+  "devDependencies": {
+    "vite": "^8.0.0"
+  }
+}

@@ -20,8 +20,8 @@
 //! - The dotted line at the bottom is "now".
 
 use super::{
-    FONT, MARGIN, PILL, REVOKE, STYLE, caveat_text, colour, describe, escape, index, note, pill,
-    status_class, text_width, title_width,
+    FONT, MARGIN, PILL, REVOKE, STYLE, caveat_text, ceil, colour, describe, escape, index, note,
+    pill, status_class, text_width, title_width,
 };
 use crate::{
     authority::Authority,
@@ -171,7 +171,9 @@ impl<'a> Svg<'a> {
             .filter_map(|e| note(&e.node))
             .map(text_width)
             .fold(0.0, f64::max);
-        let width = (notes_x + notes_width + MARGIN).max(title_width(d));
+        // Whole, so the viewBox (written without decimals) matches what's
+        // drawn against it, such as regions' right edges
+        let width = ceil((notes_x + notes_width + MARGIN).max(title_width(d)));
         let height = bottom + MARGIN / 2.0;
 
         let _ = write!(
@@ -627,7 +629,14 @@ impl<'a> Svg<'a> {
                     // Straight down into an invocation that sits under its
                     // power; arched otherwise
                     Event::Invoke(_) if (start.0 - to.x).abs() < 0.5 => {
-                        let (x, y1) = self.label(from).map_or(start, |p| p.bottom());
+                        // From the label's foot, or from the handle the
+                        // authority last passed through (it already sits on
+                        // the way down)
+                        let (x, y1) = if route.through().is_empty() {
+                            self.label(from).map_or(start, |p| p.bottom())
+                        } else {
+                            start
+                        };
                         self.line(Some(from), ix, (x, y1), to.top(), colour);
                     }
                     // Into the diamond's upper edge, on the near side

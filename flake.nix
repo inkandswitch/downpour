@@ -282,6 +282,17 @@
 
           # Build the npm package with wasm-bodge, then load it by name the way
           # consumers do (import, require, ./slim, ./iife)
+          # The package in a real Vite app, from a committed lockfile: build it
+          # with no Wasm configuration, then load the production build in
+          # headless Chromium and check the Wasm ran
+          ci-vite = mkCheckWith [pkgs.chromium] "ci-vite" ''
+            ${pkgs.lib.getExe bodge}
+            cd javascript/rain-diagram-wasm/examples/vite
+            npm ci --no-audit --no-fund
+            node node_modules/vite/bin/vite.js build
+            CHROMIUM=chromium node check.mjs
+          '';
+
           ci-package = mkCheck "ci-package" ''
             ${pkgs.lib.getExe bodge}
             node --test javascript/rain-diagram-wasm/package-test/*.test.*

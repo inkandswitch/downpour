@@ -18,7 +18,7 @@
 //! The source certificate sends it over the top when the next holder's
 //! lane is beyond its arrow, and out of the bottom otherwise, for example
 //! to a revoker's `o` handle. Invocations sit under the certificate that
-//! powers them. Labels placed by hand (`(A)---[edit]->(B)`) slide along
+//! powers them. Labels placed by hand (`(A)---[edit(S)]->(B)`) slide along
 //! their arrow instead, clear of the lifelines they cross. A revocation's
 //! line ends under its target, and a `✗` marks the target.
 
@@ -34,7 +34,7 @@ impl Diagram {
     /// Draw as Unicode text art.
     ///
     /// ```
-    /// let diagram = rain_diagram_core::parse("rain\n(Doc)-[edit]->(Alice)")?;
+    /// let diagram = rain_diagram_core::parse("rain\n(Doc)-[edit(Doc)]->(Alice)")?;
     /// assert_eq!(
     ///     diagram.to_text(),
     ///     " (Doc)       (Alice)
@@ -459,7 +459,7 @@ impl<'a> Layout<'a> {
     }
 
     /// A delegation arrow: `├──[edit]───▶│` or `│◀───[edit]──┤`, with the
-    /// label slid along it if placed by hand (`(A)---[edit]->(B)`).
+    /// label slid along it if placed by hand (`(A)---[edit(S)]->(B)`).
     fn arrow(
         &mut self,
         from: isize,

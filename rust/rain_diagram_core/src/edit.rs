@@ -10,17 +10,17 @@
 //! use rain_diagram_core::edit::move_statement;
 //!
 //! let source = "rain
-//! (Doc)-[edit]->(Alice)
-//! (Doc)-[read]->(Bob)     // independent of Alice's
-//! (Alice)-[edit]->(Carol)";
+//! (Doc)-[edit(Doc)]->(Alice)
+//! (Doc)-[read(Doc)]->(Bob)     // independent of Alice's
+//! (Alice)-[edit(Doc)]->(Carol)";
 //!
 //! // Bob's certificate can go last; Carol's can't go above Alice's
 //! assert_eq!(
 //!     move_statement(source, 1, 2)?,
 //!     "rain
-//! (Doc)-[edit]->(Alice)
-//! (Alice)-[edit]->(Carol)
-//! (Doc)-[read]->(Bob)     // independent of Alice's"
+//! (Doc)-[edit(Doc)]->(Alice)
+//! (Alice)-[edit(Doc)]->(Carol)
+//! (Doc)-[read(Doc)]->(Bob)     // independent of Alice's"
 //! );
 //! assert!(move_statement(source, 2, 0).is_err());
 //! # Ok::<(), rain_diagram_core::edit::MoveError>(())
@@ -146,10 +146,10 @@ pub fn move_statement(source: &str, from: usize, to: usize) -> Result<String, Mo
 /// ```
 /// use rain_diagram_core::edit::set_region_note;
 ///
-/// let source = "rain\n  >>> A (Bob): Bob does stuff  // why\n(Bob)-[read]->(Carol)\n<<< A";
+/// let source = "rain\n  >>> A (Bob): Bob does stuff  // why\n(Bob)-[read(Bob)]->(Carol)\n<<< A";
 /// assert_eq!(
 ///     set_region_note(source, "A", "Bob and Carol")?,
-///     "rain\n  >>> A (Bob): Bob and Carol  // why\n(Bob)-[read]->(Carol)\n<<< A"
+///     "rain\n  >>> A (Bob): Bob and Carol  // why\n(Bob)-[read(Bob)]->(Carol)\n<<< A"
 /// );
 /// # Ok::<(), rain_diagram_core::edit::NoteError>(())
 /// ```
@@ -198,9 +198,9 @@ pub fn set_region_note(source: &str, region: &str, note: &str) -> Result<String,
 /// ```
 /// use rain_diagram_core::edit::set_position;
 ///
-/// let source = "rain\n(Doc)-[edit]->(Alice)           : granted\n";
+/// let source = "rain\n(Doc)-[edit(Doc)]->(Alice)           : granted\n";
 /// let placed = set_position(source, 0, Some(75))?;
-/// assert_eq!(placed, "rain\n(Doc)---[edit]->(Alice)         : granted\n");
+/// assert_eq!(placed, "rain\n(Doc)---[edit(Doc)]->(Alice)         : granted\n");
 /// assert_eq!(set_position(&placed, 0, None)?, source);
 /// # Ok::<(), rain_diagram_core::edit::PositionError>(())
 /// ```
@@ -296,10 +296,10 @@ pub enum PositionError {
 /// ```
 /// use rain_diagram_core::edit::set_region_rows;
 ///
-/// let source = "rain\n>>> A: here\n(A)-[read]->(B)\n<<< A\n(B)-[read]->(C)\n";
+/// let source = "rain\n>>> A: here\n(A)-[read(A)]->(B)\n<<< A\n(B)-[read(B)]->(C)\n";
 /// assert_eq!(
 ///     set_region_rows(source, "A", 0, 1)?,
-///     "rain\n>>> A: here\n(A)-[read]->(B)\n(B)-[read]->(C)\n<<< A\n"
+///     "rain\n>>> A: here\n(A)-[read(A)]->(B)\n(B)-[read(B)]->(C)\n<<< A\n"
 /// );
 /// # Ok::<(), rain_diagram_core::edit::RegionError>(())
 /// ```
@@ -372,12 +372,12 @@ pub fn set_region_rows(
 /// ```
 /// use rain_diagram_core::edit::{DeleteError, delete_statement};
 ///
-/// let source = "rain\nda: (Doc)-[edit]->(Alice)\n>>> A: gone soon\n(Doc)-<revoke>-x[da]\n<<< A\n";
+/// let source = "rain\nda: (Doc)-[edit(Doc)]->(Alice)\n>>> A: gone soon\n(Doc)-<revoke>-x[da]\n<<< A\n";
 /// assert!(matches!(
 ///     delete_statement(source, 0),
 ///     Err(DeleteError::Revoked { by: 1, .. })
 /// ));
-/// assert_eq!(delete_statement(source, 1)?, "rain\nda: (Doc)-[edit]->(Alice)\n");
+/// assert_eq!(delete_statement(source, 1)?, "rain\nda: (Doc)-[edit(Doc)]->(Alice)\n");
 /// # Ok::<(), DeleteError>(())
 /// ```
 ///
@@ -478,7 +478,7 @@ fn close_line(lines: &[&str], open: usize, id: &str) -> Option<usize> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum NewStatement {
     /// `issuer` delegates to `audience`, over `subject` or, if that's
-    /// `None`, over what it holds at that moment.
+    /// `None`, over the issuer itself for Admin and otherwise what it holds.
     Delegate {
         /// The issuer's column.
         issuer: usize,
@@ -514,17 +514,16 @@ pub enum NewStatement {
 /// earlier than just after its target), returning the new source and where
 /// the statement landed.
 ///
-/// A delegation is over its `subject`, or else over the subject its issuer
-/// holds most strongly at that moment (or itself, if it holds nothing). It's
-/// written short (`[edit]`) when
-/// inference picks the same subject and in full (`[edit(Doc)]`) otherwise. A
+/// A delegation is over its `subject`; without one, Admin is over the
+/// issuer itself (membership), and anything else over the subject the issuer
+/// holds most strongly at that moment (or itself, if it holds nothing). A
 /// revocation names its target by label, first labelling the target if it
 /// has none (with its `issuer-audience` name, if that is free).
 ///
 /// ```
 /// use rain_diagram_core::{edit::{NewStatement, insert_statement}, level::Level};
 ///
-/// let source = "rain\nprincipals: Doc, Alice, Bob\n(Doc)-[edit]->(Alice)\n";
+/// let source = "rain\nprincipals: Doc, Alice, Bob\n(Doc)-[edit(Doc)]->(Alice)\n";
 /// // Alice drags to Bob: she passes on Read over the Doc she holds
 /// let (out, at) = insert_statement(
 ///     source,
@@ -534,7 +533,7 @@ pub enum NewStatement {
 /// assert_eq!(at, 1);
 /// assert_eq!(
 ///     out,
-///     "rain\nprincipals: Doc, Alice, Bob\n(Doc)-[edit]->(Alice)\n(Alice)-[read]->(Bob)\n"
+///     "rain\nprincipals: Doc, Alice, Bob\n(Doc)-[edit(Doc)]->(Alice)\n(Alice)-[read(Doc)]->(Bob)\n"
 /// );
 /// # Ok::<(), rain_diagram_core::edit::InsertError>(())
 /// ```
@@ -575,7 +574,11 @@ pub fn insert_statement(
                 .and_then(|i| d.event_ix(i))
                 .map(|now| d.reach(crate::diagram::PrincipalIx::new(issuer), now))
                 .unwrap_or_default();
+            // With no subject chosen: Admin is membership, over the issuer
+            // itself; anything else passes on what the issuer holds, or its
+            // own authority if it holds nothing
             let subject = chosen
+                .or_else(|| (ability.level() == Some(crate::level::Level::Admin)).then_some(from))
                 .or_else(|| {
                     held.iter()
                         .max_by_key(|r| {
@@ -588,27 +591,8 @@ pub fn insert_statement(
                         .and_then(|r| d.principal(r.subject))
                         .map(|p| p.name().as_str())
                 })
-                // Command paths always name their subject: the issuer itself, if
-                // it holds nothing else
-                .or_else(|| ability.level().is_none().then_some(from));
-
-            let short = alloc::format!("({from})-[{ability}]->({to})");
-            let line = match subject {
-                None => short,
-                Some(subject) => {
-                    // Short if inference lands on the same subject
-                    let full = alloc::format!("({from})-[{ability}({subject})]->({to})");
-                    let infers_same = crate::parse(&insert_line(&text, &d, at, &short))
-                        .ok()
-                        .and_then(|after| {
-                            let ix = after.event_ix(at)?;
-                            let cert = after.cert(ix)?;
-                            Some(after.principal(cert.subject)?.name().as_str() == subject)
-                        })
-                        .unwrap_or(false);
-                    if infers_same { short } else { full }
-                }
-            };
+                .unwrap_or(from);
+            let line = alloc::format!("({from})-[{ability}({subject})]->({to})");
             (line, at)
         }
 
@@ -704,10 +688,10 @@ pub enum InsertError {
 /// ```
 /// use rain_diagram_core::edit::move_principal;
 ///
-/// let source = "rain\n(Doc)-[edit]->(Alice)\n(Alice)-[edit]->(Bob)\n";
+/// let source = "rain\n(Doc)-[edit(Doc)]->(Alice)\n(Alice)-[edit(Doc)]->(Bob)\n";
 /// assert_eq!(
 ///     move_principal(source, 2, 0)?,
-///     "rain\nprincipals: Bob, Doc, Alice\n(Doc)-[edit]->(Alice)\n(Alice)-[edit]->(Bob)\n"
+///     "rain\nprincipals: Bob, Doc, Alice\n(Doc)-[edit(Doc)]->(Alice)\n(Alice)-[edit(Doc)]->(Bob)\n"
 /// );
 /// # Ok::<(), rain_diagram_core::edit::PrincipalError>(())
 /// ```
@@ -895,11 +879,11 @@ mod tests {
     use testresult::TestResult;
 
     const SOURCE: &str = "rain
-(Doc)-[edit]->(Alice)            : 1
+(Doc)-[edit(Doc)]->(Alice)            : 1
 alice-bob: (Alice)-[edit(Doc)]->(Bob) : 2
 >>> A: Bob does stuff
 (Bob)=[[edit]]=>(Doc)            : 3
-(Doc)-[read]->(Carol)            : 4
+(Doc)-[read(Doc)]->(Carol)            : 4
 <<< A
 (Alice)-<revoke>-x[alice-bob]    : 5
 ";
@@ -925,8 +909,8 @@ alice-bob: (Alice)-[edit(Doc)]->(Bob) : 2
         assert_eq!(
             move_statement(SOURCE, 3, 0)?,
             "rain
-(Doc)-[read]->(Carol)            : 4
-(Doc)-[edit]->(Alice)            : 1
+(Doc)-[read(Doc)]->(Carol)            : 4
+(Doc)-[edit(Doc)]->(Alice)            : 1
 alice-bob: (Alice)-[edit(Doc)]->(Bob) : 2
 >>> A: Bob does stuff
 (Bob)=[[edit]]=>(Doc)            : 3
@@ -939,12 +923,12 @@ alice-bob: (Alice)-[edit(Doc)]->(Bob) : 2
         assert_eq!(
             move_statement(SOURCE, 4, 3)?,
             "rain
-(Doc)-[edit]->(Alice)            : 1
+(Doc)-[edit(Doc)]->(Alice)            : 1
 alice-bob: (Alice)-[edit(Doc)]->(Bob) : 2
 >>> A: Bob does stuff
 (Bob)=[[edit]]=>(Doc)            : 3
 (Alice)-<revoke>-x[alice-bob]    : 5
-(Doc)-[read]->(Carol)            : 4
+(Doc)-[read(Doc)]->(Carol)            : 4
 <<< A
 "
         );
@@ -956,7 +940,7 @@ alice-bob: (Alice)-[edit(Doc)]->(Bob) : 2
         use crate::level::Level;
 
         // Alice holds two subjects, so the subject is written out
-        let source = "rain\nprincipals: Essay, Commenters, Alice, Bob\n(Essay)-[admin]->(Alice)\n(Commenters)-[edit]->(Alice)\n";
+        let source = "rain\nprincipals: Essay, Commenters, Alice, Bob\n(Essay)-[admin(Essay)]->(Alice)\n(Commenters)-[edit(Commenters)]->(Alice)\n";
         let (out, _) = insert_statement(
             source,
             2,
@@ -987,19 +971,19 @@ alice-bob: (Alice)-[edit(Doc)]->(Bob) : 2
 
         // A revocation dropped above its target goes just below it, and an
         // unlabelled target gets labelled first, by its display name
-        let source = "rain\n(Alice)-[read]->(Bob)\n(Alice)-[edit]->(Bob)\n";
+        let source = "rain\n(Alice)-[read(Alice)]->(Bob)\n(Alice)-[edit(Alice)]->(Bob)\n";
         let (out, at) = insert_statement(source, 0, NewStatement::Revoke { by: 0, target: 1 })?;
         assert_eq!(at, 2);
         assert_eq!(
             out,
-            "rain\n(Alice)-[read]->(Bob)\nalice-bob: (Alice)-[edit]->(Bob)\n(Alice)-<revoke>-x[alice-bob]\n"
+            "rain\n(Alice)-[read(Alice)]->(Bob)\nalice-bob: (Alice)-[edit(Alice)]->(Bob)\n(Alice)-<revoke>-x[alice-bob]\n"
         );
 
         // …or by the first free `cN` when another certificate has that label
-        let taken = "rain\nalice-bob: (Alice)-[read]->(Bob)\n(Alice)-[edit]->(Bob)\n";
+        let taken = "rain\nalice-bob: (Alice)-[read(Alice)]->(Bob)\n(Alice)-[edit(Alice)]->(Bob)\n";
         let (out, _) = insert_statement(taken, 2, NewStatement::Revoke { by: 0, target: 1 })?;
         assert!(
-            out.ends_with("c1: (Alice)-[edit]->(Bob)\n(Alice)-<revoke>-x[c1]\n"),
+            out.ends_with("c1: (Alice)-[edit(Alice)]->(Bob)\n(Alice)-<revoke>-x[c1]\n"),
             "{out}"
         );
 
@@ -1014,17 +998,17 @@ alice-bob: (Alice)-[edit(Doc)]->(Bob) : 2
         )?;
         assert_eq!(
             out,
-            "rain\n(Alice)-[read]->(Bob)\n(Bob)=[[read]]=>(Alice)\n(Alice)-[edit]->(Bob)\n"
+            "rain\n(Alice)-[read(Alice)]->(Bob)\n(Bob)=[[read]]=>(Alice)\n(Alice)-[edit(Alice)]->(Bob)\n"
         );
         Ok(())
     }
 
     #[test]
     fn moving_principals_rewrites_the_order_in_place() -> TestResult {
-        let source = "rain\ntitle T\n  participant Doc, Alice  // order\n(Doc)-[edit]->(Alice)\n(Alice)-[edit]->(Bob)";
+        let source = "rain\ntitle T\n  participant Doc, Alice  // order\n(Doc)-[edit(Doc)]->(Alice)\n(Alice)-[edit(Doc)]->(Bob)";
         assert_eq!(
             move_principal(source, 0, 2)?,
-            "rain\ntitle T\n  principals: Alice, Bob, Doc  // order\n(Doc)-[edit]->(Alice)\n(Alice)-[edit]->(Bob)"
+            "rain\ntitle T\n  principals: Alice, Bob, Doc  // order\n(Doc)-[edit(Doc)]->(Alice)\n(Alice)-[edit(Doc)]->(Bob)"
         );
         assert!(matches!(
             move_principal(source, 0, 9),
@@ -1049,7 +1033,7 @@ alice-bob: (Alice)-[edit(Doc)]->(Bob) : 2
         ));
         // Moving Bob's edit out would leave region A holding only Carol's
         // certificate, which is fine; moving both out would empty it
-        let lonely = "rain\n(Doc)-[edit]->(Alice)\n>>> A\n(Doc)-[read]->(Bob)\n<<< A";
+        let lonely = "rain\n(Doc)-[edit(Doc)]->(Alice)\n>>> A\n(Doc)-[read(Doc)]->(Bob)\n<<< A";
         assert!(matches!(
             move_statement(lonely, 1, 0),
             Err(MoveError::Result(_))
@@ -1061,12 +1045,12 @@ alice-bob: (Alice)-[edit(Doc)]->(Bob) : 2
         // Statement 3 is not alone in A; statement 2 would be once 3 is gone
         assert_eq!(
             delete_statement(SOURCE, 3)?,
-            SOURCE.replace("(Doc)-[read]->(Carol)            : 4\n", "")
+            SOURCE.replace("(Doc)-[read(Doc)]->(Carol)            : 4\n", "")
         );
-        let lonely = "rain\n(Doc)-[edit]->(Alice)\n  >>> A (Alice): hi  // note\n(Alice)-[read]->(Bob)\n<<< A\n(Doc)-[read]->(Bob)";
+        let lonely = "rain\n(Doc)-[edit(Doc)]->(Alice)\n  >>> A (Alice): hi  // note\n(Alice)-[read(Doc)]->(Bob)\n<<< A\n(Doc)-[read(Doc)]->(Bob)";
         assert_eq!(
             delete_statement(lonely, 1)?,
-            "rain\n(Doc)-[edit]->(Alice)\n(Doc)-[read]->(Bob)"
+            "rain\n(Doc)-[edit(Doc)]->(Alice)\n(Doc)-[read(Doc)]->(Bob)"
         );
         Ok(())
     }
@@ -1086,10 +1070,10 @@ alice-bob: (Alice)-[edit(Doc)]->(Bob) : 2
         ));
         // Two Doc→Alice certificates; only the second is labelled, to be
         // revoked by. The first can go, the second can't
-        let shared = "rain\n(Doc)-[read]->(Alice)\nc1: (Doc)-[edit]->(Alice)\n(Doc)-<revoke>-x[c1]";
+        let shared = "rain\n(Doc)-[read(Doc)]->(Alice)\nc1: (Doc)-[edit(Doc)]->(Alice)\n(Doc)-<revoke>-x[c1]";
         assert_eq!(
             delete_statement(shared, 0).as_deref(),
-            Ok("rain\nc1: (Doc)-[edit]->(Alice)\n(Doc)-<revoke>-x[c1]")
+            Ok("rain\nc1: (Doc)-[edit(Doc)]->(Alice)\n(Doc)-<revoke>-x[c1]")
         );
         assert!(matches!(
             delete_statement(shared, 1),
@@ -1099,7 +1083,7 @@ alice-bob: (Alice)-[edit(Doc)]->(Bob) : 2
 
     #[test]
     fn every_percentage_gets_a_short_arrow_within_five_percent() -> TestResult {
-        let source = "rain\n(Doc)-[edit]->(Alice)    // why\n(Alice)=[[edit]]=>(Doc)";
+        let source = "rain\n(Doc)-[edit(Doc)]->(Alice)    // why\n(Alice)=[[edit]]=>(Doc)";
         for percent in 0..=100_u16 {
             for statement in 0..2 {
                 let placed = set_position(source, statement, Some(percent))?;

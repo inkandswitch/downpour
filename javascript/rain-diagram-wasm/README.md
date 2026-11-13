@@ -9,8 +9,8 @@ The rain and certflow diagram core (parser, authority analysis, renderers, and s
 import { renderSvg, renderText, RainDiagram } from "@inkandswitch/rain-diagram-wasm";
 
 const source = `rain
-da: (Doc)-[edit]->(Alice)
-(Alice)-[edit]->(Bob)
+da: (Doc)-[edit(Doc)]->(Alice)
+(Alice)-[edit(Doc)]->(Bob)
 (Doc)-<revoke>-x[da]`;
 
 console.log(renderText(source));          // Unicode text art
@@ -48,7 +48,7 @@ Problems are thrown as `Error`s. A source that doesn't parse gives a message sta
 
 | Where | How | Checked |
 |---|---|---|
-| Vite 8+ | Nothing to set up: the wasm is emitted as its own asset | ✓ Vite 8.3.8, build and dev server |
+| Vite 8+ | Nothing to set up: the wasm is emitted as its own asset | ✓ Vite 8.3.8: [`examples/vite/`](examples/vite/) is built and loaded in CI (`nix run .#ci-vite`) |
 | Vite 7 and older | Add the package to `optimizeDeps.exclude` | from wasm-bodge's docs |
 | webpack 5.83+ | Nothing to set up | from wasm-bodge's docs |
 | webpack before 5.83 | Enable `experiments.topLevelAwait` | from wasm-bodge's docs |

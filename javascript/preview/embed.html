@@ -20,24 +20,24 @@
   <h2>Revocation (<a href="https://www.inkandswitch.com/keyhive/notebook/08/">Keyhive Lab Note #8</a>)</h2>
   <rain-diagram><script type="text/rain">
     rain
-    (Doc)-[edit]->(Alice)            : The Doc grants Alice Edit
-    (Alice)-[edit]->(Bob)            : Alice passes Edit to Bob
-    (Bob)=[[edit]]=>(Doc)            : Bob edits the Doc
-    (Bob)-[read]->(Carol)            : Bob gives Carol Read
-    carol-dan: (Carol)-[read]->(Dan) : Carol shares Read with Dan
-    (Alice)-<revoke>-x[carol-dan]    : Alice revokes Carol→Dan
+    (Doc)-[edit(Doc)]->(Alice)            : The Doc grants Alice Edit
+    (Alice)-[edit(Doc)]->(Bob)            : Alice passes Edit to Bob
+    (Bob)=[[edit]]=>(Doc)                 : Bob edits the Doc
+    (Bob)-[read(Doc)]->(Carol)            : Bob gives Carol Read
+    carol-dan: (Carol)-[read(Doc)]->(Dan) : Carol shares Read with Dan
+    (Alice)-<revoke>-x[carol-dan]         : Alice revokes Carol→Dan
   </script></rain-diagram>
 
   <h2>An essay with comment threads (<a href="https://www.inkandswitch.com/keyhive/notebook/07/">Keyhive Lab Note #7</a>)</h2>
   <rain-diagram>
     rain
-    (Thread 1)-[admin]->(Commenters)          : Thread 1 is created
-    (Commenters)-[admin]->(Alice)             : Alice creates Commenters
-    (Alice)-[edit(Commenters)]->(Carol)       : Alice adds Carol
-    (Alice)-[edit(Commenters)]->(Bob)         : Alice adds Bob
-    (Thread 2)-[admin]->(Commenters)          : Thread 2 is created
-    (Essay)-[admin]->(Alice)                  : The Essay grants Alice Admin
-    (Alice)-[read(Essay)]->(Commenters)       : Commenters may read the Essay
+    (Thread 1)-[admin(Thread 1)]->(Commenters) : Thread 1 is created
+    (Commenters)-[admin(Commenters)]->(Alice)  : Alice creates Commenters
+    (Alice)-[edit(Commenters)]->(Carol)        : Alice adds Carol
+    (Alice)-[edit(Commenters)]->(Bob)          : Alice adds Bob
+    (Thread 2)-[admin(Thread 2)]->(Commenters) : Thread 2 is created
+    (Essay)-[admin(Essay)]->(Alice)            : The Essay grants Alice Admin
+    (Alice)-[read(Essay)]->(Commenters)        : Commenters may read the Essay
   </rain-diagram>
 
   <script type="module" src="../rain-diagram/rain-diagram.js"></script>

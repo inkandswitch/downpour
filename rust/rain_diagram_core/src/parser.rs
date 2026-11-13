@@ -10,7 +10,7 @@
 //! line        = directive | statement
 //! directive   = "title" text | "participant" name { "," name }
 //! statement   = [ cert-id ":" ] ( delegate | invoke | revoke ) [ ":" text ]
-//! delegate    = principal "-[" ability [ principal ] [ "via" cert-id { "," cert-id } ] [ "where" caveat ] "]->" principal
+//! delegate    = principal "-[" ability principal [ "via" cert-id { "," cert-id } ] [ "where" caveat ] "]->" principal
 //! invoke      = principal "=[[" ability "]]=>" principal
 //! ability     = level | command
 //! level       = "admin" | "edit" | "read" | "relay" | emoji
@@ -19,8 +19,9 @@
 //! principal   = "(" name ")"
 //! ```
 //!
-//! A command-path delegation must name its subject (checked when resolving,
-//! since it's a rule about meaning, not shape); only levels may leave it out.
+//! A delegation always names its subject, the principal in brackets after
+//! the ability: `[edit(Doc)]`, or `[admin(Team)]` to pass on the issuer's
+//! own authority (group membership).
 //!
 //! Comments run to the end of the line: `//` (at the start of a line or
 //! after a space, so `https://` in a note is safe) or `%%`, as in Mermaid.
@@ -43,7 +44,7 @@ use thiserror::Error;
 /// ```
 /// use rain_diagram_core::{ast::Kind, parser};
 ///
-/// let doc = parser::document("certflow\n(Carol)-[admin]->(Alice)\n")?;
+/// let doc = parser::document("certflow\n(Carol)-[admin(Carol)]->(Alice)\n")?;
 /// assert_eq!(doc.kind, Kind::Certflow);
 /// assert_eq!(doc.statements.len(), 1);
 /// # Ok::<(), parser::ParseError>(())
@@ -273,11 +274,12 @@ fn statement(c: &mut Cursor<'_>) -> Result<Statement, ParseError> {
             let ability = ability(c)?;
 
             c.skip_ws();
-            let subject = if c.rest().starts_with('(') {
-                Some(principal(c)?)
-            } else {
-                None
-            };
+            if !c.rest().starts_with('(') {
+                return Err(c.error_here(ParseErrorKind::Expected(
+                    "the subject after the ability, as in `[edit(Doc)]`",
+                )));
+            }
+            let subject = principal(c)?;
 
             let via = if c.eat_word("via") {
                 let mut ids = Vec::from([cert_id(c)?]);
@@ -684,7 +686,7 @@ mod tests {
     fn delegation_forms() -> TestResult {
         let parsed = statements(
             "rain
-             (Doc)-[edit]->(Alice)
+             (Doc)-[edit(Doc)]->(Alice)
              cd: (Carol)-[ read ( Doc ) ]->( Dan ) : shares Read
              (Alice)-[edit(Doc) via ta, x.1]->(Bob)",
         )?;
@@ -696,7 +698,7 @@ mod tests {
                     id: None,
                     issuer: name("Doc"),
                     ability: Level::Edit.into(),
-                    subject: None,
+                    subject: name("Doc"),
                     via: Vec::new(),
                     caveat: None,
                     audience: name("Alice"),
@@ -707,7 +709,7 @@ mod tests {
                     id: Some(CertId::new("cd")?),
                     issuer: name("Carol"),
                     ability: Level::Read.into(),
-                    subject: Some(name("Doc")),
+                    subject: name("Doc"),
                     via: Vec::new(),
                     caveat: None,
                     audience: name("Dan"),
@@ -718,7 +720,7 @@ mod tests {
                     id: None,
                     issuer: name("Alice"),
                     ability: Level::Edit.into(),
-                    subject: Some(name("Doc")),
+                    subject: name("Doc"),
                     via: Vec::from([CertId::new("ta")?, CertId::new("x.1")?]),
                     caveat: None,
                     audience: name("Bob"),
@@ -744,7 +746,7 @@ mod tests {
                     id: None,
                     issuer: name("Alice"),
                     ability: "/crud/read-only".parse()?,
-                    subject: Some(name("Doc")),
+                    subject: name("Doc"),
                     via: Vec::from([CertId::new("ta")?]),
                     caveat: Some(Caveat::new("path = \"/a(b)\" & n < 3")?),
                     audience: name("Bob"),
@@ -771,15 +773,15 @@ mod tests {
     fn bad_commands_and_caveats() {
         let kind = |src: &str| document(src).map_err(|e| e.kind().clone()).err();
         assert!(matches!(
-            kind("rain\n(A)-[/crud/]->(B)"),
+            kind("rain\n(A)-[/crud/(A)]->(B)"),
             Some(ParseErrorKind::Command(_))
         ));
         assert!(matches!(
-            kind("rain\n(A)-[edit where ]->(B)"),
+            kind("rain\n(A)-[edit(A) where ]->(B)"),
             Some(ParseErrorKind::Caveat(_))
         ));
         assert!(matches!(
-            kind("rain\n(A)-[edit where x[0] ]->(B)"),
+            kind("rain\n(A)-[edit(A) where x[0] ]->(B)"),
             Some(ParseErrorKind::Caveat(InvalidCaveat::Bracket('[')))
         ));
     }
@@ -819,8 +821,8 @@ mod tests {
             "// a whole-line comment
              rain   // after the header
              %% Mermaid style works too
-             (A)-[read]->(B) : see https://example.com/x // but this is a comment
-             (B)-[read]->(C)//not a comment marker without a space, so this is a bad name",
+             (A)-[read(A)]->(B) : see https://example.com/x // but this is a comment
+             (B)-[read(B)]->(C)//not a comment marker without a space, so this is a bad name",
         );
         assert!(
             doc.is_err(),
@@ -831,7 +833,7 @@ mod tests {
             "// a whole-line comment
              rain   // after the header
              %% Mermaid style works too
-             (A)-[read]->(B) : see https://example.com/x // but this is a comment",
+             (A)-[read(A)]->(B) : see https://example.com/x // but this is a comment",
         )?;
         let note = match doc.statements.first().map(|s| &s.node) {
             Some(Statement::Delegate(d)) => d.note.as_ref().map(Text::as_str),
@@ -848,7 +850,7 @@ mod tests {
     #[test]
     fn positions() -> TestResult {
         let parsed = statements(
-            "rain\n(A)---[read]->(B) : note\n(B)=[[read]]===>(A)\n(A)--<revoke>--x[a-b]\n(A)-[read]->(B)",
+            "rain\n(A)---[read(A)]->(B) : note\n(B)=[[read]]===>(A)\n(A)--<revoke>--x[a-b]\n(A)-[read(A)]->(B)",
         )?;
         let runs: Vec<_> = parsed
             .iter()
@@ -861,13 +863,13 @@ mod tests {
             .collect();
         assert_eq!(runs, [Some((3, 1)), Some((1, 3)), Some((2, 2)), None]);
 
-        let long = alloc::format!("rain\n(A)-[read]{}>(B)", "-".repeat(256));
+        let long = alloc::format!("rain\n(A)-[read(A)]{}>(B)", "-".repeat(256));
         for (source, problem) in [
-            ("rain\n(A)-[read]>(B)", ">"),
+            ("rain\n(A)-[read(A)]>(B)", ">"),
             ("rain\n(A)=[[read]]>(B)", ">"),
             ("rain\n(A)--(B)", "("),
             ("rain\n(A)-<revoke>x[a-b]", "x"),
-            (long.as_str(), &long[15..271]),
+            (long.as_str(), &long[18..274]),
         ] {
             let span = document(source).err().map(|e| e.span());
             assert_eq!(
@@ -887,13 +889,13 @@ mod tests {
             "participants: Doc, Bob",
             "participant Doc, Bob",
         ] {
-            let doc = document(&format!("rain\n{header}\n(Bob)-[read]->(Doc)"))?;
+            let doc = document(&format!("rain\n{header}\n(Bob)-[read(Bob)]->(Doc)"))?;
             let order: Vec<_> = doc.participants.iter().map(|p| p.node.as_str()).collect();
             assert_eq!(order, ["Doc", "Bob"], "{header}");
         }
 
         // A statement labelled `principals` is still a statement
-        let doc = document("rain\nprincipals: (Doc)-[read]->(Bob)")?;
+        let doc = document("rain\nprincipals: (Doc)-[read(Doc)]->(Bob)")?;
         assert!(doc.participants.is_empty());
         assert_eq!(doc.statements.len(), 1);
         Ok(())
@@ -942,7 +944,7 @@ mod tests {
             ("rain\n(Doc)-[write]->(Alice)", "write"),
             ("rain\nparticipant Doc,  Bad(x , Ok\n", "Bad(x"),
             ("rain\n(Doc)→(Alice)", "→"),
-            ("rain\n(Doc)-[edit]->(Alice) trailing", "t"),
+            ("rain\n(Doc)-[edit(Doc)]->(Alice) trailing", "t"),
         ];
         for (source, expected) in cases {
             let span = document(source).err().map(|e| e.span());
@@ -968,11 +970,11 @@ mod tests {
     fn regions() -> TestResult {
         let source = "rain
 >>> A: Bob does stuff
-(A)-[read]->(B)
+(A)-[read(A)]->(B)
 >>> B
 (B)=[[read]]=>(A)
 <<< A
-(B)-[read]->(C)
+(B)-[read(A)]->(C)
 <<< B";
         let doc = document(source)?;
         let regions: Vec<_> = doc
@@ -1006,7 +1008,7 @@ mod tests {
     #[test]
     fn region_colours() -> TestResult {
         let doc = document(
-            "rain\n>>> A (Bob): Bob does stuff\n(A)-[read]->(Bob)\n<<< A\n>>> B (Comment Thread 1)\n(A)-[read]->(B)\n<<< B",
+            "rain\n>>> A (Bob): Bob does stuff\n(A)-[read(A)]->(Bob)\n<<< A\n>>> B (Comment Thread 1)\n(A)-[read(A)]->(B)\n<<< B",
         )?;
         let regions: Vec<_> = doc
             .regions
@@ -1026,7 +1028,7 @@ mod tests {
             ]
         );
 
-        let source = "rain\n>>> A then\n(A)-[read]->(B)\n<<< A";
+        let source = "rain\n>>> A then\n(A)-[read(A)]->(B)\n<<< A";
         let at = document(source).err().map(|e| covered(source, e.span()));
         assert_eq!(at, Some("t"));
         Ok(())
@@ -1035,15 +1037,19 @@ mod tests {
     #[test]
     fn region_errors_point_at_the_line() {
         let cases = [
-            ("rain\n>>> A\n(A)-[read]->(B)", ">>> A", "never closed"),
-            ("rain\n(A)-[read]->(B)\n<<< A", "<<< A", "no region called"),
+            ("rain\n>>> A\n(A)-[read(A)]->(B)", ">>> A", "never closed"),
             (
-                "rain\n>>> A\n<<< A\n(A)-[read]->(B)",
+                "rain\n(A)-[read(A)]->(B)\n<<< A",
+                "<<< A",
+                "no region called",
+            ),
+            (
+                "rain\n>>> A\n<<< A\n(A)-[read(A)]->(B)",
                 "<<< A",
                 "doesn't contain",
             ),
             (
-                "rain\n>>> A\n(A)-[read]->(B)\n<<< A\n>>> A\n(A)-[read]->(C)\n<<< A",
+                "rain\n>>> A\n(A)-[read(A)]->(B)\n<<< A\n>>> A\n(A)-[read(A)]->(C)\n<<< A",
                 ">>> A",
                 "already a region",
             ),

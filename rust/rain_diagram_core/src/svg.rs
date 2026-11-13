@@ -33,7 +33,7 @@ impl Diagram {
     /// Draw as a standalone SVG document, in the notation the header names.
     ///
     /// ```
-    /// let diagram = rain_diagram_core::parse("rain\n(Doc)-[edit]->(Alice)")?;
+    /// let diagram = rain_diagram_core::parse("rain\n(Doc)-[edit(Doc)]->(Alice)")?;
     /// let svg = diagram.to_svg();
     /// assert!(svg.starts_with("<svg"));
     /// assert!(svg.contains(r#"data-cert="doc-alice""#));
@@ -59,7 +59,7 @@ impl Diagram {
     /// ```
     /// let d = rain_diagram_core::parse(
     ///     "rain
-    ///      doc-alice: (Doc)-[edit]->(Alice)
+    ///      doc-alice: (Doc)-[edit(Doc)]->(Alice)
     ///      (Doc)-<revoke>-x[doc-alice]",
     /// )?;
     /// // Before the revocation, the certificate is still valid

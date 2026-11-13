@@ -12,7 +12,7 @@ const pkg = new URL("../pkg/", import.meta.url);
 const wasm = await import(new URL("rain_diagram_wasm.js", pkg));
 wasm.initSync({ module: fs.readFileSync(new URL("rain_diagram_wasm_bg.wasm", pkg)) });
 
-const SOURCE = "rain\nl: (Doc)-[edit]->(Alice)\n(Alice)-[edit]->(Bob)\n(Doc)-<revoke>-x[l]\n";
+const SOURCE = "rain\nl: (Doc)-[edit(Doc)]->(Alice)\n(Alice)-[edit(Doc)]->(Bob)\n(Doc)-<revoke>-x[l]\n";
 
 /** Assert `f` throws an `Error` whose message matches `pattern`. */
 const throwsMatching = (f, pattern) => assert.throws(f, (e) => e instanceof Error && pattern.test(e.message));
@@ -42,27 +42,27 @@ describe("one-shot functions", () => {
 describe("edits", () => {
   test("setPosition writes dashes, and undefined puts it back", () => {
     const placed = wasm.setPosition(SOURCE, 1, 75);
-    assert.match(placed, /\(Alice\)---\[edit\]->\(Bob\)/);
+    assert.match(placed, /\(Alice\)---\[edit\(Doc\)\]->\(Bob\)/);
     assert.equal(wasm.setPosition(placed, 1, undefined), SOURCE);
   });
 
   test("moveStatement moves within range and refuses outside it", () => {
     assert.equal(
       wasm.moveStatement(SOURCE, 1, 2),
-      "rain\nl: (Doc)-[edit]->(Alice)\n(Doc)-<revoke>-x[l]\n(Alice)-[edit]->(Bob)\n",
+      "rain\nl: (Doc)-[edit(Doc)]->(Alice)\n(Doc)-<revoke>-x[l]\n(Alice)-[edit(Doc)]->(Bob)\n",
     );
     throwsMatching(() => wasm.moveStatement(SOURCE, 2, 0), /can only move to rows/);
   });
 
   test("deleteStatement deletes, but not what a revocation names", () => {
-    assert.equal(wasm.deleteStatement(SOURCE, 2), "rain\nl: (Doc)-[edit]->(Alice)\n(Alice)-[edit]->(Bob)\n");
+    assert.equal(wasm.deleteStatement(SOURCE, 2), "rain\nl: (Doc)-[edit(Doc)]->(Alice)\n(Alice)-[edit(Doc)]->(Bob)\n");
     throwsMatching(() => wasm.deleteStatement(SOURCE, 0), /revokes statement 0; delete that first/);
   });
 
   test("insertStatement adds each kind, and refuses unknown kinds and levels", () => {
-    assert.match(wasm.insertStatement(SOURCE, 3, "delegate", 2, 0, "read"), /\(Bob\)-\[read\(Doc\)\]->\(Doc\)|\(Bob\)-\[read\]->\(Doc\)/);
+    assert.match(wasm.insertStatement(SOURCE, 3, "delegate", 2, 0, "read"), /\(Bob\)-\[read\(Bob\)\]->\(Doc\)/);
     assert.match(wasm.insertStatement(SOURCE, 1, "invoke", 1, 0, "edit"), /\(Alice\)=\[\[edit\]\]=>\(Doc\)/);
-    assert.match(wasm.insertStatement(SOURCE, 3, "revoke", 0, 1, ""), /alice-bob: \(Alice\)-\[edit\]->\(Bob\)[\s\S]*x\[alice-bob\]/);
+    assert.match(wasm.insertStatement(SOURCE, 3, "revoke", 0, 1, ""), /alice-bob: \(Alice\)-\[edit\(Doc\)\]->\(Bob\)[\s\S]*x\[alice-bob\]/);
     // An explicit subject: Alice passes on authority over herself, not Doc
     assert.match(wasm.insertStatement(SOURCE, 1, "delegate", 1, 2, "read", 1), /\(Alice\)-\[read\(Alice\)\]->\(Bob\)/);
     assert.match(wasm.insertStatement(SOURCE, 1, "delegate", 1, 2, "/crud", 0), /\(Alice\)-\[\/crud\(Doc\)\]->\(Bob\)/);
@@ -77,9 +77,9 @@ describe("edits", () => {
   });
 
   test("region notes and rows", () => {
-    const regioned = "rain\n>>> R: old\n(A)-[read]->(B)\n<<< R\n(B)-[read]->(C)\n";
+    const regioned = "rain\n>>> R: old\n(A)-[read(A)]->(B)\n<<< R\n(B)-[read(A)]->(C)\n";
     assert.match(wasm.setRegionNote(regioned, "R", "new"), />>> R: new/);
-    assert.equal(wasm.setRegionRows(regioned, "R", 0, 1), "rain\n>>> R: old\n(A)-[read]->(B)\n(B)-[read]->(C)\n<<< R\n");
+    assert.equal(wasm.setRegionRows(regioned, "R", 0, 1), "rain\n>>> R: old\n(A)-[read(A)]->(B)\n(B)-[read(A)]->(C)\n<<< R\n");
     throwsMatching(() => wasm.setRegionNote(regioned, "Z", "x"), /no region called `Z`/);
     throwsMatching(() => wasm.setRegionNote(regioned, "R", "a // b"), /comment marker/);
   });
@@ -103,7 +103,7 @@ describe("RainDiagram", () => {
   });
 
   test("queries", () => {
-    const d = new wasm.RainDiagram("rain\n(Doc)-[edit]->(Alice)\n(Alice)-[read]->(Bob)\n");
+    const d = new wasm.RainDiagram("rain\n(Doc)-[edit(Doc)]->(Alice)\n(Alice)-[read(Doc)]->(Bob)\n");
     try {
       // Bob's own route: the certificate he holds (Doc→Alice powers it, but
       // isn't on his route)
@@ -163,7 +163,7 @@ describe("the JS boundary", () => {
     throwsMatching(() => wasm.deleteStatement(SOURCE, NaN), /^statement must be a whole number ≥ 0, not NaN$/);
     throwsMatching(() => wasm.insertStatement(SOURCE, Infinity, "invoke", 0, 1, "read"), /^at must be a whole number/);
     throwsMatching(() => wasm.movePrincipal(SOURCE, 0, -2), /^to must be a whole number/);
-    throwsMatching(() => wasm.setRegionRows("rain\n>>> R\n(A)-[read]->(B)\n<<< R", "R", 0.5, 0), /^first must be a whole number/);
+    throwsMatching(() => wasm.setRegionRows("rain\n>>> R\n(A)-[read(A)]->(B)\n<<< R", "R", 0.5, 0), /^first must be a whole number/);
   });
 
   test("class methods check their numbers too", () => {
@@ -185,7 +185,7 @@ describe("the JS boundary", () => {
   });
 
   test("reach accepts a display name as well as a key", () => {
-    const d = new wasm.RainDiagram("rain\n(Doc)-[edit]->(Alice)\n");
+    const d = new wasm.RainDiagram("rain\n(Doc)-[edit(Doc)]->(Alice)\n");
     try {
       assert.deepEqual(JSON.parse(d.reach("Alice")), JSON.parse(d.reach("alice")));
       assert.notDeepEqual(JSON.parse(d.reach("Alice")).subjects, []);

@@ -1,6 +1,6 @@
 rain
 title Biscuit: each block appends a check
-(Service)-[/(Service)]->(Alice)                                       : the authority block
-(Alice)-[/(Service) where check if time($t), $t < 2026-12-01]->(Bob)  : attenuation block 1
-(Bob)-[/(Service) where check if operation("read")]->(Carol)          : attenuation block 2
-(Carol)=[[/]]=>(Service)                                              : must pass both checks
+(Service)-[/(Service)]->(Alice)                                      : the authority block
+(Alice)-[/(Service) where check if time($t), $t < 2026-12-01]->(Bob) : attenuation block 1
+(Bob)-[/(Service) where check if operation("read")]->(Carol)         : attenuation block 2
+(Carol)=[[/]]=>(Service)                                             : must pass both checks
