@@ -56,6 +56,10 @@ struct Svg<'a> {
     /// Transitive handles, drawn last so certificate boxes don't cover them.
     handles: String,
 
+    /// Each membership's handles so far, by colour: routes of one colour
+    /// share a handle, and each new colour gets the next bead along.
+    beads: Vec<(EventIx, &'static str)>,
+
     /// How many events are above the "now" line.
     happened: usize,
 }
@@ -82,8 +86,11 @@ impl Pill {
 
     /// Where a transitive handle sits: on the certificate box itself, on the
     /// edge facing the audience (as in [Keyhive Lab Note #8](https://www.inkandswitch.com/keyhive/notebook/08/)'s "Admin○→").
-    fn handle(&self) -> (f64, f64) {
-        (self.x + self.dir * self.half, self.y)
+    /// Later beads (`n` > 0) string out along the arrow from there.
+    fn handle(&self, n: usize) -> (f64, f64) {
+        #[allow(clippy::cast_precision_loss, reason = "a handful of beads")]
+        let along = n as f64 * (2.0 * HANDLE + 2.0);
+        (self.x + self.dir * (self.half + along), self.y)
     }
 }
 
@@ -102,6 +109,7 @@ impl<'a> Svg<'a> {
             out: String::new(),
             labels: Vec::new(),
             handles: String::new(),
+            beads: Vec::new(),
             happened: diagram.events().len(),
         }
     }
@@ -487,6 +495,22 @@ impl<'a> Svg<'a> {
         text
     }
 
+    /// Which bead on membership `ix` a `colour` route uses, and whether it
+    /// is new (so not yet drawn).
+    fn bead(&mut self, ix: EventIx, colour: &'static str) -> (usize, bool) {
+        let mine: Vec<&str> = self
+            .beads
+            .iter()
+            .filter(|(at, _)| *at == ix)
+            .map(|&(_, c)| c)
+            .collect();
+        if let Some(n) = mine.iter().position(|&c| c == colour) {
+            return (n, false);
+        }
+        self.beads.push((ix, colour));
+        (mine.len(), true)
+    }
+
     fn label(&self, ix: EventIx) -> Option<Pill> {
         self.labels.get(ix.index()).copied().flatten()
     }
@@ -513,13 +537,16 @@ impl<'a> Svg<'a> {
                     let (Some(start), Some(h)) = (exit, self.label(handle)) else {
                         continue;
                     };
-                    let (hx, hy) = h.handle();
+                    let (n, new) = self.bead(handle, colour);
+                    let (hx, hy) = h.handle(n);
                     self.arch(Some(from), handle, start, (hx, hy - HANDLE), colour);
-                    let _ = write!(
-                        self.handles,
-                        r#"<circle class="handle" cx="{hx:.1}" cy="{hy:.1}" r="{HANDLE}" stroke="{colour}" data-event="{}"/>"#,
-                        handle.index()
-                    );
+                    if new {
+                        let _ = write!(
+                            self.handles,
+                            r#"<circle class="handle" cx="{hx:.1}" cy="{hy:.1}" r="{HANDLE}" stroke="{colour}" data-event="{}"/>"#,
+                            handle.index()
+                        );
+                    }
                     exit = Some((hx, hy - HANDLE));
                     from = handle;
                 }

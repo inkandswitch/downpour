@@ -11,7 +11,7 @@
 //! rendered either way. The header picks the default:
 //!
 //! ```text
-//! rain                                    %% or `certflow`
+//! rain                                    // or `certflow`
 //! title Revoking two hops downstream
 //!
 //! (Doc)-[edit]->(Alice)                   : The Doc grants Alice Edit

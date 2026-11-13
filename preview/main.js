@@ -1,6 +1,6 @@
 import init, { diagnostics, renderSvg, renderText, toSiteJson } from "/packages/rain-diagram/pkg/rain_diagram_wasm.js";
 import "/packages/rain-diagram/rain-diagram.js";
-import { PALETTE, highlight } from "./highlight.js";
+import { PALETTE, commentStart, highlight } from "./highlight.js";
 import { History } from "./history.js";
 import { splitter } from "./split.js";
 
@@ -157,7 +157,10 @@ for (const tab of document.querySelectorAll("[data-format]")) {
 const header = () =>
   source.value
     .split("\n")
-    .map((line) => line.split("%%")[0].trim())
+    .map((line) => {
+      const comment = commentStart(line);
+      return (comment === -1 ? line : line.slice(0, comment)).trim();
+    })
     .find(Boolean) === "certflow"
     ? "certflow"
     : "rain";

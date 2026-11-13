@@ -1,5 +1,5 @@
 rain
-%% Directions and placements the notebook example never draws
+// Directions and placements the Lab Note example never draws
 participant Doc, Alice, Bob, Zoé
 (Zoé)-[admin(Zoé)]->(Bob)        : leftward root
 (Bob)-[edit(Zoé)]->(Alice)         : leftward feeding leftward: over the top

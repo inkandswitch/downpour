@@ -101,8 +101,6 @@ const PALETTE: [&str; 8] = [
 
 const REVOKE: &str = "#d33";
 const FONT: f64 = 13.0;
-/// Average advance of the UI font at [`FONT`], for sizing boxes.
-const CHAR: f64 = 7.4;
 const MARGIN: f64 = 24.0;
 const PILL: f64 = 22.0;
 
@@ -271,8 +269,45 @@ const fn index(n: usize) -> f64 {
     n as f64
 }
 
+/// Roughly how wide `text` sets in the UI font at [`FONT`], for sizing
+/// boxes. There are no font metrics here (the SVG is drawn by whatever
+/// font the viewer has), so this sorts characters into width classes that
+/// hold across common sans-serifs, erring wide so text stays inside its box.
 fn text_width(text: &str) -> f64 {
-    index(text.chars().count()) * CHAR
+    text.chars().map(advance).sum::<f64>() * FONT
+}
+
+/// One character's advance, in ems.
+const fn advance(c: char) -> f64 {
+    match c {
+        // Combining marks, variation selectors (as in `✏️`), and joiners
+        '\u{0300}'..='\u{036f}' | '\u{200b}'..='\u{200f}' | '\u{fe00}'..='\u{fe0f}' => 0.0,
+        ' ' | '.' | ',' | ':' | ';' | '\'' | '|' | '!' | 'i' | 'j' | 'l' | 'I' => 0.3,
+        '(' | ')' | '[' | ']' | 'f' | 't' | 'r' | '-' => 0.38,
+        'm' | 'w' | 'M' | 'W' | '@' | '%' => 0.85,
+        'A'..='Z' => 0.66,
+        c if c.is_ascii() => 0.56,
+        c if wide(c) => 1.05,
+        // Other scripts (accented Latin, Greek, Cyrillic, Arabic, …)
+        _ => 0.62,
+    }
+}
+
+/// East Asian wide and fullwidth characters, and emoji: about an em each.
+const fn wide(c: char) -> bool {
+    matches!(
+        c as u32,
+        0x1100..=0x115f          // Hangul Jamo
+        | 0x2600..=0x27bf        // Symbols and dingbats (☀, ✏, ✂)
+        | 0x2e80..=0xa4cf        // CJK radicals through Yi
+        | 0xac00..=0xd7a3        // Hangul syllables
+        | 0xf900..=0xfaff        // CJK compatibility ideographs
+        | 0xfe30..=0xfe4f        // CJK compatibility forms
+        | 0xff00..=0xff60        // Fullwidth forms
+        | 0xffe0..=0xffe6
+        | 0x1f000..=0x1faff      // Emoji and pictographs
+        | 0x20000..=0x3fffd // CJK extensions
+    )
 }
 
 /// Escape text for XML content and attribute values.
@@ -295,4 +330,32 @@ fn escape(text: &str) -> String {
 /// `📡 Relay`.
 fn level_label(level: crate::level::Level) -> String {
     format!("{} {}", level.emoji(), level.name())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{FONT, text_width};
+
+    #[test]
+    fn wide_scripts_take_about_twice_the_room() {
+        let latin = text_width("Alice");
+        let cjk = text_width("爱丽丝的文");
+        assert!(cjk > 1.6 * latin, "{cjk} vs {latin}");
+        assert!(text_width("김민준") > text_width("Kim"));
+    }
+
+    #[test]
+    fn invisible_characters_take_none() {
+        // U+FE0F only asks for the emoji presentation of ✏
+        assert!((text_width("✏\u{fe0f}") - text_width("✏")).abs() < f64::EPSILON);
+        assert!((text_width("e\u{301}") - text_width("e")).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn narrow_and_wide_latin_differ() {
+        assert!(text_width("WWW") > 2.0 * text_width("iii"));
+        // An ordinary name stays near the old 0.57em average
+        let per_char = text_width("Carol") / 5.0 / FONT;
+        assert!((0.45..0.65).contains(&per_char), "{per_char}");
+    }
 }

@@ -1,5 +1,5 @@
 rain
-%% Regions: nested, captioned, brackets down the right of the grid
+// Regions: nested, captioned, brackets down the right of the grid
 (Doc)-[edit]->(Alice)            : The Doc grants Alice Edit
 (Alice)-[edit(Doc)]->(Bob)       : Alice passes Edit to Bob
 >>> A: Bob does stuff

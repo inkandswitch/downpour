@@ -137,7 +137,8 @@ impl Scenario {
         };
 
         let mut lines: Vec<String> = Vec::new();
-        let mut certs = 0_u16;
+        // Each certificate's subject, by label number
+        let mut subjects: Vec<usize> = Vec::new();
         for (n, step) in self.steps.iter().enumerate() {
             match *step {
                 Step::Delegate {
@@ -146,17 +147,26 @@ impl Scenario {
                     subject,
                     level,
                 } => {
-                    let (issuer, audience) = (pick(issuer), pick(audience));
+                    // Half the time, pass on something already received, so
+                    // chains (and so transitive routes and revocation
+                    // fallout) form rather than mostly unauthorised one-offs
+                    let received = grants.get(usize::from(issuer & 0x7f) % grants.len().max(1));
+                    let issuer = match received {
+                        Some(&(holder, _)) if issuer & 0x80 != 0 => holder,
+                        _ => pick(issuer),
+                    };
+                    let audience = pick(audience);
                     let subject = aim(&grants, issuer, subject);
                     lines.push(format!(
-                        "c{certs}: ({})-[{}({})]->({}) : step {n}",
+                        "c{}: ({})-[{}({})]->({}) : step {n}",
+                        subjects.len(),
                         CAST[issuer],
                         level.keyword(),
                         CAST[subject],
                         CAST[audience]
                     ));
                     grants.push((audience, subject));
-                    certs += 1;
+                    subjects.push(subject);
                 }
                 Step::Invoke { by, on, level } => {
                     let by = pick(by);
@@ -168,12 +178,23 @@ impl Scenario {
                         CAST[on]
                     ));
                 }
-                Step::Revoke { by, target } if certs > 0 => {
-                    lines.push(format!(
-                        "({})-<revoke>-x[c{}]",
-                        CAST[pick(by)],
-                        u16::from(target) % certs
-                    ));
+                Step::Revoke { by, target } if !subjects.is_empty() => {
+                    // Void scenarios need an effective revocation of a
+                    // certificate something later relies on. So mostly
+                    // aim upstream (the first half), and mostly have the
+                    // subject revoke, since it always may
+                    let upstream = if by & 1 == 0 {
+                        subjects.len().div_ceil(2)
+                    } else {
+                        subjects.len()
+                    };
+                    let target = usize::from(target) % upstream;
+                    let by = if (by >> 1) % 4 < 3 {
+                        subjects[target]
+                    } else {
+                        pick(by)
+                    };
+                    lines.push(format!("({})-<revoke>-x[c{target}]", CAST[by]));
                 }
                 Step::Revoke { .. } => {}
             }

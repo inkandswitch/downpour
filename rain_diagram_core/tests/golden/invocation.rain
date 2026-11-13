@@ -1,5 +1,5 @@
 rain
-%% Keyhive notebook 08, "Invocation": revocation voids an earlier edit
+// Keyhive Lab Note #8 (https://www.inkandswitch.com/keyhive/notebook/08/), "Invocation": revocation voids an earlier edit
 (Doc)-[admin]->(Alice)
 (Alice)-[edit(Doc)]->(Bob)
 (Bob)=[[edit]]=>(Doc)            : Bob edits

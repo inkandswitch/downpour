@@ -60,6 +60,21 @@ struct Layout<'a> {
     lifelines: Vec<isize>,
     labels: Vec<Option<Label>>,
     canvas: Canvas,
+
+    /// Powerlines' vertical runs so far, so later ones find their own lane.
+    lanes: Vec<Lane>,
+}
+
+/// A powerline's vertical run: column `x` from line `top` to `bottom`.
+#[derive(Debug, Clone, Copy)]
+struct Lane {
+    x: isize,
+    top: isize,
+    bottom: isize,
+
+    /// Where the powerline set off. Runs from one source may share a
+    /// column, since a shared trunk that splits reads correctly.
+    source: (isize, isize),
 }
 
 /// Where an event's label (or box) landed.
@@ -131,7 +146,67 @@ impl<'a> Layout<'a> {
                 .collect(),
             labels: Vec::with_capacity(diagram.events().len()),
             canvas: Canvas::default(),
+            lanes: Vec::new(),
         }
+    }
+
+    /// A column for a vertical run over lines `top..=bottom` from `source`,
+    /// as near `preferred` as possible: not on a lifeline, not through
+    /// another event's label, and not along another source's run (where the
+    /// two would merge into one line). Falls back to `preferred`.
+    fn lane(&self, preferred: isize, top: isize, bottom: isize, source: (isize, isize)) -> isize {
+        // A trunk this source already runs into a label may carry on through
+        // it: that reads as one line feeding both
+        let feeds = |label: &Label, x: isize| {
+            self.lanes
+                .iter()
+                .any(|l| l.source == source && l.x == x && l.bottom == label.line - 1)
+        };
+        let free = |x: isize| {
+            // Off lifelines, and off the arrowheads and junctions beside them
+            !self.lifelines.iter().any(|&l| (l - x).abs() <= 1)
+                && !self
+                    .labels
+                    .iter()
+                    .flatten()
+                    .any(|l| top < l.line && l.line < bottom && l.covers(x) && !feeds(l, x))
+                && !self.lanes.iter().any(|lane| {
+                    lane.x == x && lane.source != source && lane.top <= bottom && top <= lane.bottom
+                })
+        };
+        (0..=4)
+            .flat_map(|d| [preferred + 2 * d, preferred - 2 * d])
+            .find(|&x| free(x))
+            .unwrap_or(preferred)
+    }
+
+    /// Draw a powerline from `start` that drops at `jog` to its lane, runs
+    /// down to `bottom`, then crosses to `x` and continues to `end`. Without
+    /// a conflict the lane is `preferred` and this is the plain path.
+    fn run(
+        &mut self,
+        start: (isize, isize),
+        jog: isize,
+        preferred: isize,
+        bottom: isize,
+        (x, end): (isize, isize),
+    ) {
+        let lane = self.lane(preferred, jog, bottom, start);
+        self.lanes.push(Lane {
+            x: lane,
+            top: jog,
+            bottom,
+            source: start,
+        });
+        let path = [
+            start,
+            (start.0, jog),
+            (lane, jog),
+            (lane, bottom),
+            (x, bottom),
+            (x, end),
+        ];
+        self.canvas.path(&path, Stroke::Dashed);
     }
 
     fn draw(mut self) -> String {
@@ -494,13 +569,13 @@ impl<'a> Layout<'a> {
     /// A powerline out of a transitive handle's `o` at `(hx, hline)`: down
     /// from it, then across and into wherever it's going.
     fn connect_point(&mut self, (hx, hline): (isize, isize), to: Port) {
-        let path = match to {
+        let start = (hx, hline);
+        match to {
             Port::Above { x, line } | Port::Drop { x, line } => {
-                [(hx, hline), (hx, line - 1), (x, line - 1), (x, line)]
+                self.run(start, hline + 1, hx, line - 1, (x, line));
             }
-            Port::Side { x, line } => [(hx, hline), (hx, line), (x, line), (x, line)],
-        };
-        self.canvas.path(&path, Stroke::Dashed);
+            Port::Side { x, line } => self.run(start, hline + 1, hx, line, (x, line)),
+        }
     }
 
     fn connect(&mut self, from: EventIx, to: Port) {
@@ -508,37 +583,28 @@ impl<'a> Layout<'a> {
             return;
         };
         let line = source.line;
+        let below = line + 1;
 
-        let path = match to {
+        match to {
+            // Over the top, then down the target's own column
             Port::Above { x, line: target } if x < source.span.0 || x > source.span.1 => {
                 let exit = source.top(x);
-                [(exit, line), (exit, line - 1), (x, line - 1), (x, target)]
+                self.run((exit, line), line - 1, x, target - 1, (x, target));
             }
             Port::Above { x, line: target } => {
                 let exit = source.bottom;
-                [
-                    (exit, line),
-                    (exit, target - 1),
-                    (x, target - 1),
-                    (x, target),
-                ]
+                self.run((exit, line), below, exit, target - 1, (x, target));
             }
             Port::Drop { x, line: target } => {
                 let exit = source.input;
-                [
-                    (exit, line),
-                    (exit, target - 1),
-                    (x, target - 1),
-                    (x, target),
-                ]
+                self.run((exit, line), below, exit, target - 1, (x, target));
             }
+            // Straight into the handle; its `o` covers the last cell
             Port::Side { x, line: target } => {
-                // Straight into the handle; its `o` covers the last cell
                 let exit = source.bottom;
-                [(exit, line), (exit, target), (x, target), (x, target)]
+                self.run((exit, line), below, exit, target, (x, target));
             }
-        };
-        self.canvas.path(&path, Stroke::Dashed);
+        }
     }
 }
 

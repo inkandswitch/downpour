@@ -11,7 +11,7 @@
 //!
 //! let source = "rain
 //! (Doc)-[edit]->(Alice)
-//! (Doc)-[read]->(Bob)     %% independent of Alice's
+//! (Doc)-[read]->(Bob)     // independent of Alice's
 //! (Alice)-[edit]->(Carol)";
 //!
 //! // Bob's certificate can go last; Carol's can't go above Alice's
@@ -20,7 +20,7 @@
 //!     "rain
 //! (Doc)-[edit]->(Alice)
 //! (Alice)-[edit]->(Carol)
-//! (Doc)-[read]->(Bob)     %% independent of Alice's"
+//! (Doc)-[read]->(Bob)     // independent of Alice's"
 //! );
 //! assert!(move_statement(source, 2, 0).is_err());
 //! # Ok::<(), rain_diagram_core::edit::MoveError>(())
@@ -146,10 +146,10 @@ pub fn move_statement(source: &str, from: usize, to: usize) -> Result<String, Mo
 /// ```
 /// use rain_diagram_core::edit::set_region_note;
 ///
-/// let source = "rain\n  >>> A (Bob): Bob does stuff  %% why\n(Bob)-[read]->(Carol)\n<<< A";
+/// let source = "rain\n  >>> A (Bob): Bob does stuff  // why\n(Bob)-[read]->(Carol)\n<<< A";
 /// assert_eq!(
 ///     set_region_note(source, "A", "Bob and Carol")?,
-///     "rain\n  >>> A (Bob): Bob and Carol  %% why\n(Bob)-[read]->(Carol)\n<<< A"
+///     "rain\n  >>> A (Bob): Bob and Carol  // why\n(Bob)-[read]->(Carol)\n<<< A"
 /// );
 /// # Ok::<(), rain_diagram_core::edit::NoteError>(())
 /// ```
@@ -809,7 +809,7 @@ pub enum NoteError {
     #[error("there's no region called `{0}`")]
     NoSuchRegion(String),
 
-    /// The new note isn't valid (it can't contain `%%` or line breaks).
+    /// The new note isn't valid (it can't contain a comment marker or line breaks).
     #[error(transparent)]
     Note(#[from] crate::ast::InvalidText),
 }

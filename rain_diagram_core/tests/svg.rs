@@ -247,6 +247,41 @@ fn regions_can_take_a_principals_colour() -> TestResult {
     Ok(())
 }
 
+/// Routes of different colours through one membership get a bead each,
+/// side by side; routes of the same colour share one.
+#[test]
+fn handles_through_one_membership_never_overlap() -> TestResult {
+    let svg = parse(
+        "rain
+         (Doc)-[admin]->(Team)
+         (Team)-[admin]->(Eve)
+         (Eve)=[[edit]]=>(Doc)
+         (Eve)=[[read]]=>(Doc)
+         (Doc)-[read]->(Bob)
+         (Eve)-<revoke>-x[doc-bob]",
+    )?
+    .to_rain_svg();
+
+    let handles: Vec<(&str, &str)> = svg
+        .match_indices(r#"<circle class="handle""#)
+        .filter_map(|(at, _)| svg.get(at..at + svg[at..].find("/>")?))
+        .filter(|tag| tag.contains(r#"data-event="1""#))
+        .filter_map(|tag| {
+            let attr = |name: &str| {
+                let from = tag.find(&format!(r#"{name}=""#))? + name.len() + 2;
+                tag.get(from..from + tag[from..].find('"')?)
+            };
+            Some((attr("cx")?, attr("stroke")?))
+        })
+        .collect();
+
+    // One Doc-blue bead for both invocations, one red for the revocation
+    assert_eq!(handles.len(), 2, "{handles:?}");
+    assert_ne!(handles[0].0, handles[1].0, "{handles:?}");
+    assert_ne!(handles[0].1, handles[1].1, "{handles:?}");
+    Ok(())
+}
+
 /// Inline SVG `<style>` is parsed as markup when a page inserts the SVG with
 /// `innerHTML`, so any `<` would cut the stylesheet short.
 #[test]

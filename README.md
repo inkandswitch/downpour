@@ -11,7 +11,7 @@ A plain-text notation, authority analysis, and renderers for _certflow_ and _rai
 ## The Notation
 
 ```
-rain                                    %% or `certflow`
+rain                                    // or `certflow`
 title Revoking two hops downstream
 
 (Doc)-[edit]->(Alice)                   : The Doc grants Alice Edit

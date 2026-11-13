@@ -8,7 +8,7 @@ const escape = (text) => text.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`
 const span = (cls, text, style = "") => (text ? `<span class="tok-${cls}"${style}>${escape(text)}</span>` : "");
 
 /** Where a comment starts: `%%` anywhere, or `//` at the start or after whitespace. */
-const commentStart = (line) => {
+export const commentStart = (line) => {
   const percent = line.indexOf("%%");
   let slashes = -1;
   for (let i = line.indexOf("//"); i !== -1; i = line.indexOf("//", i + 1)) {
