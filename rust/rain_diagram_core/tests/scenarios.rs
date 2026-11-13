@@ -897,3 +897,263 @@ fn regions_can_cover_any_rows() {
         }
     });
 }
+
+/// Extra random choices for the edit properties, drawn alongside a scenario.
+#[derive(Debug, Arbitrary)]
+struct Choices {
+    at: u8,
+    from: u8,
+    to: u8,
+    level: u8,
+    percent: u8,
+    revoke: bool,
+}
+
+fn scenario_and_choices(bytes: &[u8]) -> Option<(String, Diagram, Choices)> {
+    let (scenario, choices) = common::arbitrary::<(Scenario, Choices)>(bytes)?;
+    let (source, d) = scenario.diagram();
+    Some((source, d, choices))
+}
+
+/// The opening tag of event `ix`'s group in `svg`.
+fn event_group(svg: &str, ix: EventIx) -> &str {
+    let hook = format!(r#"data-event="{}""#, ix.index());
+    svg.match_indices(r#"<g class="event "#)
+        .map(|(at, _)| &svg[at..at + svg[at..].find("</g>").expect("groups close")])
+        .find(|group| group[..group.find('>').expect("tags close")].contains(&hook))
+        .expect("every event has a group")
+}
+
+/// A revocation with no effect never draws a cross on its target, in either
+/// renderer. (The SVG is checked per revocation; the text art can only be
+/// checked overall, since crosses aren't tied to their revocation there.)
+#[test]
+fn ineffective_revocations_never_strike() {
+    check!().with_type::<Vec<u8>>().for_each(|bytes| {
+        let Some(scenario) = common::arbitrary::<Scenario>(bytes) else {
+            return;
+        };
+        let (source, d) = scenario.diagram();
+        let svg = d.to_rain_svg();
+        let mut any_effective = false;
+        for ix in d.event_ixs() {
+            let Some(Event::Revoke(r)) = d.event(ix) else {
+                continue;
+            };
+            let group = event_group(&svg, ix);
+            if r.authority.is_authorized() {
+                any_effective = true;
+                assert!(group.contains(r#"class="cross""#), "{source}\n{group}");
+            } else {
+                assert!(!group.contains(r#"class="cross""#), "{source}\n{group}");
+            }
+        }
+        if !any_effective {
+            assert!(!d.to_text().contains('✗'), "{source}");
+        }
+    });
+}
+
+/// Every event's SVG class is its status as of the last event.
+#[test]
+fn svg_classes_match_statuses() {
+    check!().with_type::<Vec<u8>>().for_each(|bytes| {
+        let Some(scenario) = common::arbitrary::<Scenario>(bytes) else {
+            return;
+        };
+        let (source, d) = scenario.diagram();
+        let Some(now) = d.now() else { return };
+        let svg = d.to_rain_svg();
+        for ix in d.event_ixs() {
+            let expected = match d.status(ix, now).expect("happened") {
+                Status::Valid => "valid",
+                Status::Unauthorized => "unauthorized",
+                Status::Revoked { .. } => "revoked",
+                Status::Void { .. } => "void",
+            };
+            let group = event_group(&svg, ix);
+            let class = &group[..group.find('>').expect("tags close")];
+            assert!(
+                class
+                    .split('"')
+                    .nth(1)
+                    .is_some_and(|c| c.split(' ').any(|w| w == expected)),
+                "#{} should be {expected}: {class}\n{source}",
+                ix.index()
+            );
+        }
+    });
+}
+
+/// Inserting a delegation or invocation and then deleting it gives back
+/// the source; an inserted revocation revokes the certificate it was given.
+#[test]
+fn inserted_statements_land_where_asked() {
+    use rain_diagram_core::edit::{InsertError, NewStatement, delete_statement, insert_statement};
+
+    check!().with_type::<Vec<u8>>().for_each(|bytes| {
+        let Some((source, d, c)) = scenario_and_choices(bytes) else {
+            return;
+        };
+        let columns = d.principals().len();
+        if columns == 0 {
+            return;
+        }
+        let at = usize::from(c.at) % (d.events().len() + 1);
+        let (from, to) = (usize::from(c.from) % columns, usize::from(c.to) % columns);
+        let level = Level::ALL[usize::from(c.level) % Level::ALL.len()];
+
+        let certs: Vec<EventIx> = certs(&d).map(|(ix, _)| ix).collect();
+        let new = match (c.revoke, certs.get(usize::from(c.to) % certs.len().max(1))) {
+            (true, Some(&target)) => NewStatement::Revoke {
+                by: from,
+                target: target.index(),
+            },
+            _ if c.level % 2 == 0 => NewStatement::Delegate {
+                issuer: from,
+                audience: to,
+                level,
+            },
+            _ => NewStatement::Invoke {
+                by: from,
+                on: to,
+                level,
+            },
+        };
+
+        let (out, landed) = match insert_statement(&source, at, new) {
+            Ok(done) => done,
+            // Allowed: the new line makes some later inference ambiguous
+            Err(InsertError::Result(_)) => return,
+            Err(e) => panic!("{e}\n{source}"),
+        };
+        let after = parse(&out).expect("insertions are checked");
+        assert_eq!(
+            after.events().len(),
+            d.events().len() + 1,
+            "{source}\n→\n{out}"
+        );
+
+        match new {
+            NewStatement::Revoke { target, .. } => {
+                let Some(Event::Revoke(r)) = after.event_ix(landed).and_then(|ix| after.event(ix))
+                else {
+                    panic!("no revocation at {landed}\n{out}");
+                };
+                assert_eq!(r.target.index(), target, "{out}");
+            }
+            NewStatement::Delegate { .. } | NewStatement::Invoke { .. } => {
+                assert_eq!(landed, at, "{out}");
+                let back = delete_statement(&out, landed).expect("a fresh statement can go");
+                assert_eq!(back, source, "{out}");
+            }
+        }
+    });
+}
+
+/// Placing a label and putting it back gives the same statements (the
+/// spacing before a note may differ), and the placement is what was asked.
+#[test]
+fn placements_round_trip() {
+    use rain_diagram_core::{ast::Placement, edit::set_position, parser::document};
+
+    check!().with_type::<Vec<u8>>().for_each(|bytes| {
+        let Some((source, d, c)) = scenario_and_choices(bytes) else {
+            return;
+        };
+        if d.events().is_empty() {
+            return;
+        }
+        let n = usize::from(c.at) % d.events().len();
+        let percent = u16::from(c.percent) % 101;
+
+        let placed = set_position(&source, n, Some(percent)).expect("any statement can be placed");
+        let doc = document(&placed).expect("placements are checked");
+        let at = match &doc.statements[n].node {
+            rain_diagram_core::ast::Statement::Delegate(s) => s.at,
+            rain_diagram_core::ast::Statement::Invoke(s) => s.at,
+            rain_diagram_core::ast::Statement::Revoke(s) => s.at,
+        };
+        assert_eq!(
+            at,
+            Placement::nearest(f64::from(percent) / 100.0),
+            "{placed}"
+        );
+
+        let back = set_position(&placed, n, None).expect("and put back");
+        assert_eq!(
+            document(&back).expect("parses").to_string(),
+            document(&source).expect("parses").to_string(),
+            "{source}\n→\n{placed}\n→\n{back}"
+        );
+    });
+}
+
+/// Moving a principal's column reorders the columns as asked and changes
+/// nothing about who can do what.
+#[test]
+fn moving_principals_only_reorders() {
+    use rain_diagram_core::edit::move_principal;
+
+    check!().with_type::<Vec<u8>>().for_each(|bytes| {
+        let Some((source, d, c)) = scenario_and_choices(bytes) else {
+            return;
+        };
+        let columns = d.principals().len();
+        if columns == 0 {
+            return;
+        }
+        let (from, to) = (usize::from(c.from) % columns, usize::from(c.to) % columns);
+        let out = move_principal(&source, from, to).expect("columns in range");
+        let after = parse(&out).expect("reordering is safe");
+
+        let mut expected: Vec<&str> = d.principals().iter().map(|p| p.name().as_str()).collect();
+        let moved = expected.remove(from);
+        expected.insert(to, moved);
+        let order: Vec<&str> = after
+            .principals()
+            .iter()
+            .map(|p| p.name().as_str())
+            .collect();
+        assert_eq!(order, expected, "{out}");
+
+        let (Some(now), Some(now_after)) = (d.now(), after.now()) else {
+            return;
+        };
+        for (a, b) in d.event_ixs().zip(after.event_ixs()) {
+            assert_eq!(
+                d.status(a, now),
+                after.status(b, now_after),
+                "{source}\n→\n{out}"
+            );
+        }
+    });
+}
+
+/// Changing a region's note and changing it back gives back the source.
+#[test]
+fn region_notes_round_trip() {
+    use rain_diagram_core::edit::set_region_note;
+
+    check!().with_type::<Vec<u8>>().for_each(|bytes| {
+        let Some((source, d, c)) = scenario_and_choices(bytes) else {
+            return;
+        };
+        if d.regions().is_empty() {
+            return;
+        }
+        let k = usize::from(c.at) % d.regions().len();
+        let region = d.regions()[k].id.as_str().to_owned();
+        let original = d.regions()[k].caption().to_owned();
+
+        let changed = set_region_note(&source, &region, "A different caption").expect("valid note");
+        assert_eq!(
+            parse(&changed).expect("parses").regions()[k].caption(),
+            "A different caption"
+        );
+        assert_eq!(
+            set_region_note(&changed, &region, &original).expect("back"),
+            source
+        );
+    });
+}

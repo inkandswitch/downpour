@@ -157,9 +157,18 @@ fn lines(source: &str) -> impl Iterator<Item = (Span, &str)> {
         let start = offset;
         offset += raw.len();
 
+        // Some editors start files with a byte-order mark; skip it (spans
+        // still count it, so they point into the original text)
+        let bom = if start == 0 && raw.starts_with('\u{feff}') {
+            '\u{feff}'.len_utf8()
+        } else {
+            0
+        };
+        let raw = raw.get(bom..).unwrap_or(raw);
+
         let code = comment_start(raw).and_then(|i| raw.get(..i)).unwrap_or(raw);
         let trimmed = code.trim();
-        let leading = code.len() - code.trim_start().len();
+        let leading = bom + code.len() - code.trim_start().len();
 
         (!trimmed.is_empty()).then(|| {
             let start = start + leading;
@@ -353,13 +362,17 @@ struct Run {
 
 fn principal(c: &mut Cursor<'_>) -> Result<Name, ParseError> {
     c.expect("(", "`(` to start a principal")?;
-    let (raw, span) = c.take_while(|ch| ch != ')');
+    // Names can't hold brackets, so stop at the first: an unclosed `(A` is
+    // then reported as a missing `)`, not as a strange name
+    let (raw, span) = c.take_while(|ch| !matches!(ch, ')' | '(' | '[' | ']'));
     c.expect(")", "`)` to close the principal")?;
     Name::new(raw.trim()).map_err(|e| ParseError::new(span, e.into()))
 }
 
 fn level(c: &mut Cursor<'_>) -> Result<Level, ParseError> {
-    let (raw, span) = c.take_while(|ch| !matches!(ch, '(' | ']') && !ch.is_whitespace());
+    // Stop at arrow characters too, so a missing `]` is reported as one
+    let (raw, span) =
+        c.take_while(|ch| !matches!(ch, '(' | ']' | '-' | '=' | '>') && !ch.is_whitespace());
     raw.parse()
         .map_err(|e: UnknownLevel| ParseError::new(span, e.into()))
 }

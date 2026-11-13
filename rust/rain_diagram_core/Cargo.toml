@@ -12,6 +12,11 @@ readme = "../../README.md"
 repository.workspace = true
 rust-version.workspace = true
 
+# docs.rs: document every feature, and label feature-gated items
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
 [dependencies]
 arbitrary = { workspace = true, optional = true, features = ["derive"] }
 bolero = { workspace = true, optional = true, features = ["arbitrary"] }

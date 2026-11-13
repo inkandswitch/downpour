@@ -107,7 +107,33 @@ impl Diagram {
         let regions = doc
             .regions
             .iter()
-            .map(|r| {
+            .enumerate()
+            .map(|(k, r)| {
+                // The parser guarantees these, but a hand-built Document
+                // might not
+                let range = &r.node.statements;
+                if range.start >= range.end || range.end > resolver.events.len() {
+                    return Err(ResolveError::new(
+                        r.span,
+                        ResolveErrorKind::BadRegion {
+                            region: r.node.id.clone(),
+                            statements: range.clone(),
+                            available: resolver.events.len(),
+                        },
+                    ));
+                }
+                if doc
+                    .regions
+                    .iter()
+                    .take(k)
+                    .any(|other| other.node.id == r.node.id)
+                {
+                    return Err(ResolveError::new(
+                        r.span,
+                        ResolveErrorKind::DuplicateRegion(r.node.id.clone()),
+                    ));
+                }
+
                 let colour = r
                     .node
                     .colour
@@ -288,6 +314,7 @@ impl Diagram {
     }
 
     /// A principal's key, or `""` for an index from another diagram.
+    #[cfg(any(feature = "serde", test))]
     pub(crate) fn key(&self, ix: PrincipalIx) -> &str {
         self.principal(ix).map_or("", |p| p.key.as_str())
     }
@@ -682,6 +709,16 @@ impl Resolver {
     }
 }
 
+/// `A, B, and C`, for messages.
+fn names(names: &[Name]) -> String {
+    let names: Vec<&str> = names.iter().map(Name::as_str).collect();
+    match names.as_slice() {
+        [] => String::new(),
+        [one] => (*one).into(),
+        [rest @ .., last] => format!("{} and {last}", rest.join(", ")),
+    }
+}
+
 /// Lowercase, with runs of anything but letters and digits collapsed to `-`.
 fn slug(name: &str) -> String {
     let slug = name
@@ -729,6 +766,29 @@ pub enum ResolveErrorKind {
     #[error("{0} is already a participant")]
     DuplicateParticipant(Name),
 
+    /// A region that covers no statements, or statements that don't exist
+    /// (only possible in a hand-built [`Document`]).
+    #[error(
+        "region `{region}` covers statements {}..{}, but it must cover at least one of the {available} there are",
+        statements.start,
+        statements.end
+    )]
+    BadRegion {
+        /// The region.
+        region: CertId,
+
+        /// The statements it claims, as a half-open range.
+        statements: core::ops::Range<usize>,
+
+        /// How many statements the diagram has.
+        available: usize,
+    },
+
+    /// Two regions with the same name (only possible in a hand-built
+    /// [`Document`]).
+    #[error("there's already a region called `{0}`")]
+    DuplicateRegion(CertId),
+
     /// A region coloured after someone who isn't in the diagram.
     #[error("{0} isn't in this diagram, so the region can't take their colour")]
     UnknownPrincipal(Name),
@@ -743,7 +803,9 @@ pub enum ResolveErrorKind {
 
     /// The subject was omitted, but the issuer holds several.
     #[error(
-        "{issuer} holds authority over several subjects ({candidates:?}); name one, as in `[level(Subject)]`"
+        "{issuer} holds authority over several subjects ({}); name one, as in `[level({})]`",
+        names(.candidates),
+        .candidates.first().map_or("Subject", Name::as_str)
     )]
     AmbiguousSubject {
         /// The issuer whose subject was omitted.
@@ -928,6 +990,57 @@ mod tests {
             ),
             Some(ResolveErrorKind::ViaNotHeld { .. })
         ));
+        Ok(())
+    }
+
+    /// Regions the parser would never produce are refused here too, so a
+    /// hand-built `Document` can't smuggle them in.
+    #[test]
+    fn hand_built_regions_are_checked() -> TestResult {
+        use crate::ast::Region as AstRegion;
+
+        let base = crate::parser::document("rain\n(A)-[read]->(B)\n(B)-[read]->(C)")?;
+        let region = |id: &str,
+                      statements: core::ops::Range<usize>|
+         -> Result<_, crate::ast::InvalidCertId> {
+            Ok(Spanned {
+                node: AstRegion {
+                    id: CertId::new(id)?,
+                    colour: None,
+                    note: None,
+                    statements,
+                },
+                span: Span::default(),
+            })
+        };
+        let with = |regions| Document {
+            regions,
+            ..base.clone()
+        };
+
+        #[allow(
+            clippy::reversed_empty_ranges,
+            reason = "a backwards region is one of the cases"
+        )]
+        for bad in [0..0, 1..0, 0..3, 5..9] {
+            let err = Diagram::resolve(&with(Vec::from([region("R", bad.clone())?])));
+            assert!(
+                matches!(
+                    err.as_ref().map_err(ResolveError::kind),
+                    Err(ResolveErrorKind::BadRegion { .. })
+                ),
+                "{bad:?}: {err:?}"
+            );
+        }
+        let twice = with(Vec::from([region("R", 0..1)?, region("R", 1..2)?]));
+        assert!(matches!(
+            Diagram::resolve(&twice)
+                .as_ref()
+                .map_err(ResolveError::kind),
+            Err(ResolveErrorKind::DuplicateRegion(_))
+        ));
+        // And a good one still resolves
+        assert!(Diagram::resolve(&with(Vec::from([region("R", 0..2)?]))).is_ok());
         Ok(())
     }
 }

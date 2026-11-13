@@ -166,10 +166,11 @@
           rust-toolchain
         ];
 
-        mkCheck = name: text:
+        mkCheck = name: text: mkCheckWith [] name text;
+        mkCheckWith = extra: name: text:
           pkgs.writeShellApplication {
             name = "rain-${name}";
-            runtimeInputs = ci-env;
+            runtimeInputs = ci-env ++ extra;
             text = ''
               export RUSTFMT="${nightly-rustfmt}/bin/rustfmt"
               set -x
@@ -185,6 +186,9 @@
           ci-clippy = mkCheck "ci-clippy" ''
             cargo check --workspace --all-targets
             cargo clippy --workspace --all-targets --all-features -- -D warnings
+            # What a plain dependency builds: default features, library only
+            cargo clippy -p rain_diagram_core -- -D warnings
+            cargo clippy -p rain_diagram_core --no-default-features -- -D warnings
             cargo clippy -p rain_diagram_wasm --target wasm32-unknown-unknown --all-targets -- -D warnings
           '';
 
@@ -213,12 +217,21 @@
             cargo deny check
           '';
 
-          # Syntax-check every script (there's no JS build step), then run the JS tests
-          ci-js = mkCheck "ci-js" ''
-            for file in javascript/*/*.js javascript/*/*.mjs; do
+          # Syntax-check every script (there's no JS build step), build the
+          # Wasm the bindings tests load, then run the JS tests
+          ci-js = mkCheckWith [wasm-bindgen-cli pkgs.binaryen pkgs.wasm-pack] "ci-js" ''
+            for file in javascript/*/*.js javascript/*/*.mjs javascript/*/*test/*.mjs; do
               node --check "$file"
             done
-            node --test javascript/*/*.test.mjs
+            wasm-pack build --dev --target web --out-dir ../../javascript/rain-diagram/pkg rust/rain_diagram_wasm
+            node --test javascript/*/*.test.mjs javascript/*/test/*.test.mjs
+          '';
+
+          # The preview and its component in headless Chromium, driven over the
+          # DevTools protocol (no npm dependencies)
+          ci-browser = mkCheckWith [wasm-bindgen-cli pkgs.binaryen pkgs.chromium pkgs.wasm-pack] "ci-browser" ''
+            wasm-pack build --dev --target web --out-dir ../../javascript/rain-diagram/pkg rust/rain_diagram_wasm
+            CHROMIUM=chromium node --test javascript/preview/browser-test/*.test.mjs
           '';
 
           ci-typos = mkCheck "ci-typos" ''

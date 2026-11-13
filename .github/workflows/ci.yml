@@ -23,6 +23,7 @@ jobs:
       matrix:
         check:
           - ci-bolero
+          - ci-browser
           - ci-clippy
           - ci-deny
           - ci-doc

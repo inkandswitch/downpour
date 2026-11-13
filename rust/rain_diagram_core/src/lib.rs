@@ -77,6 +77,7 @@ pub mod level;
 pub mod parser;
 
 #[cfg(feature = "serde")]
+#[cfg_attr(docsrs, doc(cfg(feature = "serde")))]
 pub mod site_json;
 
 pub mod svg;

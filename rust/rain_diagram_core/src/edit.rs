@@ -222,9 +222,12 @@ pub fn set_position(
         .map(|s| s.span)
         .ok_or(PositionError::NoSuchStatement(statement))?;
     let text = source.get(span.start..).unwrap_or_default();
+    // The statement's line, without its ending (`\n` or `\r\n`), which is
+    // copied over untouched
     let line = text
         .find('\n')
         .map_or(text, |end| text.get(..end).unwrap_or_default());
+    let line = line.strip_suffix('\r').unwrap_or(line);
     let arrow = source
         .get(span.start..span.end)
         .and_then(crate::parser::arrow)

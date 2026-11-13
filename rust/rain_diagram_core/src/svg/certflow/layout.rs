@@ -37,7 +37,7 @@ pub(super) fn place(radii: &[f64], edges: &[(usize, usize)], unit: f64, gap: f64
 
     let hops = hops(n, edges);
     let mut points = start(n, &hops);
-    majorize(&mut points, &hops);
+    let _passes = majorize(&mut points, &hops);
 
     for p in &mut points {
         *p = (p.0 * unit, p.1 * unit);
@@ -106,10 +106,11 @@ fn start(n: usize, hops: &[Vec<f64>]) -> Vec<Point> {
 }
 
 /// Localized stress majorization (Gansner, Koren & North, 2004), with
-/// weights `1 / d²` so near neighbours matter most.
-fn majorize(points: &mut [Point], hops: &[Vec<f64>]) {
+/// weights `1 / d²` so near neighbours matter most. Returns how many
+/// passes it took to settle (at most [`ITERATIONS`]).
+fn majorize(points: &mut [Point], hops: &[Vec<f64>]) -> usize {
     let n = points.len();
-    for _ in 0..ITERATIONS {
+    for pass in 1..=ITERATIONS {
         // Each pass is O(n²), so stop as soon as the layout has settled
         // rather than always running all of them
         let mut moved: f64 = 0.0;
@@ -138,9 +139,10 @@ fn majorize(points: &mut [Point], hops: &[Vec<f64>]) {
             }
         }
         if moved < SETTLED {
-            break;
+            return pass;
         }
     }
+    ITERATIONS
 }
 
 /// Turn the picture so the first node is at the top, then mirror it so the
@@ -269,5 +271,18 @@ mod tests {
             place(&[20.0; 6], &edges, 100.0, 10.0),
             place(&[20.0; 6], &edges, 100.0, 10.0)
         );
+    }
+
+    /// The regression guard for layout speed: each pass is O(n²), so a
+    /// long chain must settle well before the cap rather than always
+    /// running every pass (which made 300 hops take a second).
+    #[test]
+    fn a_long_chain_settles_early() {
+        let n = 120;
+        let edges: Vec<(usize, usize)> = (1..n).map(|i| (i - 1, i)).collect();
+        let hops = hops(n, &edges);
+        let mut points = start(n, &hops);
+        let passes = majorize(&mut points, &hops);
+        assert!(passes < ITERATIONS / 2, "took {passes} passes");
     }
 }
