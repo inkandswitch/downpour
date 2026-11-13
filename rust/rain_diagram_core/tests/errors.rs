@@ -25,7 +25,7 @@ fn common_mistakes_say_what_to_do() {
         ),
         (
             "rain\n(A)-[write]->(B)",
-            "2:6: unknown access level \"write\"; expected admin, edit, read, or relay",
+            "2:6: unknown access level \"write\"; expected admin, edit, read, relay, or a command path like /crud/read",
         ),
         (
             "rain\n(A)-[read]->(B)",
@@ -79,7 +79,7 @@ fn a_byte_order_mark_is_ignored() -> Result<(), rain_diagram_core::Error> {
     let source = "\u{feff}rain\n(A)-[write]->(B)";
     assert_eq!(
         error(source),
-        "2:6: unknown access level \"write\"; expected admin, edit, read, or relay"
+        "2:6: unknown access level \"write\"; expected admin, edit, read, relay, or a command path like /crud/read"
     );
     Ok(())
 }

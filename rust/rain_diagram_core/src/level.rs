@@ -99,7 +99,9 @@ impl FromStr for Level {
 
 /// A level that isn't one of `admin`, `edit`, `read`, or `relay`.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
-#[error("unknown access level {0:?}; expected admin, edit, read, or relay")]
+#[error(
+    "unknown access level {0:?}; expected admin, edit, read, relay, or a command path like /crud/read"
+)]
 pub struct UnknownLevel(String);
 
 #[cfg(test)]

@@ -1,0 +1,51 @@
+Labels placed by hand, both ways
+
+ (Doc)       (Alice)       (Bob)       (Carol)       (Eve)       (Team)
+   │╰┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄╮   │            │            │            │
+   ├────────────┼──────[edit]┼───────────▶│            │            │   three fifths of the way right
+   │            │ ╭┄┄┄┄┄┄┄┤  │            │            │            │
+   │            │ ┆       ├┄┄┼┄┄┄┄┄┄┄╮    │            │            │
+   │            │◀┼───────┼──┼────[edit]──┤            │            │   a fifth of the way left
+   │            │ ┆       ┆  │      ┆     │            │            │
+   │            │ ┆   ╭┄┄┄┼┄┄┼┄┄┄┄┄┄╯     │            │            │
+   │            ├─┼─[read]┼─▶│            │            │            │   halfway, fed from a leftward label
+   │            │ ┆    ┆  ┆  │            │            │            │
+   │        ╭┄┄┄┼┄┼┄┄┄┄┼┄┄╯  │            │            │            │
+   │◀───[relay]─┼─┼────┼─────┼────────────┤            │            │   most of the way left
+   │            │ ┆    ┆     │            │            │            │
+   │            │ ┆    ┆     o┄┄┄┄╮       │            │            │
+   │            │ ┆    ┆     ├──[admin]   │            │            │   a placement on itself is ignored
+   │            │ ┆    ┆     │            │            │            │
+   │            │ ┆    ╰┄╮   │            │            │            │
+   │            │◀┼───[read]─┤            │            │            │   a ninth of the way left, fed from Alice
+   │            │ ┆          │            │            │            │
+   o┄┄┄╮        │ ┆          │            │            │            │
+   ├─[read]────▶│ ┆          │            │            │            │   right, held back from the issuer
+   │            │ ┆          │            │            │            │
+   o┄┄┄┄┄┄┄┄┄┄┄┄┼┄┼┄┄┄┄╮     │            │            │            │
+   ├────────────┼─┼──[read]─▶│            │            │            │   right, held back from the audience
+   │            │ ┆          │            │            │            │
+   │     ╭┄┄┄┄┄┄┼┄╯          │            │            │            │
+   │◀─[read]────┼────────────┼────────────┤            │            │   left, held back from the audience
+   │            │            │            │            │            │
+   │            │        ╭┄┄┄┼┄┄┄┄┄┄┄╮╭┄┄┄o            │            │
+   │            │        ┆   │◀──────[/]──┤            │            │   a short label, leftward
+   │            │        ┆   │   ╭┄┄┄╯┆   │            │            │
+   │            │        ┆   │   ┆    ┆   │            │            │
+   │            │        ┆   ╞═══╪═[[/]]═▶│            │            │   powered from below a short leftward label
+   │            │        ┆   │   ┆        │            │            │
+   │            │        ┆   │   ┆        │            │            │
+   │            │◀──────[/]──┤   ┆        │            │            │   fed from a short leftward label
+   │            │        ✗   │   ┆        │            │            │
+   │            │        │   │   ┆        │            │            │
+   │            │    <revoke>o┄┄┄╯        │            │            │   Bob revokes it, powered by Carol→Bob
+   │            │            │            │            │            │
+   o┄┄┄┄╮       │            │            │            │            │
+   ├──[edit]────┼────────────┼────────────┼────────────┼───────────▶│   Team holds the Doc
+   │     ┆      │            │            │            │            │
+   │     ╰┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄┄┄┄┄┄┄┄┄┄┄┼┄┄╮    ╭┄┄┄┄o
+   │            │            │            │            │◀─o[admin]──┤   Eve joins Team, leftward
+   │            │            │            │            │  ┆         │
+   │            │            │            │       ╭┄┄┄┄┼┄┄╯         │
+   │◀───────────┼────────────┼────────────┼────[read]──┤            │   through Team's leftward membership
+   │            │            │            │            │            │

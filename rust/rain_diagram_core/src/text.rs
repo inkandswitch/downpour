@@ -384,9 +384,16 @@ impl<'a> Layout<'a> {
                 let target = self.label(revoke.target)?;
                 let x = self.x(revoke.by);
                 let w = width("<revoke>");
-                // Under the target, unless slid along the line by hand; the
-                // line then carries on to the target's column
-                let start = revoke.at.map_or(target.input - 3, |p| {
+                // Under the target (clear of the revoker's lifeline, when the
+                // two are close), unless slid along the line by hand; the line
+                // then carries on to the target's column
+                let under = target.input - 3;
+                let under = if x > target.input {
+                    under.min(x - w)
+                } else {
+                    under.max(x + 1)
+                };
+                let start = revoke.at.map_or(under, |p| {
                     let (lo, hi) = if x < target.input {
                         (x + 2, target.input - 1)
                     } else {

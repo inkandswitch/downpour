@@ -1,0 +1,19 @@
+rain
+title Labels placed by hand, both ways
+principals: Doc, Alice, Bob, Carol, Eve, Team
+(Doc)---[edit(Doc)]-->(Carol)        : three fifths of the way right
+(Carol)-[edit(Doc)]---->(Alice)      : a fifth of the way left
+(Alice)--[read(Doc)]-->(Bob)         : halfway, fed from a leftward label
+(Carol)----[relay(Doc)]->(Doc)       : most of the way left
+(Bob)---[admin(Bob)]->(Bob)          : a placement on itself is ignored
+(Bob)-[read(Doc)]-------->(Alice)    : a ninth of the way left, fed from Alice
+(Doc)-[read(Doc)]---------->(Alice)  : right, held back from the issuer
+(Doc)----------[read(Doc)]->(Bob)    : right, held back from the audience
+(Carol)----------[read(Doc)]->(Doc)  : left, held back from the audience
+(Carol)-[/(Carol)]->(Bob)            : a short label, leftward
+(Bob)=[[/]]=>(Carol)                 : powered from below a short leftward label
+bob-alice: (Bob)-[/(Carol)]->(Alice) : fed from a short leftward label
+(Bob)-<revoke>-x[bob-alice]          : Bob revokes it, powered by Carol→Bob
+(Doc)-[edit(Doc)]->(Team)            : Team holds the Doc
+(Team)-[admin(Team)]->(Eve)          : Eve joins Team, leftward
+(Eve)-[read(Doc)]->(Doc)             : through Team's leftward membership

@@ -562,3 +562,34 @@ fn straight_drops_start_at_their_handle() -> TestResult {
     );
     Ok(())
 }
+
+/// A title wider than the diagram widens the canvas to fit it (16px
+/// semibold, about 0.6em a letter, plus the margins), in both notations.
+#[test]
+fn long_titles_widen_the_canvas() -> TestResult {
+    let width = |svg: &str| -> Option<f64> {
+        let view = svg.split(r#"viewBox="0 0 "#).nth(1)?;
+        view.split(' ').next()?.parse().ok()
+    };
+    let title = "m".repeat(80);
+    for header in ["rain", "certflow"] {
+        let bare = parse(&format!("{header}\n(Doc)-[edit(Doc)]->(Doc)"))?.to_svg();
+        let titled = parse(&format!(
+            "{header}\ntitle {title}\n(Doc)-[edit(Doc)]->(Doc)"
+        ))?
+        .to_svg();
+        let (bare, titled) = (
+            width(&bare).ok_or("a viewBox")?,
+            width(&titled).ok_or("a viewBox")?,
+        );
+        // 80 em-ish letters at 16px: well past the bare diagram, and
+        // within reason of the text's own width
+        assert!(titled > bare + 400.0, "{header}: {titled} vs {bare}");
+        assert!((1150.0..1300.0).contains(&titled), "{header}: {titled}");
+        assert!(
+            (titled - titled.round()).abs() < f64::EPSILON,
+            "{header}: whole"
+        );
+    }
+    Ok(())
+}

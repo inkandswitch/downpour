@@ -268,6 +268,13 @@ mod tests {
     }
 
     #[test]
+    fn labels_are_what_diagrams_draw() {
+        assert_eq!(ability("edit").label(), "✏️ Edit");
+        assert_eq!(ability("/crud/read").label(), "/crud/read");
+        assert_eq!(Command::new("/msg").expect("valid").as_str(), "/msg");
+    }
+
+    #[test]
     fn round_trips_through_display() {
         for s in ["admin", "relay", "/", "/crud/read"] {
             assert_eq!(ability(s).to_string(), s);

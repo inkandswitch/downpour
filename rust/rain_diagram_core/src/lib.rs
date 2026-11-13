@@ -26,6 +26,8 @@
 //! |-----------------------------------|------------------------------------------------------------|
 //! | `(A)-[edit(S)]->(B)`              | A delegates Edit over S to B                               |
 //! | `(A)-[edit(S) via ta]->(B)`       | Route A's authority through certificate `ta`               |
+//! | `(A)-[/crud/read(S)]->(B)`        | A command path instead of a level, as in UCAN              |
+//! | `(A)-[edit(S) where x < 3]->(B)`  | A caveat: a condition the authority is limited by          |
 //! | `label: (A)-[…]->(B)`             | Label a certificate, so revocations and `via` can name it  |
 //! | `(B)=[[edit]]=>(S)`               | B uses its Edit authority on S                             |
 //! | `(A)-<revoke>-x[label]`           | A revokes the certificate `label`                          |
@@ -34,7 +36,9 @@
 //! | `principals: A, B`                | Fix column order (`participant A, B` works too)            |
 //! | `title …`, `: note`, `// comment` | Annotations (`%%` comments work too)                      |
 //!
-//! Levels are `admin`, `edit`, `read`, and `relay` (or 👑 ✏️ 👀 📡).
+//! The ability in the brackets is a Keyhive level (`admin`, `edit`, `read`, or
+//! `relay`, or 👑 ✏️ 👀 📡) or a command path like `/crud/read`, as in UCAN;
+//! see [`ability`]. A delegation can also end with a `where` caveat.
 //!
 //! # Pipeline
 //!

@@ -1246,4 +1246,88 @@ mod tests {
         assert_eq!(d.caveats(ix(&d, 2)).count(), 1);
         Ok(())
     }
+
+    /// Among routes with as many caveats, the one with fewer hops, even
+    /// when a longer one reaches the subject first.
+    #[test]
+    fn equal_caveats_prefer_fewer_hops() -> TestResult {
+        let d = parse(
+            "rain
+             (G1)-[admin(G1) where c]->(Alice)
+             (Doc)-[edit(Doc)]->(G1)
+             (G2)-[admin(G2)]->(Alice)
+             (G3)-[admin(G3)]->(G2)
+             (Y)-[admin(Y)]->(G3)
+             (Doc)-[edit(Doc) where d]->(Y)
+             (Alice)=[[edit]]=>(Doc)",
+        )?;
+        let route = d
+            .event(ix(&d, 6))
+            .and_then(|e| e.authority().route())
+            .expect("Alice reaches Doc");
+        assert_eq!(route.source(), ix(&d, 1));
+        assert_eq!(route.through(), [ix(&d, 0)]);
+        Ok(())
+    }
+
+    /// Among routes equal in caveats and hops, the one through the earliest
+    /// certificate to the holder, whatever order the groups were named in.
+    #[test]
+    fn equal_routes_go_through_the_earliest_membership() -> TestResult {
+        let d = parse(
+            "rain
+             (Doc)-[edit(Doc)]->(Team A)
+             (Doc)-[edit(Doc)]->(Team Z)
+             (Team Z)-[admin(Team Z)]->(Alice)
+             (Team A)-[admin(Team A)]->(Alice)
+             (Alice)=[[edit]]=>(Doc)",
+        )?;
+        let route = d
+            .event(ix(&d, 4))
+            .and_then(|e| e.authority().route())
+            .expect("Alice reaches Doc");
+        assert_eq!(route.through(), [ix(&d, 2)]);
+        assert_eq!(route.source(), ix(&d, 1));
+        Ok(())
+    }
+
+    #[test]
+    fn reach_carries_its_routes_caveats() -> TestResult {
+        let d = parse(
+            "rain
+             (Doc)-[/crud(Doc) where path = /docs]->(Team)
+             (Team)-[/(Team) where team.active]->(Alice)",
+        )?;
+        let alice = d.principal_by_key("alice").expect("Alice is in it");
+        let reach = d.reach(alice, d.now().expect("not empty"));
+        let doc = reach
+            .iter()
+            .find(|r| d.principal(r.subject).map(crate::diagram::Principal::key) == Some("doc"))
+            .expect("Alice reaches Doc through Team");
+        let caveats: Vec<&str> = d
+            .route_caveats(&doc.route)
+            .into_iter()
+            .map(|(_, c)| c.as_str())
+            .collect();
+        assert_eq!(caveats, ["path = /docs", "team.active"]);
+        Ok(())
+    }
+
+    #[test]
+    fn several_held_abilities_are_listed_in_words() -> TestResult {
+        let d = parse(
+            "rain
+             (Doc)-[/msg(Doc)]->(Alice)
+             (Doc)-[read(Doc)]->(Alice)
+             (Doc)-[/crud/read(Doc)]->(Alice)
+             (Alice)-[/crud/write(Doc)]->(Bob)",
+        )?;
+        assert_eq!(
+            kinds(&d),
+            [
+                "Alice holds read, /msg, and /crud/read over Doc, none of which covers or falls under /crud/write, so this certificate grants nothing"
+            ]
+        );
+        Ok(())
+    }
 }

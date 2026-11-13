@@ -42,18 +42,18 @@ Principals get round brackets, certificates get square ones (like the shapes in 
 | `principals: A, B`                | Fix column order (`participant A, B` works too)             |
 | `title …`, `: note`, `// comment` | Annotations (`%%` comments work too)                       |
 
-Levels are `admin`, `edit`, `read`, and `relay` (or 👑 ✏️ 👀 📡).
+The ability in the brackets is a Keyhive level or a command path. Levels are `admin`, `edit`, `read`, and `relay` (or 👑 ✏️ 👀 📡), each implying the ones after it; the examples above use them. A command path like `/crud/read`, as in UCAN, can go anywhere a level can (see below).
 
 ### Command paths and caveats
 
 Keyhive's levels are one strict hierarchy. UCAN and Biscuit attenuate differently: abilities form a tree of commands, and conditions stack up as authority is passed on. The same notation covers both, with no mode to switch:
 
 - _Command paths._ Wherever a level goes, a path can go instead: `/`, or segments like `/crud/read` (letters, digits, `-`, `_`, `.`). A path covers itself and the paths under it, so `/crud` covers `/crud/read` but not `/crudely`, and `/` covers every path. Levels and paths never cover each other.
-- _Caveats._ `where …` comes last inside the brackets, after the subject and any `via`, and runs to the `]`: `[/crud(Doc) via ta where path = "/docs"]`. Caveats are opaque text (anything but square brackets), so you can write them in UCAN policy syntax, Biscuit Datalog, or plain words. They're never evaluated.
+- _Caveats._ `where …` comes last inside the brackets, after the subject and any `via`, and runs to the `]`: `[/crud(Doc) via ta where path = "/docs"]`. Caveats are opaque text (anything on the line except square brackets and comment markers, `%%` or `//` after a space), so you can write them in UCAN policy syntax, Biscuit Datalog, or plain words. They're never evaluated.
 
-A delegation grants the narrower of what it claims and what its issuer holds, or nothing if neither covers the other. Every event is bound by the caveats on every certificate it relies on, so caveats only ever accumulate down a chain. When there's a choice of route, the broadest ability wins, then the one with the fewest caveats. Revocation works the same for every ability: whoever issued a certificate that another relies on can revoke it. Only the `admin` level also lets you revoke any certificate over its subject; `/` doesn't, since neither UCAN nor Biscuit has an equivalent power.
+A delegation grants the narrower of what it claims and what its issuer holds, or nothing if neither covers the other. Every event is bound by the caveats on every certificate it relies on, so caveats only ever accumulate down a chain. When there's a choice of route, the broadest ability wins, then the fewest caveats, then the fewest hops, then the earliest certificates. Revocation works the same for every ability: you can revoke a certificate if you issued it or anything it relies on. Holding the `admin` level over its subject (or being the subject) also lets you revoke it; `/` doesn't, since neither UCAN nor Biscuit has an equivalent power.
 
-In the pictures, a caveat sits in small type under its certificate's label (or in the notes column, in the text art), and hovering any label lists every caveat that event is bound by.
+In the pictures, a caveat sits in small type under its certificate's label (or in the notes column, in the text art), and in the SVG, hovering a delegation's or invocation's label lists every caveat it's bound by.
 
 ```
 rain
@@ -145,7 +145,7 @@ docs/                    README pictures, checked by the golden tests
 | SVG        | `Diagram::to_svg`       | `renderSvg`   | Rain or certflow, as the header says (or choose: see below) |
 | Site JSON  | `Diagram::to_site_json` | `toSiteJson`  | The renderer in the [Keyhive Lab Notes][rain]               |
 
-From JavaScript, [`@inkandswitch/rain-diagram-wasm`](javascript/rain-diagram-wasm/) has all of these and loads in Node, bundlers, plain pages, and `<script>` tags; its README covers setup for each. `to_site_json` needs the crate's `serde` feature (`rain_diagram_core = { …, features = ["serde"] }`); the Wasm bindings always include it. `to_rain_svg` and `to_certflow_svg` pick a notation regardless of the header. The preview has Copy and Download for each, and the [`rain-diagram` CLI](rust/rain_diagram_cli/) does the same from a shell (`rain-diagram render doc.rain -o doc.svg`).
+From JavaScript, [`@inkandswitch/rain-diagram-wasm`](javascript/rain-diagram-wasm/) (not published yet) has all of these and loads in Node, bundlers, plain pages, and `<script>` tags; its README covers setup for each. `to_site_json` needs the crate's `serde` feature (`rain_diagram_core = { …, features = ["serde"] }`); the Wasm bindings always include it. `to_rain_svg` and `to_certflow_svg` pick a notation regardless of the header. The preview has Copy and Download for each, and the [`rain-diagram` CLI](rust/rain_diagram_cli/) does the same from a shell (`rain-diagram render doc.rain -o doc.svg`).
 
 Here's the example from [Keyhive Lab Note #8][rain], drawn by `to_svg`:
 
@@ -206,12 +206,12 @@ It fires `rain-reach` and `rain-fallout` events, and the SVG's `data-*` hooks ar
 ## Development
 
 ```console
-$ nix develop        # toolchain, wasm-pack, and a command menu
+$ nix develop        # toolchain, wasm-pack, pnpm, and a command menu
 $ preview            # (in the shell) hot-reloading preview at http://127.0.0.1:8080
 $ nix run .#preview  # same, without entering the shell (PORT=… to change)
 $ nix run .#site     # the preview as a static site in _site/, as deployed to GitHub Pages
 $ cargo test --workspace --exclude rain_diagram_wasm
-$ nix run .#ci-clippy   # also: ci-bolero, ci-browser, ci-deny, ci-doc, ci-docsrs, ci-fmt, ci-js, ci-msrv, ci-no-std, ci-package, ci-test, ci-typos, ci-vite
+$ nix run .#ci-clippy   # also: ci-bolero, ci-browser, ci-deny, ci-doc, ci-docsrs, ci-fmt, ci-js, ci-mdbook, ci-msrv, ci-no-std, ci-package, ci-test, ci-typos, ci-vite
 ```
 
 ## License
