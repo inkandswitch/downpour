@@ -176,6 +176,19 @@ And by `to_text`, matching the Lab Note's plain-text version character for chara
    │            │            │            │            │
 ```
 
+## Size
+
+What a browser downloads to render diagrams. The whole core (parser, authority analysis, all three renderers, and the source edits) is one Wasm module:
+
+| File | Raw | gzip | Brotli |
+|---|---|---|---|
+| Core, as Wasm (`rain-diagram-wasm.wasm`) | 340 KB | 132 KB | 105 KB |
+| Its JS bindings (wasm-bindgen glue) | 31 KB | 6 KB | 5 KB |
+| `<rain-diagram>` component (`rain-diagram.js`) | 41 KB | 11 KB | 10 KB |
+| Core with the Wasm inlined, for plain pages (`dist/iife/index.js`) | 479 KB | 184 KB | 150 KB |
+
+Measured on the release build that `nix run .#bodge` makes (wasm-opt, `--panic abort`), 2026-11-13; gzip at level 9, Brotli at quality 11. A bundler serves the `.wasm` as its own file, so only the plain-page builds pay base64's third. Two choices keep the module small: SVG numbers are written with integer arithmetic rather than Rust's float formatter (about 20 KB), and sorting goes through one shared copy of the standard sort rather than one per type (about 50 KB). Neither is slower; drawing SVG got faster.
+
 ## In a book
 
 `mdbook-rain-diagram` turns code blocks fenced as `rain` or `certflow` into diagrams in an [mdBook](https://rust-lang.github.io/mdBook/): SVG in the HTML output, text art elsewhere. Add `[preprocessor.rain-diagram]` to `book.toml`; see [`rust/rain_diagram_cli/`](rust/rain_diagram_cli/) for the details and installing (`nix profile install github:inkandswitch/downpour` puts both binaries on the `PATH`).
