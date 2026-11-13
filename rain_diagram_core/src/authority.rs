@@ -723,7 +723,7 @@ mod tests {
         Ok(())
     }
 
-    /// Notebook 08, "Revocation".
+    /// [Keyhive Lab Note #8](https://www.inkandswitch.com/keyhive/notebook/08/), "Revocation".
     #[test]
     fn revoking_downstream() -> TestResult {
         let d = parse(
@@ -758,7 +758,7 @@ mod tests {
         Ok(())
     }
 
-    /// Notebook 08, "Invocation": revocation voids earlier edits.
+    /// [Keyhive Lab Note #8](https://www.inkandswitch.com/keyhive/notebook/08/), "Invocation": revocation voids earlier edits.
     #[test]
     fn revocation_is_retrocausal() -> TestResult {
         let d = parse(
@@ -878,7 +878,7 @@ mod tests {
         Ok(())
     }
 
-    /// Notebook 07, "A More Involved Example": hover over Bob.
+    /// [Keyhive Lab Note #7](https://www.inkandswitch.com/keyhive/notebook/07/), "A More Involved Example": hover over Bob.
     #[test]
     fn reach_through_groups() -> TestResult {
         let d = parse(

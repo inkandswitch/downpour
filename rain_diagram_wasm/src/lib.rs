@@ -186,7 +186,7 @@ pub fn move_statement(source: &str, from: usize, to: usize) -> Result<String, Js
         .map_err(|e| JsError::new(&e.to_string()))
 }
 
-/// Convert `source` to the lab notebook renderer's rain diagram JSON.
+/// Convert `source` to the [Keyhive Lab Notes'](https://www.inkandswitch.com/keyhive/notebook/08/) rain diagram JSON.
 ///
 /// # Errors
 ///

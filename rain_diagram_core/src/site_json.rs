@@ -1,6 +1,6 @@
-//! Export to the JSON format used by the Ink & Switch lab notebook renderer.
+//! Export to the JSON format used by the renderer in the [Keyhive Lab Notes](https://www.inkandswitch.com/keyhive/notebook/08/).
 //!
-//! The notebook's interactive rain diagrams read `{ agents, events }`, where
+//! The [Keyhive Lab Notes'](https://www.inkandswitch.com/keyhive/notebook/08/) interactive rain diagrams read `{ agents, events }`, where
 //! events are delegations (`from`/`to`/`level`/`subject`), invocations
 //! (`invoke`/`by`/`on`), and revocations (`revoke`/`by`). Exporting to it
 //! lets the existing renderer draw diagrams written in the textual notation.
@@ -14,7 +14,7 @@ use alloc::{string::String, vec::Vec};
 use serde::Serialize;
 
 impl Diagram {
-    /// Serialize to the lab notebook's rain diagram JSON.
+    /// Serialize to the [Keyhive Lab Notes'](https://www.inkandswitch.com/keyhive/notebook/08/) rain diagram JSON.
     ///
     /// ```
     /// let diagram = rain_diagram_core::parse("rain\n(Doc)-[edit]->(Alice)")?;

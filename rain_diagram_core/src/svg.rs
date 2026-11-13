@@ -46,7 +46,7 @@ impl Diagram {
         }
     }
 
-    /// Draw as a rain diagram (Keyhive notebook 08), whatever the header.
+    /// Draw as a rain diagram ([Keyhive Lab Note #8](https://www.inkandswitch.com/keyhive/notebook/08/)), whatever the header.
     #[must_use]
     pub fn to_rain_svg(&self) -> String {
         self.to_rain_svg_at(self.events().len())
@@ -71,7 +71,7 @@ impl Diagram {
         rain::render(self, happened)
     }
 
-    /// Draw as a certflow snapshot (Keyhive notebook 07) of the moment after
+    /// Draw as a certflow snapshot ([Keyhive Lab Note #7](https://www.inkandswitch.com/keyhive/notebook/07/)) of the moment after
     /// the last event, whatever the header.
     #[must_use]
     pub fn to_certflow_svg(&self) -> String {
@@ -87,7 +87,7 @@ impl Diagram {
     }
 }
 
-/// Colours cycle through the notebook's palette.
+/// Colours cycle through [Keyhive Lab Note #8](https://www.inkandswitch.com/keyhive/notebook/08/)'s palette.
 const PALETTE: [&str; 8] = [
     "#3d7dd8", // blue
     "#e8892b", // orange
@@ -291,7 +291,7 @@ fn escape(text: &str) -> String {
     out
 }
 
-/// A level as the notebook labels it: `👑 Admin`, `✏️ Edit`, `👀 Read`,
+/// A level as [Keyhive Lab Note #8](https://www.inkandswitch.com/keyhive/notebook/08/) labels it: `👑 Admin`, `✏️ Edit`, `👀 Read`,
 /// `📡 Relay`.
 fn level_label(level: crate::level::Level) -> String {
     format!("{} {}", level.emoji(), level.name())

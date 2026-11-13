@@ -1,6 +1,6 @@
 //! Automatic placement for certflow snapshots.
 //!
-//! The notebook places every node by hand. Here, nodes (principals,
+//! [Keyhive Lab Note #7](https://www.inkandswitch.com/keyhive/notebook/07/) places every node by hand. Here, nodes (principals,
 //! certificates, revocations) are placed by _stress majorization_: each
 //! pair of nodes is pulled towards a distance proportional to the number of
 //! hops between them in the graph. It's deterministic (no random start),

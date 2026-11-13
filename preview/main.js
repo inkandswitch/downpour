@@ -51,9 +51,10 @@ bc: (Bob)-[edit]->(Carol)        : Bob gives Carol Edit
 <<< A
 
 (Carol)-[read]->(Dan)            : Carol shares Read with Dan
-// \`@N%\` places a row's label along its arrow: 0% at the actor, 100% at the
-// target. In the preview, drag a label sideways to set it.
-(Dan)=[[read]]=>(Doc) @30%       : Dan reads the Doc
+// More dashes on one side slide a row's label along its arrow: here one
+// before and two after put it a third of the way. One each is automatic.
+// In the preview, drag a label sideways to set it.
+(Dan)=[[read]]==>(Doc)           : Dan reads the Doc
 
 // Groups: authority flows through membership. Eve reaches the Doc through
 // Team; the small circle on Team→Eve is the transitive handle.

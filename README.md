@@ -1,12 +1,12 @@
 # Rain Diagrams
 
 > [!WARNING]
-> This project is pretty vibey. It started as a sketch to see if the plain-text notation from the Keyhive lab notebook could be parsed and rendered, and much of it was written with an AI pair. Expect sharp edges, churn, and opinions that haven't been tested on anyone yet.
+> This project is pretty vibey. It started as a sketch to see if the plain-text notation from the Keyhive Lab Notes ([#7][certflow], [#8][rain]) could be parsed and rendered, and much of it was written with an AI pair. Expect sharp edges, churn, and opinions that haven't been tested on anyone yet.
 
 A plain-text notation, authority analysis, and renderers for _certflow_ and _rain_ diagrams: pictures of how authority flows through certificate capability systems like [Keyhive].
 
-- [Keyhive notebook 07: Certflow Diagrams][certflow] explains the snapshot view
-- [Keyhive notebook 08: Rain Diagrams][rain] adds time, and the plain-text form this project parses
+- [Keyhive Lab Note #7: Certflow Diagrams][certflow] explains the snapshot view
+- [Keyhive Lab Note #8: Rain Diagrams][rain] adds time, and the plain-text form this project parses
 
 ## The Notation
 
@@ -32,7 +32,7 @@ Principals get round brackets, certificates get square ones (like the shapes in 
 | `label: (A)-[…]->(B)`             | Label a certificate (otherwise it's implicitly `a-b`)       |
 | `(B)=[[edit]]=>(S)`               | B uses its Edit authority on S                              |
 | `(A)-<revoke>-x[label]`           | A revokes the certificate `label`                           |
-| `… @60%`                          | Place the row's label 60% of the way along its arrow        |
+| `(A)---[edit]->(B)`               | More dashes before the label slide it towards B (here ¾)    |
 | `>>> A (P): note` … `<<< A`       | A captioned region; `(P)` takes principal P's colour        |
 | `principals: A, B`                | Fix column order (`participant A, B` works too)             |
 | `title …`, `: note`, `// comment` | Annotations (`%%` comments work too)                       |
@@ -47,30 +47,39 @@ Powerlines, attenuation, transitive handles, and revocation fallout are _derived
 
 ## Architecture
 
+```mermaid
+flowchart TD
+    source[/"source text"/] --> core
+
+    subgraph core["rain_diagram_core · no_std Rust"]
+        direction LR
+        parser --> ast --> diagram["resolved diagram"]
+        diagram --> analysis["authority analysis<br/>(reach, fallout, status)"]
+        diagram --> edits["source edits<br/>(move, insert, delete)"]
+    end
+
+    core --> text["Unicode art<br/>(comments, READMEs)"]
+    core --> svg["SVG<br/>(rain, certflow)"]
+    core --> site["site JSON<br/>(Lab Note renderer)"]
+    core --> wasm["rain_diagram_wasm<br/>(JS bindings)"]
+
+    wasm --> component["&lt;rain-diagram&gt;<br/>(interactive embed)"]
+    wasm --> mermaid["Mermaid plugin"]
+    component --> preview["preview<br/>(hot-reloading editor)"]
+    component --> editor["collaborative editor<br/>(automerge-repo v3 over Subduction)"]
+    editor --> patchwork["Patchwork integration"]
+
+    classDef planned stroke-dasharray: 5 5
+    class mermaid,editor,patchwork planned
 ```
-                    ┌──────────────────────────────────────┐
-  source text ────▶ │ rain_diagram_core  (no_std, Rust)    │
-                    │  parser ─▶ ast ─▶ diagram (resolved) │
-                    │  derive: powerlines, reach, fallout  │
-                    └───┬──────────┬───────────┬───────────┘
-                        │          │           │
-                        ▼          ▼           ▼
-                   Unicode art   SVG        site JSON
-                   (comments,    │          (Ink & Switch
-                   READMEs)      │          notebook renderer)
-                                 │
-                 ┌───────────────┼──────────────────────┐
-                 ▼               ▼                      ▼
-          Mermaid plugin   <rain-diagram>        collaborative editor
-          (external        web component         (automerge-repo v3
-           diagram)        (interactive embed)    over Subduction)
-```
+
+Dashed boxes are planned.
 
 | Crate / package      | Status    | Purpose                                                      |
 |----------------------|-----------|--------------------------------------------------------------|
 | `rain_diagram_core`  | Working   | Parser, resolver, authority analysis, renderers              |
 | `rain_diagram_wasm`  | Working   | JS bindings (`renderSvg`, `renderText`, `toSiteJson`, …)     |
-| Text renderer        | Working   | Unicode rain diagrams; matches notebook 08 byte for byte     |
+| Text renderer        | Working   | Unicode art matching [Keyhive Lab Note #8][rain] exactly     |
 | SVG renderer         | Working   | Static export, with `data-*` hooks for the interactive embed |
 | certflow renderer    | Working   | Snapshot view with automatic (stress majorization) layout    |
 | Web component        | Prototype | `<rain-diagram>`: hover for reach, click for fallout         |
@@ -83,11 +92,16 @@ Powerlines, attenuation, transitive handles, and revocation fallout are _derived
 |------------|-------------------------|---------------|-------------------------------------------------------------|
 | Plain text | `Diagram::to_text`      | `renderText`  | Code comments, READMEs, terminals                           |
 | SVG        | `Diagram::to_svg`       | `renderSvg`   | Rain or certflow, as the header says (or choose: see below) |
-| Site JSON  | `Diagram::to_site_json` | `toSiteJson`  | The Ink & Switch notebook's renderer                        |
+| Site JSON  | `Diagram::to_site_json` | `toSiteJson`  | The renderer in the [Keyhive Lab Notes][rain]               |
 
 `to_rain_svg` and `to_certflow_svg` pick a notation regardless of the header. The preview has Copy and Download for each, and `cargo run --example render [-- --svg | --json] < diagram.rain` does the same from a shell.
 
-Here's notebook 08's example, rendered by `to_text`:
+Here's the example from [Keyhive Lab Note #8][rain], drawn by `to_svg`:
+
+<!-- Regenerate with: BLESS=1 cargo test --test golden -->
+![A rain diagram: the Doc grants Alice Edit, Alice passes it to Bob, Bob edits the Doc and gives Carol Read, Carol shares Read with Dan, and Alice revokes Carol→Dan, voiding it](docs/notebook-08.svg)
+
+And by `to_text`, matching the Lab Note's plain-text version character for character:
 
 ```
  (Doc)       (Alice)       (Bob)       (Carol)       (Dan)

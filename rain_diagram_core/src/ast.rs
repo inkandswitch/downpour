@@ -8,7 +8,10 @@
 
 use crate::level::Level;
 use alloc::{string::String, vec::Vec};
-use core::fmt;
+use core::{
+    fmt::{self, Write as _},
+    num::NonZeroU8,
+};
 use thiserror::Error;
 
 /// Which notation a document is written in.
@@ -185,8 +188,8 @@ pub struct Delegation {
     /// Who receives the certificate.
     pub audience: Name,
 
-    /// Where its label sits along the arrow (`@60%`), if not the default.
-    pub at: Option<Percent>,
+    /// Where its label sits along the arrow, if placed by hand.
+    pub at: Option<Placement>,
 
     /// A trailing `: note`.
     pub note: Option<Text>,
@@ -198,7 +201,10 @@ impl fmt::Display for Delegation {
             write!(f, "{id}: ")?;
         }
 
-        write!(f, "({})-[{}", self.issuer, self.level)?;
+        let (before, after) = runs(self.at);
+        write!(f, "({})", self.issuer)?;
+        write_run(f, '-', before)?;
+        write!(f, "[{}", self.level)?;
 
         if let Some(subject) = &self.subject {
             write!(f, "({subject})")?;
@@ -209,8 +215,10 @@ impl fmt::Display for Delegation {
             write_list(f, &self.via)?;
         }
 
-        write!(f, "]->({})", self.audience)?;
-        write_tail(f, self.at, self.note.as_ref())
+        f.write_char(']')?;
+        write_run(f, '-', after)?;
+        write!(f, ">({})", self.audience)?;
+        write_tail(f, self.note.as_ref())
     }
 }
 
@@ -227,8 +235,8 @@ pub struct Invocation {
     /// What is acted on.
     pub on: Name,
 
-    /// Where its label sits along the arrow (`@60%`), if not the default.
-    pub at: Option<Percent>,
+    /// Where its label sits along the arrow, if placed by hand.
+    pub at: Option<Placement>,
 
     /// A trailing `: note`.
     pub note: Option<Text>,
@@ -236,8 +244,13 @@ pub struct Invocation {
 
 impl fmt::Display for Invocation {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "({})=[[{}]]=>({})", self.by, self.level, self.on)?;
-        write_tail(f, self.at, self.note.as_ref())
+        let (before, after) = runs(self.at);
+        write!(f, "({})", self.by)?;
+        write_run(f, '=', before)?;
+        write!(f, "[[{}]]", self.level)?;
+        write_run(f, '=', after)?;
+        write!(f, ">({})", self.on)?;
+        write_tail(f, self.note.as_ref())
     }
 }
 
@@ -251,8 +264,8 @@ pub struct Revocation {
     /// The certificate being revoked.
     pub target: CertId,
 
-    /// Where its label sits along the arrow (`@60%`), if not the default.
-    pub at: Option<Percent>,
+    /// Where its label sits along the arrow, if placed by hand.
+    pub at: Option<Placement>,
 
     /// A trailing `: note`.
     pub note: Option<Text>,
@@ -260,8 +273,13 @@ pub struct Revocation {
 
 impl fmt::Display for Revocation {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "({})-<revoke>-x[{}]", self.by, self.target)?;
-        write_tail(f, self.at, self.note.as_ref())
+        let (before, after) = runs(self.at);
+        write!(f, "({})", self.by)?;
+        write_run(f, '-', before)?;
+        f.write_str("<revoke>")?;
+        write_run(f, '-', after)?;
+        write!(f, "x[{}]", self.target)?;
+        write_tail(f, self.note.as_ref())
     }
 }
 
@@ -521,60 +539,91 @@ pub fn comment_start(line: &str) -> Option<usize> {
     }
 }
 
-/// A statement's optional ` @60%` and ` : note`.
-fn write_tail(f: &mut fmt::Formatter<'_>, at: Option<Percent>, note: Option<&Text>) -> fmt::Result {
-    if let Some(at) = at {
-        write!(f, " @{at}")?;
-    }
+/// A statement's optional ` : note`.
+fn write_tail(f: &mut fmt::Formatter<'_>, note: Option<&Text>) -> fmt::Result {
     note.map_or(Ok(()), |note| write!(f, " : {note}"))
 }
 
-/// How far along its arrow a row's label sits, from the issuer (`0%`) to
-/// the audience (`100%`), as in `(Alice)-[edit]->(Bob) @60%`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Percent(u8);
+/// Where a row's label sits along its arrow, written as the runs of dashes
+/// (`=` for an invocation) either side of it: `(Alice)---[edit]->(Bob)`
+/// puts it three quarters of the way to Bob. One each side is automatic
+/// placement, so a `Placement` is never 1:1.
+///
+/// ```
+/// use rain_diagram_core::ast::Placement;
+///
+/// assert_eq!(Placement::nearest(0.75).map(|p| (p.before(), p.after())), Some((3, 1)));
+/// assert_eq!(Placement::nearest(0.5).map(|p| (p.before(), p.after())), Some((2, 2)));
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct Placement {
+    before: NonZeroU8,
+    after: NonZeroU8,
+}
 
-impl Percent {
-    /// Check and wrap a percentage.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`InvalidPercent`] if it's over 100.
-    pub fn new(percent: u16) -> Result<Self, InvalidPercent> {
-        u8::try_from(percent)
-            .ok()
-            .filter(|&p| p <= 100)
-            .map(Self)
-            .ok_or(InvalidPercent(percent))
-    }
+impl Placement {
+    /// The longest run `nearest` writes on one side.
+    const LONGEST: u8 = 10;
 
-    /// The percentage, 0 to 100.
+    /// From the dash counts either side; `None` for one each (automatic).
     #[must_use]
-    pub const fn get(self) -> u8 {
-        self.0
+    pub fn new(before: NonZeroU8, after: NonZeroU8) -> Option<Self> {
+        (before.get() > 1 || after.get() > 1).then_some(Self { before, after })
     }
 
-    /// As a fraction, 0.0 to 1.0.
+    /// The shortest arrow putting the label within 5% of `fraction` (0.0 at
+    /// the actor, 1.0 at the target), as when dragging it. `None` only for
+    /// a NaN.
+    #[must_use]
+    pub fn nearest(fraction: f64) -> Option<Self> {
+        // One dash is the least on a side, so the ends are a tenth in
+        let end = 1.0 / f64::from(Self::LONGEST);
+        let fraction = fraction.clamp(end, 1.0 - end);
+        (2..=Self::LONGEST)
+            .flat_map(|total| (1..total).map(move |before| (before, total - before)))
+            .filter_map(|(before, after)| {
+                Self::new(NonZeroU8::new(before)?, NonZeroU8::new(after)?)
+            })
+            .find(|p| (p.fraction() - fraction).abs() <= 0.05 + f64::EPSILON)
+    }
+
+    /// Dashes before the label.
+    #[must_use]
+    pub const fn before(self) -> u8 {
+        self.before.get()
+    }
+
+    /// Dashes after the label (counting the one in the arrowhead).
+    #[must_use]
+    pub const fn after(self) -> u8 {
+        self.after.get()
+    }
+
+    /// How far along, from 0.0 (the actor) to 1.0 (the target).
     #[must_use]
     pub fn fraction(self) -> f64 {
-        f64::from(self.0) / 100.0
+        f64::from(self.before()) / (f64::from(self.before()) + f64::from(self.after()))
     }
 }
 
-impl fmt::Display for Percent {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}%", self.0)
-    }
+/// `n` copies of `dash`.
+fn write_run(f: &mut fmt::Formatter<'_>, dash: char, n: u8) -> fmt::Result {
+    (0..n).try_for_each(|_| f.write_char(dash))
 }
 
-/// A position past the end of the arrow.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
-#[error("{0}% is past the end of the arrow; use 0% to 100%")]
-pub struct InvalidPercent(u16);
+/// The dash counts either side of a label: `at`'s, or one each.
+const fn runs(at: Option<Placement>) -> (u8, u8) {
+    match at {
+        Some(p) => (p.before(), p.after()),
+        None => (1, 1),
+    }
+}
 
 #[cfg(feature = "arbitrary")]
 mod arbitrary_impls {
-    use super::{CertId, Document, Kind, Name, Percent, Region, Span, Spanned, Statement, Text};
+    use super::{
+        CertId, Document, Kind, Name, NonZeroU8, Placement, Region, Span, Spanned, Statement, Text,
+    };
     use alloc::{string::String, vec::Vec};
     use arbitrary::{Arbitrary, Result, Unstructured};
 
@@ -600,9 +649,15 @@ mod arbitrary_impls {
         }
     }
 
-    impl<'a> Arbitrary<'a> for Percent {
+    impl<'a> Arbitrary<'a> for Placement {
         fn arbitrary(u: &mut Unstructured<'a>) -> Result<Self> {
-            Ok(Self(u.int_in_range(0..=100)?))
+            let before = NonZeroU8::new(u.int_in_range(1..=6)?).unwrap_or(NonZeroU8::MIN);
+            let after = NonZeroU8::new(u.int_in_range(1..=6)?).unwrap_or(NonZeroU8::MIN);
+            // One each is automatic, written as `None`; nudge it to 2:2
+            Ok(Self::new(before, after).unwrap_or(Self {
+                before: NonZeroU8::MIN.saturating_add(1),
+                after: NonZeroU8::MIN.saturating_add(1),
+            }))
         }
     }
 

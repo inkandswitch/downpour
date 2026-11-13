@@ -1,6 +1,6 @@
 //! Unicode text art for rain diagrams, for code comments and READMEs.
 //!
-//! The layout follows the plain-text example in Keyhive notebook 08. Every
+//! The layout follows the plain-text example in [Keyhive Lab Note #8](https://www.inkandswitch.com/keyhive/notebook/08/). Every
 //! event takes three lines: a header line where powerlines cross over, the
 //! event itself, and a spacer.
 //!

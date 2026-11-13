@@ -1,6 +1,7 @@
-//! Text art goldens: each `golden/*.rain` must render to its `.txt`.
+//! Goldens: each `golden/*.rain` must render to its `.txt`, and the README's
+//! picture must match the SVG renderer.
 //!
-//! `notebook-08.txt` is copied from the Keyhive lab notebook; the rest were
+//! `notebook-08.txt` is copied from [Keyhive Lab Note #8](https://www.inkandswitch.com/keyhive/notebook/08/); the rest were
 //! reviewed by hand when blessed. After an intended rendering change, check
 //! the diffs and re-bless with `BLESS=1 cargo test --test golden`.
 
@@ -42,5 +43,26 @@ fn text_goldens() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     assert!(failures.is_empty(), "{}", failures.join("\n"));
+    Ok(())
+}
+
+/// The README's picture (`docs/notebook-08.svg`) is what `to_svg` draws
+/// today. Re-bless with `BLESS=1 cargo test --test golden` after an
+/// intended SVG change.
+#[test]
+fn readme_svg_is_current() -> Result<(), Box<dyn std::error::Error>> {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let source = fs::read_to_string(root.join("tests/golden/notebook-08.rain"))?;
+    let svg = rain_diagram_core::parse(&source)?.to_svg();
+    let path = root.join("../docs/notebook-08.svg");
+
+    if std::env::var_os("BLESS").is_some() {
+        fs::write(&path, format!("{svg}\n"))?;
+    }
+    assert!(
+        fs::read_to_string(&path)?.trim_end() == svg,
+        "{} is stale; re-bless with BLESS=1 cargo test --test golden",
+        path.display()
+    );
     Ok(())
 }

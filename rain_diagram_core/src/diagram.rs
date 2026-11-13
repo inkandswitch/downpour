@@ -11,7 +11,7 @@
 //! what was valid, revoked, or reachable at any moment.
 
 use crate::{
-    ast::{CertId, Delegation, Document, Kind, Name, Percent, Span, Spanned, Statement, Text},
+    ast::{CertId, Delegation, Document, Kind, Name, Placement, Span, Spanned, Statement, Text},
     authority::{Authority, Diagnostic, Ledger, Reach, Status},
     level::Level,
 };
@@ -431,7 +431,7 @@ pub struct Cert {
     pub authority: Authority,
 
     /// Where its label sits along the arrow, if placed by hand.
-    pub at: Option<Percent>,
+    pub at: Option<Placement>,
 
     /// A note, if any.
     pub note: Option<Text>,
@@ -453,7 +453,7 @@ pub struct Invoke {
     pub authority: Authority,
 
     /// Where its label sits along the arrow, if placed by hand.
-    pub at: Option<Percent>,
+    pub at: Option<Placement>,
 
     /// A note, if any.
     pub note: Option<Text>,
@@ -472,7 +472,7 @@ pub struct Revoke {
     pub authority: Authority,
 
     /// Where its label sits along the arrow, if placed by hand.
-    pub at: Option<Percent>,
+    pub at: Option<Placement>,
 
     /// A note, if any.
     pub note: Option<Text>,

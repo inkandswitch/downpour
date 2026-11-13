@@ -1,6 +1,6 @@
 //! Certflow snapshots: who can do what, as of the last event.
 //!
-//! The picture follows Keyhive notebook 07:
+//! The picture follows [Keyhive Lab Note #7](https://www.inkandswitch.com/keyhive/notebook/07/):
 //!
 //! - Principals are round.
 //! - Certificates are boxes, labelled with the access they grant. Solid

@@ -1,6 +1,6 @@
 //! Rain diagrams: lifelines falling from each principal, one row per event.
 //!
-//! The picture follows Keyhive notebook 08:
+//! The picture follows [Keyhive Lab Note #8](https://www.inkandswitch.com/keyhive/notebook/08/):
 //!
 //! - Principals head lifelines.
 //! - Certificates are arrows in the issuer's colour, labelled with a box
@@ -81,7 +81,7 @@ impl Pill {
     }
 
     /// Where a transitive handle sits: on the certificate box itself, on the
-    /// edge facing the audience (as in the notebook's "Admin○→").
+    /// edge facing the audience (as in [Keyhive Lab Note #8](https://www.inkandswitch.com/keyhive/notebook/08/)'s "Admin○→").
     fn handle(&self) -> (f64, f64) {
         (self.x + self.dir * self.half, self.y)
     }

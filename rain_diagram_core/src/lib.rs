@@ -30,7 +30,7 @@
 //! | `label: (A)-[…]->(B)`             | Name a certificate (otherwise it's implicitly `a-b`)       |
 //! | `(B)=[[edit]]=>(S)`               | B uses its Edit authority on S                             |
 //! | `(A)-<revoke>-x[label]`           | A revokes the certificate `label`                          |
-//! | `… @60%`                          | Place the row's label 60% of the way along its arrow       |
+//! | `(A)---[edit]->(B)`               | More dashes before the label slide it towards B (here ¾)   |
 //! | `>>> A (P): note` … `<<< A`       | A captioned region, optionally in principal P's colour        |
 //! | `principals: A, B`                | Fix column order (`participant A, B` works too)            |
 //! | `title …`, `: note`, `// comment` | Annotations (`%%` comments work too)                      |

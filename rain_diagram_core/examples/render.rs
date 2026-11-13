@@ -3,7 +3,7 @@
 //! ```console
 //! $ cargo run --example render < diagram.rain          # Unicode text art
 //! $ cargo run --example render -- --svg < diagram.rain # SVG
-//! $ cargo run --example render -- --json < diagram.rain # notebook JSON
+//! $ cargo run --example render -- --json < diagram.rain # Keyhive Lab Notes JSON
 //! ```
 
 use std::io::Read;

@@ -1,7 +1,7 @@
 //! Rearranging source text by moving statements, as when dragging a row of
 //! a rain diagram.
 //!
-//! Keyhive notebook 08: "you can drag a certificate anywhere below what it
+//! [Keyhive Lab Note #8](https://www.inkandswitch.com/keyhive/notebook/08/): "you can drag a certificate anywhere below what it
 //! relies on and above what relies on it". [`Diagram::movable`] gives that
 //! range for any event, and [`move_statement`] rewrites the source to match,
 //! moving the whole line (note, trailing comment, and indentation included).
@@ -190,62 +190,85 @@ pub fn set_region_note(source: &str, region: &str, note: &str) -> Result<String,
     Ok(out)
 }
 
-/// Set (or with `None`, remove) where a statement's label sits along its
-/// arrow, as when dragging it sideways. Only the ` @60%` changes; when the
-/// note was lined up in a column, it stays in that column if there's room.
+/// Place a statement's label `percent` of the way along its arrow (or with
+/// `None`, back to automatic), as when dragging it sideways. Only the
+/// arrow's dashes change, to the shortest pattern within 5%; a note or
+/// comment lined up in a column stays in that column if there's room.
 ///
 /// ```
 /// use rain_diagram_core::edit::set_position;
 ///
 /// let source = "rain\n(Doc)-[edit]->(Alice)           : granted\n";
-/// let placed = set_position(source, 0, Some(60))?;
-/// assert_eq!(placed, "rain\n(Doc)-[edit]->(Alice) @60%      : granted\n");
+/// let placed = set_position(source, 0, Some(75))?;
+/// assert_eq!(placed, "rain\n(Doc)---[edit]->(Alice)         : granted\n");
 /// assert_eq!(set_position(&placed, 0, None)?, source);
 /// # Ok::<(), rain_diagram_core::edit::PositionError>(())
 /// ```
 ///
 /// # Errors
 ///
-/// [`PositionError::Source`] if `source` doesn't parse,
-/// [`PositionError::NoSuchStatement`] if `statement` is past the end, and
-/// [`PositionError::Percent`] if `percent` is over 100.
+/// [`PositionError::Source`] if `source` doesn't parse, and
+/// [`PositionError::NoSuchStatement`] if `statement` is past the end.
+/// Percentages past 100 count as 100.
 pub fn set_position(
     source: &str,
     statement: usize,
     percent: Option<u16>,
 ) -> Result<String, PositionError> {
-    let at = percent.map(crate::ast::Percent::new).transpose()?;
     let doc = crate::parser::document(source).map_err(|e| PositionError::Source(e.into()))?;
     let span = doc
         .statements
         .get(statement)
         .map(|s| s.span)
         .ok_or(PositionError::NoSuchStatement(statement))?;
-    let text = source.get(span.start..span.end).unwrap_or_default();
-    let body = crate::parser::tail_start(text).ok_or(PositionError::NoSuchStatement(statement))?;
+    let text = source.get(span.start..).unwrap_or_default();
+    let line = text
+        .find('\n')
+        .map_or(text, |end| text.get(..end).unwrap_or_default());
+    let arrow = source
+        .get(span.start..span.end)
+        .and_then(crate::parser::arrow)
+        .ok_or(PositionError::NoSuchStatement(statement))?;
+    let dash = line
+        .get(arrow.before.start..)
+        .and_then(|s| s.chars().next())
+        .unwrap_or('-');
 
-    // What follows the body: maybe an old `@N%`, then maybe `: note`
-    let rest = text.get(body..).unwrap_or_default();
-    let after_token = match rest.trim_start().strip_prefix('@') {
-        Some(token) => token.split_once('%').map_or("", |(_, after)| after),
-        None => rest,
+    let placement = percent.and_then(|p| crate::ast::Placement::nearest(f64::from(p) / 100.0));
+    let (before, after) = placement.map_or((1, 1), |p| (p.before(), p.after()));
+    let run = |n: u8| core::iter::repeat_n(dash, usize::from(n)).collect::<String>();
+    let old = arrow.before.end - arrow.before.start + arrow.after.end - arrow.after.start;
+    let grown = usize::from(before) + usize::from(after);
+
+    // Keep whatever follows the body (a note or comment) in its column
+    let body = line
+        .get(arrow.after.end..arrow.body_end)
+        .unwrap_or_default();
+    let rest = line.get(arrow.body_end..).unwrap_or_default();
+    let trailing = rest.trim_start();
+    let gap = rest.len() - trailing.len();
+    let gap = if trailing.is_empty() {
+        gap
+    } else {
+        (gap + old).saturating_sub(grown).max(1)
     };
-    let note = after_token.trim_start();
-    let width = rest.len() - note.len();
 
-    let token = at.map_or_else(String::new, |at| alloc::format!(" @{at}"));
-    let mut tail = token.clone();
-    if !note.is_empty() {
-        for _ in 0..width.saturating_sub(token.len()).max(1) {
-            tail.push(' ');
-        }
-        tail.push_str(note);
-    }
-
-    let mut out = String::with_capacity(source.len() + token.len());
-    out.push_str(source.get(..span.start + body).unwrap_or_default());
-    out.push_str(&tail);
-    out.push_str(source.get(span.end..).unwrap_or_default());
+    let mut out = String::with_capacity(source.len() + grown);
+    out.push_str(
+        source
+            .get(..span.start + arrow.before.start)
+            .unwrap_or_default(),
+    );
+    out.push_str(&run(before));
+    out.push_str(
+        line.get(arrow.before.end..arrow.after.start)
+            .unwrap_or_default(),
+    );
+    out.push_str(&run(after));
+    out.push_str(body);
+    out.extend(core::iter::repeat_n(' ', gap));
+    out.push_str(trailing);
+    out.push_str(source.get(span.start + line.len()..).unwrap_or_default());
     crate::parse(&out).map_err(PositionError::Source)?;
     Ok(out)
 }
@@ -260,10 +283,6 @@ pub enum PositionError {
     /// There's no statement with that index.
     #[error("there's no statement {0}")]
     NoSuchStatement(usize),
-
-    /// Past the end of the arrow.
-    #[error(transparent)]
-    Percent(#[from] crate::ast::InvalidPercent),
 }
 
 /// Make region `region` cover statements `first..=last`, as when dragging
@@ -1033,5 +1052,37 @@ mod tests {
             delete_statement(shared, 1),
             Err(DeleteError::Revoked { by: 2, .. })
         ));
+    }
+
+    #[test]
+    fn every_percentage_gets_a_short_arrow_within_five_percent() -> TestResult {
+        let source = "rain\n(Doc)-[edit]->(Alice)    // why\n(Alice)=[[edit]]=>(Doc)";
+        for percent in 0..=100_u16 {
+            for statement in 0..2 {
+                let placed = set_position(source, statement, Some(percent))?;
+                let d = parse(&placed)?;
+                let at = d
+                    .event_ix(statement)
+                    .and_then(|ix| match d.event(ix) {
+                        Some(Event::Delegate(c)) => c.at,
+                        Some(Event::Invoke(i)) => i.at,
+                        Some(Event::Revoke(_)) | None => None,
+                    })
+                    .ok_or("placed")?;
+                let wanted = f64::from(percent.clamp(10, 90)) / 100.0;
+                assert!(
+                    (at.fraction() - wanted).abs() <= 0.05 + f64::EPSILON,
+                    "{percent}% → {placed}"
+                );
+                assert!(at.before() + at.after() <= 10, "{placed}");
+                // The comment keeps its column while the arrow fits, so
+                // putting it back is exact
+                if at.before() + at.after() <= 5 {
+                    assert_eq!(placed.find("//"), source.find("//"), "{placed}");
+                    assert_eq!(set_position(&placed, statement, None)?, source);
+                }
+            }
+        }
+        Ok(())
     }
 }

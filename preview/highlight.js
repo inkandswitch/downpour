@@ -28,7 +28,7 @@ const principal = (name, colours) => {
 
 const LEVEL = /^(admin|edit|read|relay|👑|✏️?|👀|📡)/i;
 
-/** A statement body and tail: arrows, principals, levels, `@N%`, `: note`. */
+/** A statement body and tail: arrows (any length), principals, levels, `: note`. */
 const statement = (code, colours) => {
   let out = "";
   let rest = code;
@@ -42,14 +42,13 @@ const statement = (code, colours) => {
 
   const rules = [
     [/^\(([^()]*)\)/, (m) => principal(m[1], colours)],
-    [/^-<revoke>-x/, (m) => span("revoke", m[0])],
-    [/^(=\[\[|\]\]=>|-\[|\]->|\[|\])/, (m) => span("punct", m[0])],
+    [/^-+<revoke>-+x/, (m) => span("revoke", m[0])],
+    [/^(=+\[\[|\]\]=+>|-+\[|\]-+>|\[|\])/, (m) => span("punct", m[0])],
     [LEVEL, (m) => span("level", m[0])],
     [/^via\b/, (m) => span("keyword", m[0])],
-    [/^@\d*%?/, (m) => span("position", m[0])],
     [/^:.*/, (m) => span("punct", ":") + span("note", m[0].slice(1))],
     [/^\s+/, (m) => escape(m[0])],
-    [/^[^\s()[\]:@=-]+/, (m) => span("label", m[0])], // ids in [revoke target] and via lists
+    [/^[^\s()[\]:=-]+/, (m) => span("label", m[0])], // ids in [revoke target] and via lists
     [/^./su, (m) => escape(m[0])],
   ];
   while (rest) {

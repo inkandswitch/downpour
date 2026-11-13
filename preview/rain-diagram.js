@@ -732,12 +732,16 @@ export class RainDiagramElement extends HTMLElement {
       const along = spanTo === spanFrom ? 0 : (x - spanFrom) / (spanTo - spanFrom);
       const next = Math.round(Math.min(Math.max(along, 0), 1) * 100);
       if (next === percent) return;
+      let placed;
       try {
-        candidate = setPosition(this.#text, from, next);
+        placed = setPosition(this.#text, from, next);
       } catch {
         return;
       }
       percent = next;
+      // Dashes snap, so nearby percentages often write the same arrow
+      if (placed === candidate) return;
+      candidate = placed;
       paint(candidate);
       this.#svg.querySelector(`.event[data-event="${from}"]`)?.classList.add("dragging");
     };

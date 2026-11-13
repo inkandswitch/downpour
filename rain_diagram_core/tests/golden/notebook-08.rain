@@ -1,5 +1,5 @@
 rain
-%% Keyhive notebook 08, "Plain Text". The .txt is copied from the post.
+%% Keyhive Lab Note #8 (https://www.inkandswitch.com/keyhive/notebook/08/), "Plain Text". The .txt is copied from the post.
 (Doc)-[edit]->(Alice)            : 1. The Doc grants Alice Edit
 (Alice)-[edit]->(Bob)            : 2. Alice passes Edit to Bob
 (Bob)=[[edit]]=>(Doc)            : 3. Bob edits the Doc

@@ -1,5 +1,7 @@
-//! The worked examples from the Ink & Switch Keyhive lab notebook, entries 07
-//! (certflow) and 08 (rain), written in the textual notation.
+//! The worked examples from the Keyhive Lab Notes,
+//! [#7](https://www.inkandswitch.com/keyhive/notebook/07/) (certflow) and
+//! [#8](https://www.inkandswitch.com/keyhive/notebook/08/) (rain), written in
+//! the textual notation.
 
 use rain_diagram_core::{
     diagram::{Diagram, Event, Principal},
@@ -17,7 +19,7 @@ fn ids(d: &Diagram) -> Vec<&str> {
         .collect()
 }
 
-/// Notebook 08, "Plain Text", with every subject left to inference.
+/// [Keyhive Lab Note #8](https://www.inkandswitch.com/keyhive/notebook/08/), "Plain Text", with every subject left to inference.
 #[test]
 fn rain_plain_text_example() -> TestResult {
     let d = parse(
@@ -51,7 +53,7 @@ fn rain_plain_text_example() -> TestResult {
     Ok(())
 }
 
-/// Notebook 07, "A More Involved Example": an essay shared with commenters.
+/// [Keyhive Lab Note #7](https://www.inkandswitch.com/keyhive/notebook/07/), "A More Involved Example": an essay shared with commenters.
 /// Alice holds both the Essay and Commenters, so subjects must be explicit.
 #[test]
 fn certflow_commenters_example() -> TestResult {
@@ -83,7 +85,7 @@ fn certflow_commenters_example() -> TestResult {
     Ok(())
 }
 
-/// Notebook 08, "Transitive Authority": Alice reaches the Doc through Team.
+/// [Keyhive Lab Note #8](https://www.inkandswitch.com/keyhive/notebook/08/), "Transitive Authority": Alice reaches the Doc through Team.
 #[test]
 fn transitive_handle() -> TestResult {
     let d = parse(

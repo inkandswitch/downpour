@@ -21,13 +21,13 @@
 
 use crate::{
     ast::{
-        CertId, Delegation, Document, InvalidCertId, InvalidName, InvalidPercent, InvalidText,
-        Invocation, Kind, Name, Percent, Region, Revocation, Span, Spanned, Statement, Text,
-        comment_start,
+        CertId, Delegation, Document, InvalidCertId, InvalidName, InvalidText, Invocation, Kind,
+        Name, Placement, Region, Revocation, Span, Spanned, Statement, Text, comment_start,
     },
     level::{Level, UnknownLevel},
 };
 use alloc::{collections::BTreeMap, string::String, vec::Vec};
+use core::num::NonZeroU8;
 use thiserror::Error;
 
 /// Parse source text into a [`Document`].
@@ -238,86 +238,117 @@ fn statement(c: &mut Cursor<'_>) -> Result<Statement, ParseError> {
         let id = CertId::new(raw.trim_end()).map_err(|e| ParseError::new(span, e.into()))?;
         Some(Spanned { node: id, span })
     };
-
-    let by = principal(c)?;
-
-    if c.eat("-[") {
-        let level = level(c)?;
-
-        c.skip_ws();
-        let subject = if c.rest().starts_with('(') {
-            Some(principal(c)?)
-        } else {
-            None
-        };
-
-        let via = if c.eat_word("via") {
-            let mut ids = Vec::from([cert_id(c)?]);
-            while c.eat(",") {
-                ids.push(cert_id(c)?);
-            }
-            ids
-        } else {
-            Vec::new()
-        };
-
-        c.expect("]", "`]` to close the certificate")?;
-        c.expect("->", "`->` after the certificate")?;
-        let audience = principal(c)?;
-        let (at, note) = tail(c)?;
-
-        return Ok(Statement::Delegate(Delegation {
-            id: id.map(|id| id.node),
-            issuer: by,
-            level,
-            subject,
-            via,
-            audience,
-            at,
-            note,
-        }));
-    }
-
-    if let Some(id) = id {
-        return Err(ParseError::new(
+    let unlabelled = |id: Option<Spanned<CertId>>| match id {
+        Some(id) => Err(ParseError::new(
             id.span,
             ParseErrorKind::LabelOnNonDelegation,
-        ));
+        )),
+        None => Ok(()),
+    };
+
+    let by = principal(c)?;
+    c.skip_ws();
+
+    if c.rest().starts_with('-') {
+        let before = run(c, '-', "")?;
+
+        if c.eat("[") {
+            let level = level(c)?;
+
+            c.skip_ws();
+            let subject = if c.rest().starts_with('(') {
+                Some(principal(c)?)
+            } else {
+                None
+            };
+
+            let via = if c.eat_word("via") {
+                let mut ids = Vec::from([cert_id(c)?]);
+                while c.eat(",") {
+                    ids.push(cert_id(c)?);
+                }
+                ids
+            } else {
+                Vec::new()
+            };
+
+            c.expect("]", "`]` to close the certificate")?;
+            let after = run(c, '-', "`->` after the certificate")?;
+            c.expect(">", "`->` after the certificate")?;
+            let audience = principal(c)?;
+
+            return Ok(Statement::Delegate(Delegation {
+                id: id.map(|id| id.node),
+                issuer: by,
+                level,
+                subject,
+                via,
+                audience,
+                at: c.placement(before, after),
+                note: tail(c)?,
+            }));
+        }
+
+        if c.eat("<revoke>") {
+            unlabelled(id)?;
+            let after = run(c, '-', "`-x` after `<revoke>`")?;
+            c.expect("x", "`-x` after `<revoke>`")?;
+            c.expect("[", "`[` before the revoked certificate's label")?;
+            let target = cert_id(c)?;
+            c.expect("]", "`]` after the revoked certificate's label")?;
+
+            return Ok(Statement::Revoke(Revocation {
+                by,
+                target,
+                at: c.placement(before, after),
+                note: tail(c)?,
+            }));
+        }
+
+        return Err(c.error_here(ParseErrorKind::Expected(
+            "`[` (delegate) or `<revoke>` (revoke) after the dashes",
+        )));
     }
 
-    if c.eat("=[[") {
+    if c.rest().starts_with('=') {
+        unlabelled(id)?;
+        let before = run(c, '=', "")?;
+        c.expect("[[", "`[[` to start the invocation")?;
         let level = level(c)?;
         c.expect("]]", "`]]` to close the invocation")?;
-        c.expect("=>", "`=>` after the invocation")?;
+        let after = run(c, '=', "`=>` after the invocation")?;
+        c.expect(">", "`=>` after the invocation")?;
         let on = principal(c)?;
-        let (at, note) = tail(c)?;
 
         return Ok(Statement::Invoke(Invocation {
             by,
             level,
             on,
-            at,
-            note,
-        }));
-    }
-
-    if c.eat("-<revoke>-x") {
-        c.expect("[", "`[` before the revoked certificate's label")?;
-        let target = cert_id(c)?;
-        c.expect("]", "`]` after the revoked certificate's label")?;
-        let (at, note) = tail(c)?;
-
-        return Ok(Statement::Revoke(Revocation {
-            by,
-            target,
-            at,
-            note,
+            at: c.placement(before, after),
+            note: tail(c)?,
         }));
     }
 
     Err(c.error_here(ParseErrorKind::Expected(
         "`-[` (delegate), `=[[` (invoke), or `-<revoke>-x` (revoke)",
     )))
+}
+
+/// A run of `dash`es either side of a label: at least one, at most 255.
+fn run(c: &mut Cursor<'_>, dash: char, what: &'static str) -> Result<Run, ParseError> {
+    let (raw, span) = c.take_while(|ch| ch == dash);
+    let count =
+        u8::try_from(raw.len()).map_err(|_| ParseError::new(span, ParseErrorKind::LongArrow))?;
+    let count =
+        NonZeroU8::new(count).ok_or_else(|| c.error_here(ParseErrorKind::Expected(what)))?;
+    Ok(Run { count, span })
+}
+
+/// A run of dashes, and where it is.
+#[derive(Debug, Clone, Copy)]
+struct Run {
+    count: NonZeroU8,
+    span: Span,
 }
 
 fn principal(c: &mut Cursor<'_>) -> Result<Name, ParseError> {
@@ -338,29 +369,31 @@ fn cert_id(c: &mut Cursor<'_>) -> Result<CertId, ParseError> {
     CertId::new(raw).map_err(|e| ParseError::new(span, e.into()))
 }
 
-/// After a statement's body: an optional ` @60%`, then an optional note.
-fn tail(c: &mut Cursor<'_>) -> Result<(Option<Percent>, Option<Text>), ParseError> {
+/// After a statement's body: an optional note. Marks where the body ended.
+fn tail(c: &mut Cursor<'_>) -> Result<Option<Text>, ParseError> {
     c.tail = Some(c.pos);
-    c.skip_ws();
-    let at = if c.eat("@") {
-        let (raw, span) = c.take_while(|ch| ch.is_ascii_digit());
-        c.expect("%", "`%` after the position, as in `@60%`")?;
-        let percent = raw.parse::<u16>().map_err(|_| {
-            ParseError::new(span, ParseErrorKind::Expected("a percentage, as in `@60%`"))
-        })?;
-        Some(Percent::new(percent).map_err(|e| ParseError::new(span, e.into()))?)
-    } else {
-        None
-    };
-    Ok((at, note(c)?))
+    note(c)
 }
 
-/// Where a statement's tail (` @60% : note`) starts within `line`, for
-/// editing the position without disturbing the rest of the line.
-pub(crate) fn tail_start(line: &str) -> Option<usize> {
+/// A statement's arrow within its line: the dash runs either side of its
+/// label, and where the body ends.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Arrow {
+    pub before: Span,
+    pub after: Span,
+    pub body_end: usize,
+}
+
+/// Find `line`'s arrow, for redrawing it without disturbing the rest.
+pub(crate) fn arrow(line: &str) -> Option<Arrow> {
     let mut c = Cursor::new(line, 0);
     statement(&mut c).ok()?;
-    c.tail
+    let (before, after) = c.runs?;
+    Some(Arrow {
+        before,
+        after,
+        body_end: c.tail?,
+    })
 }
 
 fn note(c: &mut Cursor<'_>) -> Result<Option<Text>, ParseError> {
@@ -383,6 +416,9 @@ struct Cursor<'a> {
 
     /// Where the statement body ended, once `tail` has run.
     tail: Option<usize>,
+
+    /// The arrow's dash runs, once read.
+    runs: Option<(Span, Span)>,
 }
 
 impl<'a> Cursor<'a> {
@@ -392,7 +428,14 @@ impl<'a> Cursor<'a> {
             offset,
             pos: 0,
             tail: None,
+            runs: None,
         }
+    }
+
+    /// Note the arrow's runs, and where they put the label.
+    fn placement(&mut self, before: Run, after: Run) -> Option<Placement> {
+        self.runs = Some((before.span, after.span));
+        Placement::new(before.count, after.count)
     }
 
     fn rest(&self) -> &'a str {
@@ -559,9 +602,9 @@ pub enum ParseErrorKind {
     #[error(transparent)]
     CertId(#[from] InvalidCertId),
 
-    /// A position past the end of the arrow.
-    #[error(transparent)]
-    Percent(#[from] InvalidPercent),
+    /// More than 255 dashes on one side of a label.
+    #[error("an arrow can have at most 255 dashes either side of its label")]
+    LongArrow,
 
     /// A bad title or note.
     #[error(transparent)]
@@ -696,23 +739,26 @@ mod tests {
     #[test]
     fn positions() -> TestResult {
         let parsed = statements(
-            "rain\n(A)-[read]->(B) @60% : note\n(B)=[[read]]=>(A)@0%\n(A)-<revoke>-x[a-b] @100%",
+            "rain\n(A)---[read]->(B) : note\n(B)=[[read]]===>(A)\n(A)--<revoke>--x[a-b]\n(A)-[read]->(B)",
         )?;
-        let at: Vec<_> = parsed
+        let runs: Vec<_> = parsed
             .iter()
             .map(|s| match s {
                 Statement::Delegate(d) => d.at,
                 Statement::Invoke(i) => i.at,
                 Statement::Revoke(r) => r.at,
             })
-            .map(|at| at.map(Percent::get))
+            .map(|at| at.map(|p| (p.before(), p.after())))
             .collect();
-        assert_eq!(at, [Some(60), Some(0), Some(100)]);
+        assert_eq!(runs, [Some((3, 1)), Some((1, 3)), Some((2, 2)), None]);
 
+        let long = alloc::format!("rain\n(A)-[read]{}>(B)", "-".repeat(256));
         for (source, problem) in [
-            ("rain\n(A)-[read]->(B) @101%", "101"),
-            ("rain\n(A)-[read]->(B) @60", ""),
-            ("rain\n(A)-[read]->(B) @x%", "x"),
+            ("rain\n(A)-[read]>(B)", ">"),
+            ("rain\n(A)=[[read]]>(B)", ">"),
+            ("rain\n(A)--(B)", "("),
+            ("rain\n(A)-<revoke>x[a-b]", "x"),
+            (long.as_str(), &long[15..271]),
         ] {
             let span = document(source).err().map(|e| e.span());
             assert_eq!(

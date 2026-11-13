@@ -619,7 +619,7 @@ fn uses(d: &Diagram, ix: EventIx) -> Vec<EventIx> {
     uses
 }
 
-/// Notebook 08: "you can drag a certificate anywhere below what it relies
+/// [Keyhive Lab Note #8](https://www.inkandswitch.com/keyhive/notebook/08/): "you can drag a certificate anywhere below what it relies
 /// on and above what relies on it, and the outcome never changes."
 ///
 /// Swaps a delegation with an adjacent event when neither relies on the
