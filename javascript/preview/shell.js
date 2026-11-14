@@ -1,7 +1,9 @@
 // The page around a diagram: the picture and its status and warnings, the
 // Rain / Certflow tabs, the export pane, zoom, the theme toggle, splitters,
 // and maximize. Shared by the preview (main.js) and the collaborative editor
-// (../editor/), which differ only in how the source is edited.
+// (../editor/), which differ only in how the source is edited. It works
+// inside `root`: the document, or a shadow root when the editor is mounted
+// into someone else's page.
 
 import { PALETTE, commentStart } from "./highlight.js";
 import { splitter } from "./split.js";
@@ -11,9 +13,11 @@ import { splitter } from "./split.js";
  * @param {string} options.prefix       storage key prefix, e.g. "rain-preview"
  * @param {() => string} options.text   the current source
  * @param {object} options.wasm         { diagnostics, renderSvg, renderText, toSiteJson }
+ * @param {Document | ShadowRoot} [options.root]       where the page's elements are
+ * @param {HTMLElement} [options.themeRoot]           where the theme choice is set
  */
-export const shell = ({ prefix, text, wasm }) => {
-  const $ = (id) => document.getElementById(id);
+export const shell = ({ prefix, text, wasm, root = document, themeRoot = document.documentElement }) => {
+  const $ = (id) => root.querySelector(`#${id}`);
   const status = $("status");
   const warnings = $("warnings");
   const output = $("output");
@@ -75,12 +79,12 @@ export const shell = ({ prefix, text, wasm }) => {
   const select = (next) => {
     format = next;
     save("format", next);
-    for (const tab of document.querySelectorAll("[data-format]")) {
+    for (const tab of root.querySelectorAll("[data-format]")) {
       tab.setAttribute("aria-selected", String(tab.dataset.format === next));
     }
     render();
   };
-  for (const tab of document.querySelectorAll("[data-format]")) {
+  for (const tab of root.querySelectorAll("[data-format]")) {
     tab.addEventListener("click", () => select(tab.dataset.format));
   }
 
@@ -101,11 +105,11 @@ export const shell = ({ prefix, text, wasm }) => {
     const written = header();
     const shown = override?.header === written ? override.notation : written;
     picture.setAttribute("notation", shown);
-    for (const tab of document.querySelectorAll("[data-notation]")) {
+    for (const tab of root.querySelectorAll("[data-notation]")) {
       tab.setAttribute("aria-selected", String(tab.dataset.notation === shown));
     }
   };
-  for (const tab of document.querySelectorAll("[data-notation]")) {
+  for (const tab of root.querySelectorAll("[data-notation]")) {
     tab.addEventListener("click", () => {
       const written = header();
       override = tab.dataset.notation === written ? null : { notation: tab.dataset.notation, header: written };
@@ -113,7 +117,7 @@ export const shell = ({ prefix, text, wasm }) => {
     });
   }
 
-  const main = document.querySelector("main");
+  const main = root.querySelector("main");
   const pane = $("output-pane");
   splitter($("columns"), {
     container: main,
@@ -143,20 +147,22 @@ export const shell = ({ prefix, text, wasm }) => {
   const theme = (choice) => {
     save("theme", choice);
     if (choice === "light" || choice === "dark") {
-      document.documentElement.dataset.theme = choice;
+      themeRoot.dataset.theme = choice;
       picture.setAttribute("theme", choice);
     } else {
-      delete document.documentElement.dataset.theme;
+      delete themeRoot.dataset.theme;
       picture.removeAttribute("theme");
     }
-    for (const button of document.querySelectorAll("[data-theme-choice]")) {
+    for (const button of root.querySelectorAll("[data-theme-choice]")) {
       button.setAttribute("aria-pressed", String(button.dataset.themeChoice === choice));
     }
   };
-  for (const button of document.querySelectorAll("[data-theme-choice]")) {
+  // Only where there is a toggle: a host page may theme the editor itself
+  const toggles = root.querySelectorAll("[data-theme-choice]");
+  for (const button of toggles) {
     button.addEventListener("click", () => theme(button.dataset.themeChoice));
   }
-  theme(load("theme", "system"));
+  if (toggles.length) theme(load("theme", "system"));
 
   // Zoom, remembered separately for rain and certflow
   const ZOOMS = [0.25, 0.33, 0.5, 0.67, 0.75, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2, 2.5, 3, 4];
@@ -204,19 +210,20 @@ export const shell = ({ prefix, text, wasm }) => {
     if (next) main.dataset.max = next;
     else delete main.dataset.max;
     save("maximized", next ?? "");
-    for (const button of document.querySelectorAll(".maximize")) {
+    for (const button of root.querySelectorAll(".maximize")) {
       const on = button.dataset.pane === next;
       button.textContent = on ? "⤡" : "⤢";
       button.title = on ? "Restore" : "Maximize";
       button.setAttribute("aria-pressed", String(on));
     }
   };
-  for (const button of document.querySelectorAll(".maximize")) {
+  for (const button of root.querySelectorAll(".maximize")) {
     button.addEventListener("click", () => maximize(button.dataset.pane));
   }
-  window.addEventListener("keydown", (e) => {
+  const escape = (e) => {
     if (e.key === "Escape" && main.dataset.max && !e.defaultPrevented) maximize(main.dataset.max);
-  });
+  };
+  addEventListener("keydown", escape);
   const remembered = load("maximized", "");
   if (remembered) maximize(remembered);
 
@@ -238,5 +245,7 @@ export const shell = ({ prefix, text, wasm }) => {
     render,
     /** Render for the first time, with the remembered export format. */
     start: () => select(format),
+    /** Remove what the page put outside `root`. */
+    destroy: () => removeEventListener("keydown", escape),
   };
 };

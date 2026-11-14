@@ -1,0 +1,4 @@
+/* The editor's own additions to the preview's page (../../preview/style.css) */
+
+#source .cm-editor { flex: 1; height: 100%; }
+@media (max-width: 800px) { #source { min-height: 50vh; } }

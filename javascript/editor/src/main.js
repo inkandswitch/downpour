@@ -1,39 +1,42 @@
-// The collaborative editor: the preview's page (../../preview/shell.js), with
-// the source in an Automerge document synced over Subduction, edited as text
-// in CodeMirror and as a picture in <rain-diagram editable>. Open the same
-// URL in another browser to edit together.
+// The collaborative editor's own page: the editor (mount.js) on a document
+// synced over Subduction, named in the URL, with who's here, the connection,
+// and whether everything has reached the sync server. Open the same URL in
+// another browser to edit together.
 
 // Importing the full packages initializes their Wasm; the repo and the
 // Subduction backend import the `slim` builds, which share it
-import * as A from "@automerge/automerge";
-import { createWebCryptoSigner } from "@automerge/subduction";
+import "@automerge/automerge";
+import { createMemorySigner, createWebCryptoSigner } from "@automerge/subduction";
 import { Repo, isValidAutomergeUrl } from "@automerge/automerge-repo";
 import { SubductionBackend } from "@automerge/automerge-repo-subduction";
+import { DummySubductionStorageAdapter } from "@automerge/automerge-repo-subduction/helpers/DummySubductionStorageAdapter.js";
 import { WebSocketSubductionNetworkAdapter } from "@automerge/automerge-repo-subduction-network-websocket";
 import { IndexedDBSubductionStorageAdapter } from "@automerge/automerge-repo-subduction-storage-indexeddb";
-import { automergeSyncPlugin } from "@automerge/automerge-codemirror";
-import { redo, redoDepth, undo, undoDepth } from "@codemirror/commands";
-import { EditorState, Transaction } from "@codemirror/state";
-import { EditorView, basicSetup } from "codemirror";
-import init, { diagnostics, renderSvg, renderText, toSiteJson } from "@inkandswitch/rain-diagram/wasm";
-import "@inkandswitch/rain-diagram";
 import "../../preview/style.css";
-import { shell } from "../../preview/shell.js";
+import "./editor.css";
+import { STARTER } from "../../preview/examples.js";
+import { mountEditor } from "./mount.js";
 
 const SYNC_SERVER = new URLSearchParams(location.search).get("sync") ?? "wss://subduction.sync.inkandswitch.com";
-const STARTER = `rain
-title A shared diagram
-
-(Doc)-[edit(Doc)]->(Alice)     : The Doc grants Alice Edit
-(Alice)-[edit(Doc)]->(Bob)     : Alice passes Edit to Bob
-(Bob)=[[edit]]=>(Doc)          : Bob edits the Doc
-`;
 
 const $ = (id) => document.getElementById(id);
-const picture = $("picture");
 const connection = $("connection");
 
-// Sync: a Subduction backend with local storage and the sync server
+// One tab per browser owns local storage: the IndexedDB adapter allows one
+// live backend per database, across tabs too. That tab keeps documents for
+// offline use, under the browser's persistent identity (the WebCrypto key
+// is kept in IndexedDB). Other tabs sync in memory, each as its own peer, so
+// the server never sees one identity connected twice.
+const ownsStorage = await new Promise((resolve) => {
+  if (!navigator.locks) return resolve(true);
+  navigator.locks.request("downpour-editor:storage", { ifAvailable: true }, (lock) => {
+    resolve(lock !== null);
+    // Held until the tab closes
+    return lock ? new Promise(() => {}) : undefined;
+  });
+});
+
+// Sync: a Subduction backend with storage and the sync server
 const server = new WebSocketSubductionNetworkAdapter(SYNC_SERVER);
 server.subscribe((state) => {
   const name = state.status ?? String(state);
@@ -41,69 +44,63 @@ server.subscribe((state) => {
   connection.textContent = state.error ? `${name}: ${state.error}` : name;
 });
 const backend = new SubductionBackend({
-  storage: new IndexedDBSubductionStorageAdapter(),
+  storage: ownsStorage ? new IndexedDBSubductionStorageAdapter() : new DummySubductionStorageAdapter(),
   network: [server],
-  signer: await createWebCryptoSigner(),
+  signer: ownsStorage ? await createWebCryptoSigner() : createMemorySigner(),
 });
 const repo = new Repo({ backend });
 
 // The document named in the URL's hash, or a new one put there
 const hash = location.hash.slice(1);
-const handle = isValidAutomergeUrl(hash) ? await repo.find(hash) : await repo.create({ source: STARTER });
+// A document nobody has sent yet (just made elsewhere, or the server is
+// unreachable) is unavailable for now, not forever: keep looking, and say so
+const find = async (url) => {
+  for (let wait = 500; ; wait = Math.min(wait * 2, 10_000)) {
+    try {
+      return await repo.find(url);
+    } catch (e) {
+      $("sync").className = "offline";
+      $("sync").textContent = "… looking for this document";
+      $("sync").title = `${e.message ?? e}; trying again`;
+      await new Promise((resolve) => setTimeout(resolve, wait));
+    }
+  }
+};
+const handle = isValidAutomergeUrl(hash) ? await find(hash) : await repo.create({ source: STARTER });
 if (!isValidAutomergeUrl(hash)) location.hash = handle.url;
 const share = $("share");
 share.href = share.textContent = location.href;
 window.handle = handle; // for poking at in the console
+connection.title = ownsStorage
+  ? "This tab keeps a copy for offline use"
+  : "Another tab keeps the offline copy; this one syncs live only";
+window.ownsStorage = ownsStorage;
 
-await init();
-const text = () => handle.doc()?.source ?? "";
-const page = shell({ prefix: "rain-editor", text, wasm: { diagnostics, renderSvg, renderText, toSiteJson } });
-
-// Text: CodeMirror, kept in step with the document by automerge-codemirror,
-// in the page's colours (so it follows the theme)
-const theme = EditorView.theme({
-  "&": { color: "var(--fg)", backgroundColor: "transparent", height: "100%" },
-  ".cm-content": { font: "13px/1.6 var(--mono)", caretColor: "var(--fg)" },
-  ".cm-cursor": { borderLeftColor: "var(--fg)" },
-  ".cm-gutters": { backgroundColor: "var(--panel)", color: "var(--muted)", borderRight: "1px solid var(--border)" },
-  ".cm-activeLine, .cm-activeLineGutter": { backgroundColor: "rgb(127 127 127 / 0.08)" },
-  "&.cm-focused .cm-selectionBackground, .cm-selectionBackground": { backgroundColor: "rgb(61 125 216 / 0.25)" },
-});
-
-// Undo is per person: only what this person typed goes into the history.
-// Remote changes (and picture edits, which arrive the same way) carry no
-// user event, so they stay out of it, and undo never reverts someone else
-const ownEditsOnly = EditorState.transactionExtender.of((tr) =>
-  tr.docChanged && !tr.annotation(Transaction.userEvent) ? { annotations: Transaction.addToHistory.of(false) } : null,
-);
-
-const syncHistory = (state) => {
-  $("undo").disabled = undoDepth(state) === 0;
-  $("redo").disabled = redoDepth(state) === 0;
+// Whether the sync server has everything this tab has: its latest heads
+// (sent as it takes changes in) match this copy's
+const syncState = $("sync");
+let serverHeads = null;
+const showSync = () => {
+  const heads = handle.heads();
+  const synced = serverHeads?.length === heads.length && heads.every((h) => serverHeads.includes(h));
+  const [state, text, title] = synced
+    ? ["synced", "✓ synced", "Every change here has reached the sync server"]
+    : ["connected", "connecting"].includes(connection.className)
+      ? ["syncing", "↻ syncing…", "Changes are on their way to or from the sync server"]
+      : ownsStorage
+        ? ["offline", "● not synced", "Changes are kept in this browser, and sync when the server is back"]
+        : ["offline", "● not synced", "Changes are kept in this tab only (another tab keeps the offline copy) until the server is back"];
+  syncState.className = state;
+  syncState.textContent = text;
+  syncState.title = title;
 };
-const view = new EditorView({
-  doc: text(),
-  extensions: [
-    basicSetup,
-    theme,
-    ownEditsOnly,
-    automergeSyncPlugin({ handle, path: ["source"] }),
-    EditorView.updateListener.of((update) => syncHistory(update.state)),
-  ],
-  parent: $("source"),
+handle.on("remote-heads", ({ heads }) => {
+  serverHeads = heads;
+  showSync();
 });
-window.view = view;
-$("undo").addEventListener("click", () => undo(view));
-$("redo").addEventListener("click", () => redo(view));
+handle.on("change", showSync);
+server.subscribe(showSync);
+showSync();
 
-// Picture: redrawn on every change, local or remote. Text that doesn't parse
-// (someone mid-edit) keeps the last good diagram up, with the error above it
-handle.on("change", () => page.render());
-
-// Edits made on the picture come back as a whole new source; updateText
-// turns that into the minimal splices, so concurrent typing elsewhere survives
-picture.addEventListener("rain-edit", (e) => {
-  handle.change((doc) => A.updateText(doc, ["source"], e.detail.source));
-});
-
-page.start();
+const { view } = await mountEditor($("app"), handle, { people: $("people") });
+window.view = view; // for poking at in the console

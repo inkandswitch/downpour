@@ -31,24 +31,50 @@ importers:
       '@automerge/subduction':
         specifier: 0.27.0
         version: 0.27.0
+      '@codemirror/autocomplete':
+        specifier: ^6.20.4
+        version: 6.20.4
       '@codemirror/commands':
         specifier: ^6.10.0
         version: 6.11.1
+      '@codemirror/search':
+        specifier: ^6.7.2
+        version: 6.7.2
       '@codemirror/state':
         specifier: ^6.7.6
         version: 6.7.6
+      '@codemirror/view':
+        specifier: ^6.43.15
+        version: 6.43.15
       '@inkandswitch/rain-diagram':
         specifier: workspace:*
         version: link:../rain-diagram
-      codemirror:
-        specifier: ^6.0.2
-        version: 6.0.2
     devDependencies:
       vite:
         specifier: ^8.0.0
         version: 8.3.8
 
-  javascript/patchwork: {}
+  javascript/patchwork:
+    dependencies:
+      '@inkandswitch/downpour-editor':
+        specifier: workspace:*
+        version: link:../editor
+    devDependencies:
+      '@automerge/automerge':
+        specifier: 3.5.0
+        version: 3.5.0
+      '@automerge/automerge-repo':
+        specifier: 3.0.0-alpha.2
+        version: 3.0.0-alpha.2
+      '@automerge/automerge-repo-subduction':
+        specifier: 3.0.0-alpha.2
+        version: 3.0.0-alpha.2
+      '@automerge/subduction':
+        specifier: 0.27.0
+        version: 0.27.0
+      vite:
+        specifier: ^8.0.0
+        version: 8.3.8
 
   javascript/rain-diagram: {}
 
