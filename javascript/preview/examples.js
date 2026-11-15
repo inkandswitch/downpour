@@ -1,0 +1,84 @@
+// The example sources the preview and the collaborative editor offer. TOUR is
+// the tour.rain golden (see tour.test.mjs), so its rendering checks cover it.
+
+export const BASIC = `rain
+title Basic Example
+
+(Doc)-[admin(Doc)]->(Alice)    : The Doc grants Alice Admin
+(Alice)-[edit(Doc)]->(Bob)     : Alice passes Edit to Bob
+(Bob)=[[edit]]=>(Doc)          : Bob edits the Doc
+>>> C (Carol): Carol joins in
+bc: (Bob)-[edit(Doc)]->(Carol) : Bob gives Carol Edit
+(Carol)=[[edit]]=>(Doc)        : Carol edits the Doc
+<<< C
+(Alice)-<revoke>-x[bc]         : Alice revokes Bob→Carol
+`;
+
+export const TOUR = `rain
+// A tour of the notation. Lines (or line ends) starting \`//\` are comments;
+// \`%%\` works too. In the preview you can also drag rows up and down, slide
+// labels sideways, hover a principal to see its reach, and click a
+// certificate to see what revoking it would void.
+//
+// The first line picks the default view: \`rain\` (time runs down the page)
+// or \`certflow\` (a snapshot). The Rain / Certflow tabs switch either way.
+title A Tour of Features
+
+// Optional: the order of the lifelines, left to right. Without it,
+// principals appear in the order they're first mentioned.
+principals: Doc, Alice, Bob, Carol, Dan, Team, Eve, Server
+
+// A delegation: (issuer)-[level(subject)]->(audience), then an optional
+// \`: note\` shown beside the row. Levels, most to least: admin 👑, edit ✏️,
+// read 👀, relay 📡. With no (subject), admin means "over myself" and any
+// other level passes on what the issuer already holds.
+(Doc)-[admin(Doc)]->(Alice) : The Doc grants Alice Admin
+(Alice)-[edit(Doc)]->(Bob)  : Alice passes Edit to Bob
+
+// Regions group rows: \`>>> name (Principal): caption\` … \`<<< name\`. The
+// (Principal) is optional and gives the region that principal's colour.
+// In the preview, double-click a caption to edit it; drag an edge to resize.
+>>> A (Bob): Bob does stuff
+// An invocation: someone using their authority, (actor)=[[level]]=>(subject).
+(Bob)=[[edit]]=>(Doc)          : Bob edits the Doc
+// \`label:\` names a certificate so revocations and \`via\` can refer to it.
+// Only labelled certificates can be referred to; unlabelled ones need none.
+bc: (Bob)-[edit(Doc)]->(Carol) : Bob gives Carol Edit
+(Carol)=[[edit]]=>(Doc)        : Carol edits the Doc
+<<< A
+
+(Carol)-[read(Doc)]->(Dan) : Carol shares Read with Dan
+// More dashes on one side slide a row's label along its arrow: here one
+// before and two after put it a third of the way. One each is automatic.
+// In the preview, drag a label sideways to set it.
+(Dan)=[[read]]==>(Doc)     : Dan reads the Doc
+
+// Groups: authority flows through membership. Eve reaches the Doc through
+// Team; the small circle on Team→Eve is the transitive handle.
+(Doc)-[read(Doc)]->(Team)                 : The Doc lets Team read it
+team-eve: (Team)-[admin(Team)]->(Eve)     : Eve joins Team
+// \`via\` names the route explicitly (it's normally worked out for you).
+(Eve)-[relay(Doc) via team-eve]->(Server) : Eve lets a sync server relay it
+
+// Command paths, as in UCAN, work wherever a level does: \`/crud\` covers
+// \`/crud/read\`. \`where\` adds a caveat, opaque text that everything relying
+// on the certificate is bound by, so caveats pile up down a chain. Hover a
+// label in the picture to see every caveat it's bound by.
+(Doc)-[/crud(Doc) where path = "/docs"]->(Dan)     : The Doc grants Dan CRUD under /docs
+(Dan)-[/crud/read(Doc) where size < 1MB]->(Server) : Dan narrows it to reads, adds a limit
+(Server)=[[/crud/read]]=>(Doc)                     : The Server reads, bound by both caveats
+
+// A revocation: (revoker)-<revoke>-x[label]. It's retroactive: everything
+// that relied on Bob→Carol goes void, even rows above this one. Drag the
+// dotted "now" line (or click its clock) to see any moment as certflow.
+(Alice)-<revoke>-x[bc]           : Alice revokes Bob→Carol, and all that relied on it
+`;
+
+/** A new collaborative document's source. */
+export const STARTER = `rain
+title A shared diagram
+
+(Doc)-[edit(Doc)]->(Alice)     : The Doc grants Alice Edit
+(Alice)-[edit(Doc)]->(Bob)     : Alice passes Edit to Bob
+(Bob)=[[edit]]=>(Doc)          : Bob edits the Doc
+`;

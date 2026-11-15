@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Downpour Editor</title>
+  <script>
+    // Before first paint, so a chosen theme doesn't flash the other one.
+    // Per viewer: the theme isn't part of the shared document
+    try {
+      const theme = localStorage.getItem("rain-editor:theme");
+      if (theme === "light" || theme === "dark") document.documentElement.dataset.theme = theme;
+    } catch {}
+  </script>
+  <style>
+    #connection { white-space: nowrap; }
+    #connection.connected { color: var(--ok); }
+    #sync { white-space: nowrap; font-size: 12px; color: var(--muted); }
+    #sync.synced { color: var(--ok); }
+    #sync.offline { color: var(--err); }
+    #share {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      color: var(--muted);
+      font: 12px var(--mono);
+      user-select: all;
+    }
+    #people { display: flex; flex-wrap: wrap; gap: 4px; margin-left: auto; }
+    #people:empty { display: none; }
+    #people ~ #theme { margin-left: 0; }
+    .person {
+      border: 1px solid var(--person);
+      border-left-width: 4px;
+      border-radius: 4px;
+      padding: 1px 6px;
+      background: transparent;
+      color: var(--fg);
+      font: 12px system-ui, sans-serif;
+      white-space: nowrap;
+    }
+    button.person { cursor: pointer; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Downpour</h1>
+    <span id="connection">connecting…</span>
+    <span id="sync"></span>
+    <a id="share" href="" title="Share this link to edit together"></a>
+    <span id="people" aria-label="Who's here"></span>
+    <div id="theme" role="group" aria-label="Colour scheme">
+      <button type="button" data-theme-choice="system">◐ System</button>
+      <button type="button" data-theme-choice="light">☀ Light</button>
+      <button type="button" data-theme-choice="dark">☾ Dark</button>
+    </div>
+  </header>
+
+  <div id="app"></div>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>

@@ -5,5 +5,11 @@ packages:
   - javascript/rain-diagram-wasm
   - javascript/rain-diagram-wasm/examples/*
 
+# Install scripts stay off unless approved. cbor-extract (via cbor-x, in
+# automerge-repo) only builds an optional native addon; browsers use cbor-x's
+# JS path
+allowBuilds:
+  cbor-extract: false
+
 # The version comes from the Nix dev shell
 updateNotifier: false

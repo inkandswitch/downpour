@@ -1,11 +1,21 @@
-// Syntax colouring for the source panel. It mirrors the grammar line by line
-// (the parser itself lives in Rust); principals take their diagram colours.
+// Syntax colouring for the source. It mirrors the grammar line by line (the
+// parser itself lives in Rust); principals take their diagram colours.
+// `tokens` is shared: the preview renders it as HTML (`highlight`), and the
+// collaborative editor as CodeMirror decorations.
 
 // Same order as the SVG renderer's palette, so text and picture match
 export const PALETTE = ["#3d7dd8", "#e8892b", "#3f9b5a", "#8a5cc9", "#c2553a", "#2a9d96", "#c94f8a", "#7d8a2e"];
 
-const escape = (text) => text.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
-const span = (cls, text, style = "") => (text ? `<span class="tok-${cls}"${style}>${escape(text)}</span>` : "");
+/**
+ * A run of source text: a token class (`tok-${kind}` in style.css), or
+ * `null` for plain text, and a principal's colour.
+ *
+ * @typedef {{ kind: string | null, text: string, colour?: string }} Token
+ */
+
+/** @returns {Token[]} */
+const tok = (kind, text, colour) => (text ? [{ kind, text, ...(colour && { colour }) }] : []);
+const plain = (text) => tok(null, text);
 
 /** Where a comment starts: `%%` anywhere, or `//` at the start or after whitespace. */
 export const commentStart = (line) => {
@@ -21,10 +31,7 @@ export const commentStart = (line) => {
   return starts.length ? Math.min(...starts) : -1;
 };
 
-const principal = (name, colours) => {
-  const colour = colours.get(name.trim());
-  return span("principal", `(${name})`, colour ? ` style="color:${colour}"` : "");
-};
+const principal = (name, colours) => tok("principal", `(${name})`, colours.get(name.trim()));
 
 const LEVEL = /^(admin|edit|read|relay|👑|✏️?|👀|📡)/i;
 // A command path, as in UCAN: `/`, or `/`-separated segments
@@ -32,35 +39,35 @@ const COMMAND = /^\/[\p{L}\p{N}._\/-]*/u;
 
 /** A statement body and tail: arrows (any length), principals, abilities, `where` caveats, `: note`. */
 const statement = (code, colours) => {
-  let out = "";
+  const out = [];
   let rest = code;
 
   // `label:` before the first principal
   const label = rest.match(/^(\s*)([^\s(:][^(:]*?)(\s*:)(?=\s*\()/);
   if (label) {
-    out += escape(label[1]) + span("label", label[2]) + span("punct", label[3]);
+    out.push(...plain(label[1]), ...tok("label", label[2]), ...tok("punct", label[3]));
     rest = rest.slice(label[0].length);
   }
 
   const rules = [
     [/^\(([^()]*)\)/, (m) => principal(m[1], colours)],
-    [/^-+<revoke>-+x/, (m) => span("revoke", m[0])],
-    [/^(=+\[\[|\]\]=+>|-+\[|\]-+>|\[|\])/, (m) => span("punct", m[0])],
-    [LEVEL, (m) => span("level", m[0])],
-    [COMMAND, (m) => span("level", m[0])],
-    [/^via\b/, (m) => span("keyword", m[0])],
+    [/^-+<revoke>-+x/, (m) => tok("revoke", m[0])],
+    [/^(=+\[\[|\]\]=+>|-+\[|\]-+>|\[|\])/, (m) => tok("punct", m[0])],
+    [LEVEL, (m) => tok("level", m[0])],
+    [COMMAND, (m) => tok("level", m[0])],
+    [/^via\b/, (m) => tok("keyword", m[0])],
     // A caveat runs to the `]` (it can't contain brackets)
-    [/^(where)(\s[^\]]*)/, (m) => span("keyword", m[1]) + span("caveat", m[2])],
-    [/^:.*/, (m) => span("punct", ":") + span("note", m[0].slice(1))],
-    [/^\s+/, (m) => escape(m[0])],
-    [/^[^\s()[\]:=-]+/, (m) => span("label", m[0])], // ids in [revoke target] and via lists
-    [/^./su, (m) => escape(m[0])],
+    [/^(where)(\s[^\]]*)/, (m) => [...tok("keyword", m[1]), ...tok("caveat", m[2])]],
+    [/^:.*/, (m) => [...tok("punct", ":"), ...tok("note", m[0].slice(1))]],
+    [/^\s+/, (m) => plain(m[0])],
+    [/^[^\s()[\]:=-]+/, (m) => tok("label", m[0])], // ids in [revoke target] and via lists
+    [/^./su, (m) => plain(m[0])],
   ];
   while (rest) {
     for (const [pattern, emit] of rules) {
       const m = rest.match(pattern);
       if (m) {
-        out += emit(m);
+        out.push(...emit(m));
         rest = rest.slice(m[0].length);
         break;
       }
@@ -69,47 +76,66 @@ const statement = (code, colours) => {
   return out;
 };
 
-/** Colour one line's code (no comment). */
+/** One line's code (no comment). */
 const line = (code, isHeader, colours) => {
   const indent = code.match(/^\s*/)[0];
   const body = code.slice(indent.length);
-  if (!body) return escape(code);
+  if (!body) return plain(code);
 
-  if (isHeader) return escape(indent) + span("keyword", body);
+  if (isHeader) return [...plain(indent), ...tok("keyword", body)];
 
   let m;
   if ((m = body.match(/^(title)(\s+)(.*)$/))) {
-    return escape(indent) + span("keyword", m[1]) + escape(m[2]) + span("title", m[3]);
+    return [...plain(indent), ...tok("keyword", m[1]), ...plain(m[2]), ...tok("title", m[3])];
   }
   if ((m = body.match(/^(principals|participants|participant)(:?)(.*)$/)) && !/^:?\s*\(/.test(m[2] + m[3])) {
     const names = m[3]
       .split(",")
-      .map((piece) => {
-        const colour = colours.get(piece.trim());
-        return span("principal", piece, colour ? ` style="color:${colour}"` : "");
-      })
-      .join(span("punct", ","));
-    return escape(indent) + span("keyword", m[1] + m[2]) + names;
+      .flatMap((piece, i) => [...(i ? tok("punct", ",") : []), ...tok("principal", piece, colours.get(piece.trim()))]);
+    return [...plain(indent), ...tok("keyword", m[1] + m[2]), ...names];
   }
   if ((m = body.match(/^(>>>)(\s*)([^\s(:]*)(\s*)(?:\(([^)]*)\))?(\s*)(:?)(.*)$/))) {
     const [, marker, s1, id, s2, who, s3, colon, note] = m;
-    return (
-      escape(indent) +
-      span("region", marker) +
-      escape(s1) +
-      span("label", id) +
-      escape(s2) +
-      (who !== undefined ? principal(who, colours) : "") +
-      escape(s3) +
-      span("punct", colon) +
-      span("note", note)
-    );
+    return [
+      ...plain(indent),
+      ...tok("region", marker),
+      ...plain(s1),
+      ...tok("label", id),
+      ...plain(s2),
+      ...(who !== undefined ? principal(who, colours) : []),
+      ...plain(s3),
+      ...tok("punct", colon),
+      ...tok("note", note),
+    ];
   }
   if ((m = body.match(/^(<<<)(.*)$/))) {
-    return escape(indent) + span("region", m[1]) + span("label", m[2]);
+    return [...plain(indent), ...tok("region", m[1]), ...tok("label", m[2])];
   }
-  return escape(indent) + statement(body, colours);
+  return [...plain(indent), ...statement(body, colours)];
 };
+
+/**
+ * The source's tokens, one array per line. Each line's tokens spell it out
+ * exactly, so their lengths give positions.
+ *
+ * @param {string} text
+ * @param {Map<string, string>} colours principal name → colour
+ * @returns {Token[][]}
+ */
+export const tokens = (text, colours) => {
+  let seenHeader = false;
+  return text.split("\n").map((raw) => {
+    const at = commentStart(raw);
+    const code = at === -1 ? raw : raw.slice(0, at);
+    const isHeader = !seenHeader && code.trim() !== "";
+    if (isHeader) seenHeader = true;
+    return [...line(code, isHeader, colours), ...(at === -1 ? [] : tok("comment", raw.slice(at)))];
+  });
+};
+
+const escape = (text) => text.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+const html = ({ kind, text, colour }) =>
+  kind ? `<span class="tok-${kind}"${colour ? ` style="color:${colour}"` : ""}>${escape(text)}</span>` : escape(text);
 
 /**
  * The source as highlighted HTML.
@@ -118,20 +144,10 @@ const line = (code, isHeader, colours) => {
  * @param {Map<string, string>} colours principal name → colour
  * @param {number | null} errorLine 1-based line to mark, if any
  */
-export const highlight = (text, colours, errorLine = null) => {
-  let seenHeader = false;
-  return (
-    text
-      .split("\n")
-      .map((raw, i) => {
-        const at = commentStart(raw);
-        const code = at === -1 ? raw : raw.slice(0, at);
-        const comment = at === -1 ? "" : raw.slice(at);
-        const isHeader = !seenHeader && code.trim() !== "";
-        if (isHeader) seenHeader = true;
-        const html = line(code, isHeader, colours) + span("comment", comment);
-        return i + 1 === errorLine ? `<span class="err-line">${html || " "}</span>` : html;
-      })
-      .join("\n") + "\n" // a trailing newline keeps the last line's height
-  );
-};
+export const highlight = (text, colours, errorLine = null) =>
+  tokens(text, colours)
+    .map((line, i) => {
+      const out = line.map(html).join("");
+      return i + 1 === errorLine ? `<span class="err-line">${out || " "}</span>` : out;
+    })
+    .join("\n") + "\n"; // a trailing newline keeps the last line's height

@@ -28,6 +28,7 @@ jobs:
           - ci-deny
           - ci-doc
           - ci-docsrs
+          - ci-editor
           - ci-fmt
           - ci-js
           - ci-mdbook

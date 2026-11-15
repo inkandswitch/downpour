@@ -8,7 +8,7 @@ A plain-text notation, authority analysis, and renderers for _certflow_ and _rai
 - [Keyhive Lab Note #7: Certflow Diagrams][certflow] explains the snapshot view
 - [Keyhive Lab Note #8: Rain Diagrams][rain] adds time, and the plain-text form this project parses
 
-Try it in the browser: [inkandswitch.github.io/downpour](https://inkandswitch.github.io/downpour/), the preview editor, deployed from `main` by `.github/workflows/pages.yml`.
+Try it in the browser: [inkandswitch.github.io/downpour](https://inkandswitch.github.io/downpour/), the preview editor, or [the collaborative editor](https://inkandswitch.github.io/downpour/collab/) to edit a diagram together. Both are deployed from `main` by `.github/workflows/pages.yml`.
 
 ## The Notation
 
@@ -103,10 +103,10 @@ flowchart TD
     wasm --> mermaid["Mermaid plugin"]
     component --> preview["preview<br/>(hot-reloading editor)"]
     component --> editor["collaborative editor<br/>(automerge-repo v3 over Subduction)"]
-    editor --> patchwork["Patchwork integration"]
+    editor --> patchwork["Patchwork tool"]
 
     classDef planned stroke-dasharray: 5 5
-    class mermaid,editor,patchwork planned
+    class mermaid planned
 ```
 
 Dashed boxes are planned.
@@ -119,8 +119,8 @@ rust/
 javascript/
 ├── rain-diagram/        <rain-diagram> web component (@inkandswitch/rain-diagram)
 ├── rain-diagram-wasm/   the core as an npm package, built by wasm-bodge
-├── editor/              collaborative editor (planned)
-├── patchwork/           Patchwork tool (planned)
+├── editor/              collaborative editor (automerge-repo v3 over Subduction)
+├── patchwork/           the editor as a Patchwork tool
 └── preview/             hot-reloading single-user editor
 docs/                    README pictures, checked by the golden tests
 ```
@@ -135,7 +135,8 @@ docs/                    README pictures, checked by the golden tests
 | certflow renderer    | Working   | Snapshot view with automatic (stress majorization) layout    |
 | Web component        | Prototype | `<rain-diagram>`: hover for reach, click for fallout         |
 | Mermaid plugin       | Planned   | `registerExternalDiagrams` adapter                           |
-| Collaborative editor | Planned   | Shared source via automerge-repo v3, synced over Subduction  |
+| Collaborative editor | Prototype | Shared source via automerge-repo v3, synced over Subduction  |
+| Patchwork tool       | Prototype | The collaborative editor in Patchwork (not yet published)    |
 
 ## Exports
 
@@ -216,16 +217,24 @@ Add `notation="rain"` or `notation="certflow"` to draw a source in the other not
 
 It fires `rain-reach` and `rain-fallout` events, and the SVG's `data-*` hooks are documented in `rain_diagram_core::svg` for anyone wiring their own.
 
+## Editing together
+
+[The collaborative editor](https://inkandswitch.github.io/downpour/collab/) is the preview for several people at once: open it, share the link it puts in the address bar, and edit the same diagram as text or as a picture. Everyone sees the others' names and carets, undo takes back only your own edits, and it works offline, syncing when the connection is back. The source lives in an Automerge document synced over [Subduction](https://github.com/inkandswitch/subduction); see [`javascript/editor/`](javascript/editor/) for how it fits together, and for `mountEditor`, which puts the same editor on any page with an Automerge document handle. [`javascript/patchwork/`](javascript/patchwork/) wraps it as a [Patchwork](https://patchwork.inkandswitch.com) tool.
+
+> [!NOTE]
+> A prototype. On GitHub Pages it shares its browser storage with every `inkandswitch.github.io` site; it will move to its own domain.
+
 ## Development
 
 ```console
 $ nix develop        # toolchain, wasm-pack, pnpm, and a command menu
 $ preview            # (in the shell) hot-reloading preview at http://127.0.0.1:8080
 $ nix run .#preview  # same, without entering the shell (PORT=… to change)
-$ nix run .#site     # the preview as a static site in _site/, as deployed to GitHub Pages
+$ nix run .#editor   # the collaborative editor (javascript/editor) at http://localhost:5173
+$ nix run .#site     # the preview and the editor as a static site in _site/, as deployed to GitHub Pages
 $ cargo test --workspace --exclude rain_diagram_wasm
 $ nix run .#ci-mutants -- my.diff   # mutation-test the lines a diff changes (no diff: everything, slowly)
-$ nix run .#ci-clippy   # also: ci-bolero, ci-browser, ci-deny, ci-doc, ci-docsrs, ci-fmt, ci-js, ci-mdbook, ci-msrv, ci-mutants, ci-no-std, ci-package, ci-test, ci-typos, ci-vite
+$ nix run .#ci-clippy   # also: ci-bolero, ci-browser, ci-deny, ci-doc, ci-docsrs, ci-editor, ci-fmt, ci-js, ci-mdbook, ci-msrv, ci-mutants, ci-no-std, ci-package, ci-test, ci-typos, ci-vite
 ```
 
 ## License

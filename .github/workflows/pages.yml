@@ -1,5 +1,6 @@
-# The preview editor as a static site on GitHub Pages. Pull requests only
-# build it (so a broken site fails before merging); pushes to main deploy it.
+# The preview (at /) and the collaborative editor (at /collab/) as a static
+# site on GitHub Pages. Pull requests only build it (so a broken site fails
+# before merging); pushes to main deploy it.
 name: Pages
 
 on:

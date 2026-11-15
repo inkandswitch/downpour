@@ -131,8 +131,9 @@
         };
 
         # The preview as a static site (for GitHub Pages): a release Wasm build,
-        # the editor page, and the component, with `/` sending you to the
-        # editor. Writes `_site/` (or the directory given).
+        # the preview page, and the component, with `/` sending you to the
+        # preview, plus the collaborative editor at `collab/`. Writes `_site/`
+        # (or the directory given).
         site = pkgs.writeShellApplication {
           name = "rain-site";
           runtimeInputs = [
@@ -140,6 +141,8 @@
             wasm-bindgen-cli
             pkgs.binaryen
             pkgs.coreutils
+            pkgs.nodejs
+            pkgs.pnpm
             pkgs.stdenv.cc
             pkgs.wasm-pack
           ];
@@ -156,9 +159,15 @@
               --out-dir "$out/rain-diagram/pkg" "$root/rust/rain_diagram_wasm"
             rm -f "$out/rain-diagram/pkg/.gitignore"
             cp "$root/javascript/rain-diagram/rain-diagram.js" "$out/rain-diagram/"
-            for file in index.html embed.html main.js highlight.js history.js split.js; do
+            for file in index.html embed.html examples.js main.js highlight.js history.js shell.js split.js style.css; do
               cp "$root/javascript/preview/$file" "$out/preview/"
             done
+            # The editor bundles the component, so it takes the same release
+            # build. A relative base serves it from any path (/downpour/collab/)
+            rm -rf "$root/javascript/rain-diagram/pkg"
+            cp -r "$out/rain-diagram/pkg" "$root/javascript/rain-diagram/"
+            (cd "$root" && pnpm install --frozen-lockfile)
+            (cd "$root/javascript/editor" && node node_modules/vite/bin/vite.js build --base ./ --outDir "$out/collab" --emptyOutDir)
             cat > "$out/index.html" <<'HTML'
             <!doctype html>
             <meta charset="utf-8">
@@ -187,6 +196,35 @@
             license = with pkgs.lib.licenses; [asl20 mit];
             mainProgram = "rain-diagram";
           };
+        };
+
+        # The collaborative editor's dev server (javascript/editor): installs
+        # its dependencies if needed, builds the component's Wasm, then serves
+        # it with Vite at http://localhost:5173 (PORT to change). Run from the
+        # repo root, or anywhere inside `nix develop`.
+        editor = pkgs.writeShellApplication {
+          name = "rain-editor";
+          runtimeInputs = [
+            rust-toolchain
+            wasm-bindgen-cli
+            pkgs.binaryen
+            pkgs.nodejs
+            pkgs.pnpm
+            pkgs.wasm-pack
+          ];
+          text = ''
+            root="''${WORKSPACE_ROOT:-$PWD}"
+            if [ ! -f "$root/javascript/editor/index.html" ]; then
+              echo "run this from the downpour repo root" >&2
+              exit 1
+            fi
+            cd "$root"
+            [ -d javascript/editor/node_modules ] || pnpm install --frozen-lockfile
+            wasm-pack build --dev --target web --out-dir ../../javascript/rain-diagram/pkg rust/rain_diagram_wasm
+            cd javascript/editor
+            # Through node, not the .bin shim: its #!/bin/sh is not everywhere
+            exec node node_modules/vite/bin/vite.js --port "''${PORT:-5173}" --strictPort
+          '';
         };
 
         # wasm-bodge (github.com/alexjg/wasm-bodge) packages the Wasm bindings
@@ -351,6 +389,18 @@
             CHROMIUM=chromium node check.mjs
           '';
 
+          # The collaborative editor and its Patchwork tool, built, in headless
+          # Chromium. Sync goes through the public Subduction server
+          # (DOWNPOUR_SYNC for another); the Patchwork tests need no network.
+          ci-editor = mkCheckWith [wasm-bindgen-cli pkgs.binaryen pkgs.chromium pkgs.pnpm pkgs.wasm-pack] "ci-editor" ''
+            wasm-pack build --dev --target web --out-dir ../../javascript/rain-diagram/pkg rust/rain_diagram_wasm
+            pnpm install --frozen-lockfile
+            # Through node, not the .bin shim: its #!/bin/sh is not everywhere
+            (cd javascript/editor && node node_modules/vite/bin/vite.js build)
+            (cd javascript/patchwork && node node_modules/vite/bin/vite.js build && node node_modules/vite/bin/vite.js build harness --emptyOutDir)
+            CHROMIUM=chromium node --test --test-concurrency=2 javascript/editor/browser-test/*.test.mjs
+          '';
+
           # Build the npm package, run its smoke tests, and check the README's
           # Size table still matches it (`size.mjs --update` rewrites the table)
           ci-package = mkCheck "ci-package" ''
@@ -430,7 +480,7 @@
             type = "app";
             program = pkgs.lib.getExe drv;
           })
-          (ci-checks // {inherit bodge preview rain-diagram site;});
+          (ci-checks // {inherit bodge editor preview rain-diagram site;});
 
         packages = {
           inherit rain-diagram wasm-bodge;
