@@ -15,7 +15,7 @@ export const plugins = [
   {
     type: "patchwork:tool",
     id: "rain-diagram",
-    name: "Downpour",
+    name: "Rain",
     icon: "CloudRain",
     supportedDatatypes: ["rain-diagram"],
     async load() {

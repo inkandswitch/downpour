@@ -3,7 +3,7 @@
 // WebSocket; no dependencies). Each `browser()` is its own profile, so its
 // own person: own storage, own signer. `tab()`s in one browser share them.
 //
-// Sync goes through the public Subduction server unless DOWNPOUR_SYNC names
+// Sync goes through the public Subduction server unless RAIN_SYNC names
 // another (passed to the page as `?sync=`).
 
 import { spawn } from "node:child_process";
@@ -29,13 +29,13 @@ export const serve = async (dir) => {
 };
 
 /** The page's query string for the sync server under test. */
-export const sync = process.env.DOWNPOUR_SYNC ? `?sync=${encodeURIComponent(process.env.DOWNPOUR_SYNC)}` : "";
+export const sync = process.env.RAIN_SYNC ? `?sync=${encodeURIComponent(process.env.RAIN_SYNC)}` : "";
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /** A headless Chromium with a fresh profile. */
 export const browser = async (name) => {
-  const profile = fs.mkdtempSync(path.join(os.tmpdir(), `downpour-${name}-`));
+  const profile = fs.mkdtempSync(path.join(os.tmpdir(), `rain-${name}-`));
   const env = { ...process.env };
   delete env.LD_LIBRARY_PATH; // Nix's, for node, breaks Chromium
   const chromium = spawn(

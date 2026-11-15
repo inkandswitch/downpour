@@ -1,0 +1,13 @@
+{
+  "name": "rain",
+  "owner": {
+    "name": "Ink & Switch"
+  },
+  "plugins": [
+    {
+      "name": "rain-diagram",
+      "source": "./plugins/rain-diagram",
+      "description": "Write, check, and render rain and certflow diagrams of capability authority flows"
+    }
+  ]
+}

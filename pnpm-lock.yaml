@@ -56,7 +56,7 @@ importers:
 
   javascript/patchwork:
     dependencies:
-      '@inkandswitch/downpour-editor':
+      '@inkandswitch/rain-editor':
         specifier: workspace:*
         version: link:../editor
     devDependencies:

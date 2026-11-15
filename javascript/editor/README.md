@@ -1,4 +1,4 @@
-# `@inkandswitch/downpour-editor`
+# `@inkandswitch/rain-editor`
 
 > [!NOTE]
 > Early, on alpha dependencies. Text and picture edits sync between browsers through Subduction, with presence, per-person undo, and offline use.
@@ -50,7 +50,7 @@ flowchart LR
 The page is a thin shell around [`src/mount.js`](src/mount.js), which mounts the editor on any document handle whose doc has a `source` string. The [Patchwork tool](../patchwork/) uses it the same way.
 
 ```js
-import { mountEditor } from "@inkandswitch/downpour-editor/mount";
+import { mountEditor } from "@inkandswitch/rain-editor/mount";
 
 const { view, unmount } = await mountEditor(element, handle, {
   shadow: true, // its own shadow root and styles: for someone else's page
@@ -95,7 +95,7 @@ The sync stack is 84% of it, and it isn't ours to shrink. Inside [Patchwork](../
 
 ## Tests
 
-[`browser-test/`](browser-test/) drives the built editor in headless Chromium over the DevTools protocol, with each browser as one person. It covers the page, the theme, broken text, per-person undo, presence, the examples, the sync status, offline use, two tabs, and the Patchwork tool (in a stand-in host, [`../patchwork/harness/`](../patchwork/harness/)). These tests sync through the public server unless `DOWNPOUR_SYNC` names another.
+[`browser-test/`](browser-test/) drives the built editor in headless Chromium over the DevTools protocol, with each browser as one person. It covers the page, the theme, broken text, per-person undo, presence, the examples, the sync status, offline use, two tabs, and the Patchwork tool (in a stand-in host, [`../patchwork/harness/`](../patchwork/harness/)). These tests sync through the public server unless `RAIN_SYNC` names another.
 
 ```console
 $ nix run .#ci-editor

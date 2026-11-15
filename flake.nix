@@ -1,5 +1,5 @@
 {
-  description = "downpour: certflow and rain diagrams for capability authority flows";
+  description = "rain: certflow and rain diagrams for capability authority flows";
 
   inputs = {
     command-utils = {
@@ -122,7 +122,7 @@
           text = ''
             root="''${WORKSPACE_ROOT:-$PWD}"
             if [ ! -f "$root/javascript/preview/serve.mjs" ]; then
-              echo "run this from the downpour repo root" >&2
+              echo "run this from the rain repo root" >&2
               exit 1
             fi
 
@@ -171,9 +171,9 @@
             cat > "$out/index.html" <<'HTML'
             <!doctype html>
             <meta charset="utf-8">
-            <title>Downpour</title>
+            <title>Rain</title>
             <meta http-equiv="refresh" content="0; url=preview/">
-            <a href="preview/">Open the Downpour editor</a>
+            <a href="preview/">Open the Rain editor</a>
             HTML
             touch "$out/.nojekyll"
           '';
@@ -186,7 +186,7 @@
           inherit ((builtins.fromTOML (builtins.readFile ./rust/rain_diagram_cli/Cargo.toml)).package) version;
           src = pkgs.lib.fileset.toSource {
             root = ./.;
-            fileset = pkgs.lib.fileset.unions [./Cargo.lock ./Cargo.toml ./README.md ./rust];
+            fileset = pkgs.lib.fileset.unions [./Cargo.lock ./Cargo.toml ./README.md ./plugins ./rust];
           };
           cargoLock.lockFile = ./Cargo.lock;
           cargoBuildFlags = ["-p" "rain_diagram_cli"];
@@ -215,7 +215,7 @@
           text = ''
             root="''${WORKSPACE_ROOT:-$PWD}"
             if [ ! -f "$root/javascript/editor/index.html" ]; then
-              echo "run this from the downpour repo root" >&2
+              echo "run this from the rain repo root" >&2
               exit 1
             fi
             cd "$root"
@@ -391,7 +391,7 @@
 
           # The collaborative editor and its Patchwork tool, built, in headless
           # Chromium. Sync goes through the public Subduction server
-          # (DOWNPOUR_SYNC for another); the Patchwork tests need no network.
+          # (RAIN_SYNC for another); the Patchwork tests need no network.
           ci-editor = mkCheckWith [wasm-bindgen-cli pkgs.binaryen pkgs.chromium pkgs.pnpm pkgs.wasm-pack] "ci-editor" ''
             wasm-pack build --dev --target web --out-dir ../../javascript/rain-diagram/pkg rust/rain_diagram_wasm
             pnpm install --frozen-lockfile

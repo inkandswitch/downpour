@@ -29,7 +29,7 @@ const connection = $("connection");
 // the server never sees one identity connected twice.
 const ownsStorage = await new Promise((resolve) => {
   if (!navigator.locks) return resolve(true);
-  navigator.locks.request("downpour-editor:storage", { ifAvailable: true }, (lock) => {
+  navigator.locks.request("rain-editor:storage", { ifAvailable: true }, (lock) => {
     resolve(lock !== null);
     // Held until the tab closes
     return lock ? new Promise(() => {}) : undefined;

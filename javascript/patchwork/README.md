@@ -1,4 +1,4 @@
-# `@inkandswitch/downpour-patchwork`
+# `@inkandswitch/rain-patchwork`
 
 > [!NOTE]
 > Built and tested in a stand-in host; not yet published to Patchwork.

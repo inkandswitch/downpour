@@ -1,5 +1,5 @@
 {
-  "name": "@inkandswitch/downpour-patchwork",
+  "name": "@inkandswitch/rain-patchwork",
   "version": "0.0.0",
   "private": true,
   "description": "Patchwork tool for rain and certflow diagrams: the collaborative editor, in Patchwork",
@@ -16,7 +16,7 @@
     "push": "vite build && npx pushwork@latest sync"
   },
   "dependencies": {
-    "@inkandswitch/downpour-editor": "workspace:*"
+    "@inkandswitch/rain-editor": "workspace:*"
   },
   "devDependencies": {
     "@automerge/automerge": "3.5.0",

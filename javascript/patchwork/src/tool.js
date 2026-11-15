@@ -3,7 +3,7 @@
 // root (Patchwork tools share the light DOM), in Patchwork's theme, under
 // the account's name.
 
-import { mountEditor } from "@inkandswitch/downpour-editor/mount";
+import { mountEditor } from "@inkandswitch/rain-editor/mount";
 
 // Patchwork's theme variables in for the editor's own (a dark or light
 // theme still sets `data-theme`, for the colours Patchwork doesn't name)
@@ -36,7 +36,7 @@ const accountName = async () => {
   }
 };
 
-export default function DownpourTool(handle, element) {
+export default function RainTool(handle, element) {
   let editor = null;
   let gone = false;
 
@@ -57,7 +57,7 @@ export default function DownpourTool(handle, element) {
       shadow: true,
       styles: THEME,
       name: await accountName(),
-      prefix: "downpour-patchwork",
+      prefix: "rain-patchwork",
     });
     if (gone) return mounted.unmount();
     editor = mounted;

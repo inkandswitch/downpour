@@ -1,4 +1,4 @@
-# Downpour
+# Rain
 
 > [!WARNING]
 > This project is pretty vibey. It started as a sketch to see if the plain-text notation from the Keyhive Lab Notes ([#7][certflow], [#8][rain]) could be parsed and rendered, and much of it was written with an AI pair. Expect sharp edges, churn, and opinions that haven't been tested on anyone yet.
@@ -123,6 +123,7 @@ javascript/
 ├── patchwork/           the editor as a Patchwork tool
 └── preview/             hot-reloading single-user editor
 docs/                    README pictures, checked by the golden tests
+plugins/rain-diagram/    agent skill for writing diagrams (Claude Code plugin)
 ```
 
 | Crate / package      | Status    | Purpose                                                      |
@@ -193,6 +194,17 @@ Measured on the release build that `nix run .#bodge` makes (wasm-opt, `--panic a
 ## In a book
 
 `mdbook-rain-diagram` turns code blocks fenced as `rain` or `certflow` into diagrams in an [mdBook](https://rust-lang.github.io/mdBook/): SVG in the HTML output, text art elsewhere. Add `[preprocessor.rain-diagram]` to `book.toml`; see [`rust/rain_diagram_cli/`](rust/rain_diagram_cli/) for the details and installing (`nix profile install github:inkandswitch/rain` puts both binaries on the `PATH`).
+
+## With a coding agent
+
+The `rain-diagram` skill teaches coding agents the notation, how to model a story as certificates, what each warning means, and a write → `check` → `render` loop. In Claude Code:
+
+```console
+/plugin marketplace add inkandswitch/rain
+/plugin install rain-diagram@rain
+```
+
+Other agents that read `SKILL.md` can use [`plugins/rain-diagram/skills/rain-diagram/`](plugins/rain-diagram/skills/rain-diagram/) as it is. Its example diagrams are checked by `cargo test`, so they keep up with the notation.
 
 ## Embedding
 

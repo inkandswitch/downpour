@@ -1,0 +1,12 @@
+{
+  "name": "rain-diagram",
+  "version": "0.1.0",
+  "description": "Write, check, and render rain and certflow diagrams of capability authority flows",
+  "author": {
+    "name": "Ink & Switch"
+  },
+  "homepage": "https://github.com/inkandswitch/rain",
+  "repository": "https://github.com/inkandswitch/rain",
+  "license": "MIT OR Apache-2.0",
+  "keywords": ["biscuit", "capabilities", "certflow", "diagrams", "keyhive", "rain", "ucan"]
+}

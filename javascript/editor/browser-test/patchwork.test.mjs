@@ -9,7 +9,7 @@ import { browser, serve } from "./harness.mjs";
 
 const dist = fileURLToPath(new URL("../../patchwork/harness/dist/", import.meta.url));
 let site, chrome, page;
-const shadow = (n) => `document.querySelectorAll(".downpour-editor")[${n}]?.shadowRoot`;
+const shadow = (n) => `document.querySelectorAll(".rain-editor")[${n}]?.shadowRoot`;
 const status = (n) => `${shadow(n)}?.querySelector("#status")?.textContent`;
 
 before(async () => {
@@ -46,7 +46,7 @@ test("typing in one mount reaches the other, highlighted", async () => {
 });
 
 test("Patchwork's theme: its colours, and dark or light to match", async () => {
-  const theme = `[document.querySelectorAll(".downpour-editor")[0].dataset.theme, ${shadow(0)}.querySelector("#picture").getAttribute("theme"), getComputedStyle(${shadow(0)}.querySelector("section")).backgroundColor, getComputedStyle(${shadow(0)}.querySelector("#output")).color]`;
+  const theme = `[document.querySelectorAll(".rain-editor")[0].dataset.theme, ${shadow(0)}.querySelector("#picture").getAttribute("theme"), getComputedStyle(${shadow(0)}.querySelector("section")).backgroundColor, getComputedStyle(${shadow(0)}.querySelector("#output")).color]`;
   assert.deepEqual((await page.until(`(${theme})[0] && ${theme}`, "a theme")).slice(0, 2), ["light", "light"]);
   await page.evaluate(`document.documentElement.style.cssText = "--editor-fill: #101418; --editor-line: #e8e8e8"; document.documentElement.setAttribute("theme", "gloom")`);
   assert.deepEqual(await page.until(`(${theme})[0] === "dark" && ${theme}`, "the dark theme"), ["dark", "dark", "rgb(16, 20, 24)", "rgb(232, 232, 232)"]);

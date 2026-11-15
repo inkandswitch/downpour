@@ -109,7 +109,7 @@ export const mountEditor = async (element, handle, options = {}) => {
   let host = element;
   let app = element;
   if (options.shadow) {
-    host = element.appendChild(Object.assign(document.createElement("div"), { className: "downpour-editor" }));
+    host = element.appendChild(Object.assign(document.createElement("div"), { className: "rain-editor" }));
     host.style.height = "100%";
     root = host.attachShadow({ mode: "open" });
     const style = Object.assign(document.createElement("style"), { textContent: SHADOW_CSS + (options.styles ?? "") });
