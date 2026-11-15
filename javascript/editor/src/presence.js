@@ -20,6 +20,16 @@ const COLOURS = {
   red: "#d0473d",
   teal: "#008b8b",
 };
+const KNOWN = new Set(Object.values(COLOURS));
+
+// What someone else says about themselves: anyone with the document's URL
+// can send anything, and a colour lands in a style attribute. So take a
+// colour only from our own list, and a name only as short text
+const parsePerson = (user) => ({
+  name: typeof user?.name === "string" && user.name.trim() ? user.name.trim().slice(0, 40) : "someone",
+  colour: KNOWN.has(user?.colour) ? user.colour : "#888888",
+});
+
 const MOODS = ["brave", "calm", "cheeky", "clever", "cosy", "curious", "dapper", "eager", "fuzzy", "gentle", "giddy", "jolly", "lucky", "merry", "nimble", "plucky", "quiet", "silly", "sleepy", "sunny", "swift", "witty", "zesty"];
 const ANIMALS = ["badger", "beaver", "crane", "duck", "ferret", "fox", "frog", "goose", "hare", "hedgehog", "heron", "koala", "lemur", "lynx", "moose", "newt", "otter", "owl", "panda", "puffin", "quokka", "raven", "seal", "stoat", "toad", "walrus", "wombat", "yak"];
 const PATH = ["source"];
@@ -131,7 +141,7 @@ export const presence = ({ handle, view, list, name, load, save }) => {
   // cursor this copy hasn't seen yet just leaves the caret out for now)
   const people = () =>
     Object.values(shared.getPeerStates().value).map(({ value }) => {
-      const person = { name: "Someone", colour: "#888888", ...value.user };
+      const person = parsePerson(value.user);
       if (!value.selection) return person;
       try {
         const length = view.state.doc.length;

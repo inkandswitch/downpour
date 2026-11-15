@@ -94,6 +94,40 @@ test("picture edits are undoable, per person: A's undo takes back A's picture ed
   assert.ok(source.includes("B typed this"));
 });
 
+test("a picture edit made on a stale picture keeps what was typed since", async () => {
+  // B starts a line that doesn't parse: A's picture keeps the last good text,
+  // and builds A's next edit from it
+  await b.until(`document.getElementById("status").textContent.startsWith("✓")`, "B to be parsing");
+  const pictured = await a.evaluate(`window.handle.doc().source`);
+  await b.evaluate(`view.dispatch({ changes: { from: view.state.doc.length, insert: "(Bob)-[rea" }, userEvent: "input.type" })`);
+  await a.until(`document.getElementById("status").textContent.startsWith("✗") && view.state.doc.toString().endsWith("(Bob)-[rea")`, "B's broken line on A");
+  const candidate = pictured.replace("The Doc grants Alice Edit", "A edited a stale picture");
+  await a.evaluate(`document.querySelector("rain-diagram").dispatchEvent(new CustomEvent("rain-edit", { detail: { source: ${JSON.stringify(candidate)} } }))`);
+  const source = await b.until(`window.handle.doc().source.includes("A edited a stale picture") && window.handle.doc().source`, "A's edit on B");
+  assert.ok(source.endsWith("(Bob)-[rea"), `B's half-typed line survives:\n${source}`);
+  await b.evaluate(`view.dispatch({ changes: { from: view.state.doc.length - "(Bob)-[rea".length, to: view.state.doc.length }, userEvent: "delete" })`);
+  await a.until(`document.getElementById("status").textContent.startsWith("✓")`, "A to parse again");
+});
+
+test("CRLF line endings: positions in the text are the document's", async () => {
+  const crlf = "rain\r\ntitle Windows\r\n\r\n(Alice)-[edit(Doc)]->(Bob)\r\n";
+  await a.evaluate(`window.handle.change((d) => { d.source = ${JSON.stringify(crlf)} })`);
+  await a.until(`view.state.doc.toString() === ${JSON.stringify(crlf)}`, "the CRLF text in A's editor");
+  await a.evaluate(`view.dispatch({ changes: { from: view.state.doc.line(4).from, insert: "X" }, userEvent: "input.type" })`);
+  const expected = crlf.replace("(Alice)", "X(Alice)");
+  assert.equal(await b.until(`window.handle.doc().source.includes("X") && window.handle.doc().source`, "A's keystroke on B"), expected);
+  assert.equal(await b.until(`view.state.doc.toString() === ${JSON.stringify(expected)} && view.state.doc.toString()`, "B's editor"), expected);
+});
+
+test("pasting another document's link into the tab opens that document", async () => {
+  const other = await two.tab("B2");
+  await other.open(base);
+  const url = await other.until(ready, "a second document");
+  await a.evaluate(`location.hash = ${JSON.stringify(url)}`);
+  await a.until(`window.handle?.url === ${JSON.stringify(url)} && document.getElementById("share").textContent.endsWith(${JSON.stringify(url)})`, "A on the second document");
+  other.close();
+});
+
 test("no page errors", async () => {
   await sleep(200);
   assert.deepEqual([...a.errors, ...b.errors], []);

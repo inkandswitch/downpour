@@ -54,6 +54,17 @@ test("a selection is shaded for the other", async () => {
   assert.match(shaded, /Alice passes Edit to Bob/);
 });
 
+test("what someone sends about themselves can't style or script the other's page", async () => {
+  const forged = { name: "<img src=x onerror=window.pwned=1>", colour: "red;position:fixed;inset:0;background:url(https://example.invalid/x);x:" };
+  await b.evaluate(`(() => { const l = window.view.state.doc.line(5); window.view.focus(); window.view.dispatch({ selection: { anchor: l.from, head: l.to } }); })()`);
+  await b.evaluate(`setTimeout(() => window.handle.broadcast({ __presence: { type: "update", channel: "user", value: ${JSON.stringify(forged)} } }), 300)`);
+  await a.until(`(${people}).includes(${JSON.stringify(forged.name)})`, "the forged name on A", 15_000);
+  const styles = await a.until(`(() => { const s = [...document.querySelectorAll("#source .cm-line span[style*=background-color]:not(.cm-remote-name)")].map((e) => e.getAttribute("style")); return s.length && s; })()`, "B's selection on A", 15_000);
+  assert.ok(styles.every((style) => !style.includes("position") && !style.includes("url(")), JSON.stringify(styles));
+  assert.equal(await a.evaluate(`[...document.querySelectorAll("#people .person")].find((p) => p.textContent.startsWith("<img"))?.style.getPropertyValue("--person")`), "#888888");
+  assert.equal(await a.evaluate(`document.querySelectorAll("#people img").length + (window.pwned ?? 0)`), 0);
+});
+
 test("a rename reaches the other", async () => {
   await a.evaluate(`window.prompt = () => "Ada"; document.querySelector("#people button.person").click()`);
   assert.ok(await b.until(`(${people}).includes("Ada")`, "the rename on B", 15_000));

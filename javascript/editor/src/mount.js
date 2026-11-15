@@ -7,7 +7,7 @@ import { automergeSyncPlugin } from "@automerge/automerge-codemirror";
 import { closeBrackets, closeBracketsKeymap } from "@codemirror/autocomplete";
 import { defaultKeymap, history, historyKeymap, redo, redoDepth, undo, undoDepth } from "@codemirror/commands";
 import { highlightSelectionMatches, searchKeymap } from "@codemirror/search";
-import { EditorState, Transaction } from "@codemirror/state";
+import { ChangeSet, EditorState, Transaction } from "@codemirror/state";
 import {
   EditorView,
   crosshairCursor,
@@ -67,6 +67,16 @@ const ownEditsOnly = EditorState.transactionExtender.of((tr) =>
   tr.docChanged && !tr.annotation(Transaction.userEvent) ? { annotations: Transaction.addToHistory.of(false) } : null,
 );
 
+// Positions are Automerge's, so a `\r` stays a character, as it is there
+// (CodeMirror would otherwise read `\r\n` as one line break, one short)
+const sameLines = EditorState.lineSeparator.of("\n");
+
+/** The smallest change from `from` to `to`, as one splice. */
+const splice = (from, to) => {
+  const { at, removed, inserted } = diff(from, to);
+  return ChangeSet.of({ from: at, to: at + removed.length, insert: inserted }, from.length);
+};
+
 // The page's styles inside a shadow root: `:root` there is the host, and
 // the host carries the theme
 const SHADOW_CSS = `${pageCss}\n${editorCss}`
@@ -113,7 +123,21 @@ export const mountEditor = async (element, handle, options = {}) => {
 
   await init();
   const text = () => handle.doc()?.source ?? "";
-  const page = shell({ prefix, text, root, themeRoot, wasm: { diagnostics, renderSvg, renderText, toSiteJson } });
+  // After every render: the text takes its principal colours and error line
+  // (deferred: a local change renders from inside CodeMirror's own update),
+  // and a fresh picture resets what its edits are relative to
+  let live = true;
+  const page = shell({
+    prefix,
+    text,
+    root,
+    themeRoot,
+    wasm: { diagnostics, renderSvg, renderText, toSiteJson },
+    onRender: (style) => {
+      if (style.errorLine === null) drawn();
+      queueMicrotask(() => live && view.dispatch({ effects: paint.of(style) }));
+    },
+  });
 
   const syncHistory = (state) => {
     $("undo").disabled = undoDepth(state) === 0;
@@ -125,6 +149,7 @@ export const mountEditor = async (element, handle, options = {}) => {
     root,
     extensions: [
       setup,
+      sameLines,
       theme,
       highlighting,
       ownEditsOnly,
@@ -132,6 +157,7 @@ export const mountEditor = async (element, handle, options = {}) => {
       automergeSyncPlugin({ handle, path: ["source"] }),
       EditorView.updateListener.of((update) => {
         syncHistory(update.state);
+        follow(update);
         here?.update(update);
       }),
     ],
@@ -142,25 +168,43 @@ export const mountEditor = async (element, handle, options = {}) => {
 
   // Picture: redrawn on every change, local or remote. Text that doesn't
   // parse (someone mid-edit) keeps the last good diagram up, with the error
-  // above it. The text takes the render's principal colours and error line.
-  // (Deferred: a local change arrives from inside CodeMirror's own update.)
-  let live = true;
-  const repaint = () => {
-    const style = page.render();
-    queueMicrotask(() => live && view.dispatch({ effects: paint.of(style) }));
+  // above it
+  const render = () => page.render();
+  handle.on("change", render);
+
+  // The picture builds its edits from the text it last drew, which can be
+  // behind: someone mid-line (the text doesn't parse, so the picture keeps
+  // the last good one), or edits arriving mid-drag. So keep what CodeMirror
+  // has done since (`since`: pictured text → `sinceDoc`), and map each
+  // picture edit over it: what anyone typed in between stays
+  let pictured = "";
+  let since = ChangeSet.empty(0);
+  let sinceDoc = null;
+  const drawn = () => {
+    pictured = text();
+    sinceDoc = view.state.doc;
+    since = splice(pictured, sinceDoc.toString());
   };
-  handle.on("change", repaint);
+  const follow = (update) => {
+    if (!update.docChanged || !sinceDoc || update.state.doc === sinceDoc) return;
+    if (update.startState.doc === sinceDoc) since = since.compose(update.changes);
+    else since = splice(pictured, update.state.doc.toString());
+    sinceDoc = update.state.doc;
+  };
 
   // Edits made on the picture come back as a whole new source. Applied to
   // CodeMirror as the smallest splice, as if typed: they join this person's
   // undo history, CodeMirror keeps undo right as remote edits arrive, and
   // automerge-codemirror carries the splice to the document, leaving
   // concurrent edits elsewhere alone
-  const replace = (source, userEvent) => {
-    const { at, removed, inserted } = diff(view.state.doc.toString(), source);
-    view.dispatch({ changes: { from: at, to: at + removed.length, insert: inserted }, userEvent });
-  };
-  picture.addEventListener("rain-edit", ({ detail }) => replace(detail.source, "input.diagram"));
+  picture.addEventListener("rain-edit", ({ detail }) => {
+    if (sinceDoc !== view.state.doc) {
+      since = splice(pictured, view.state.doc.toString());
+      sinceDoc = view.state.doc;
+    }
+    view.dispatch({ changes: splice(pictured, detail.source).map(since), userEvent: "input.diagram" });
+  });
+  const replace = (source, userEvent) => view.dispatch({ changes: splice(view.state.doc.toString(), source), userEvent });
 
   // The examples replace the source for everyone, as one undoable edit
   for (const [id, example] of [
@@ -176,11 +220,10 @@ export const mountEditor = async (element, handle, options = {}) => {
   here = presence({ handle, view, list: people, name, load: page.load, save: page.save });
 
   page.start();
-  repaint();
 
   const unmount = () => {
     live = false;
-    handle.off("change", repaint);
+    handle.off("change", render);
     here.stop();
     view.destroy();
     page.destroy();

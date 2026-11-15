@@ -14,12 +14,12 @@ const page = shell({
   prefix: "rain-preview",
   text: () => source.value,
   wasm: { diagnostics, renderSvg, renderText, toSiteJson },
+  onRender: ({ errorLine, colours }) => paintSource(errorLine, colours),
 });
 
 const render = () => {
   page.save("source", source.value);
-  const { errorLine, colours } = page.render();
-  paintSource(errorLine, colours);
+  page.render();
 };
 
 // Syntax colouring under the (transparent) textarea, scrolled with it

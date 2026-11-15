@@ -15,8 +15,10 @@ import { splitter } from "./split.js";
  * @param {object} options.wasm         { diagnostics, renderSvg, renderText, toSiteJson }
  * @param {Document | ShadowRoot} [options.root]       where the page's elements are
  * @param {HTMLElement} [options.themeRoot]           where the theme choice is set
+ * @param {(result: { errorLine: number | null, colours: Map<string, string> }) => void} [options.onRender]
+ *   after every render, however it was started: to colour the source to match
  */
-export const shell = ({ prefix, text, wasm, root = document, themeRoot = document.documentElement }) => {
+export const shell = ({ prefix, text, wasm, root = document, themeRoot = document.documentElement, onRender = () => {} }) => {
   const $ = (id) => root.querySelector(`#${id}`);
   const status = $("status");
   const warnings = $("warnings");
@@ -56,6 +58,11 @@ export const shell = ({ prefix, text, wasm, root = document, themeRoot = documen
    * @returns {{ errorLine: number | null, colours: Map<string, string> }}
    */
   const render = () => {
+    const result = draw();
+    onRender(result);
+    return result;
+  };
+  const draw = () => {
     const source = text();
     try {
       const site = JSON.parse(wasm.toSiteJson(source));

@@ -173,6 +173,16 @@ after(async () => {
 });
 
 describe("the preview's <rain-diagram>", () => {
+  test("the source is coloured as soon as the page loads", async () => {
+    await fresh();
+    const layer = await evaluate(() => {
+      const highlight = document.getElementById("highlight");
+      return { text: highlight.textContent, principals: highlight.querySelectorAll(".tok-principal").length };
+    });
+    assert.equal(layer.text.trimEnd(), (await source()).trimEnd(), "the highlight layer shows the source");
+    assert.ok(layer.principals > 0, "principals are coloured");
+  });
+
   test("dragging a row down moves its statement", async () => {
     await fresh();
     const row = await centre('.event[data-event="2"] .hit');

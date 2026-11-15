@@ -8,7 +8,7 @@ A plain-text notation, authority analysis, and renderers for _certflow_ and _rai
 - [Keyhive Lab Note #7: Certflow Diagrams][certflow] explains the snapshot view
 - [Keyhive Lab Note #8: Rain Diagrams][rain] adds time, and the plain-text form this project parses
 
-Try it in the browser: [inkandswitch.github.io/downpour](https://inkandswitch.github.io/downpour/), the preview editor, or [the collaborative editor](https://inkandswitch.github.io/downpour/editor/) to edit a diagram together. Both are deployed from `main` by `.github/workflows/pages.yml`.
+Try it in the browser: [inkandswitch.github.io/downpour](https://inkandswitch.github.io/downpour/), the preview editor, or [the collaborative editor](https://inkandswitch.github.io/downpour/collab/) to edit a diagram together. Both are deployed from `main` by `.github/workflows/pages.yml`.
 
 ## The Notation
 

@@ -132,7 +132,7 @@
 
         # The preview as a static site (for GitHub Pages): a release Wasm build,
         # the preview page, and the component, with `/` sending you to the
-        # preview, plus the collaborative editor at `editor/`. Writes `_site/`
+        # preview, plus the collaborative editor at `collab/`. Writes `_site/`
         # (or the directory given).
         site = pkgs.writeShellApplication {
           name = "rain-site";
@@ -163,11 +163,11 @@
               cp "$root/javascript/preview/$file" "$out/preview/"
             done
             # The editor bundles the component, so it takes the same release
-            # build. A relative base serves it from any path (/downpour/editor/)
+            # build. A relative base serves it from any path (/downpour/collab/)
             rm -rf "$root/javascript/rain-diagram/pkg"
             cp -r "$out/rain-diagram/pkg" "$root/javascript/rain-diagram/"
             (cd "$root" && pnpm install --frozen-lockfile)
-            (cd "$root/javascript/editor" && node node_modules/vite/bin/vite.js build --base ./ --outDir "$out/editor" --emptyOutDir)
+            (cd "$root/javascript/editor" && node node_modules/vite/bin/vite.js build --base ./ --outDir "$out/collab" --emptyOutDir)
             cat > "$out/index.html" <<'HTML'
             <!doctype html>
             <meta charset="utf-8">

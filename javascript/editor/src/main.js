@@ -68,7 +68,10 @@ const find = async (url) => {
   }
 };
 const handle = isValidAutomergeUrl(hash) ? await find(hash) : await repo.create({ source: STARTER });
-if (!isValidAutomergeUrl(hash)) location.hash = handle.url;
+// In place of the bare URL, not as a step back to it
+if (!isValidAutomergeUrl(hash)) history.replaceState(null, "", `#${handle.url}`);
+// Another document's link pasted into this tab changes only the hash: load it
+addEventListener("hashchange", () => location.reload());
 const share = $("share");
 share.href = share.textContent = location.href;
 window.handle = handle; // for poking at in the console

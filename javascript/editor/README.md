@@ -5,7 +5,7 @@
 
 A collaborative editor for rain and certflow diagrams. The source text lives in an Automerge document, synced with automerge-repo v3 over [Subduction](https://github.com/inkandswitch/subduction). The text is edited in CodeMirror and the picture in an editable [`<rain-diagram>`](../rain-diagram/), side by side. It shares its page with the single-user [preview](../preview/) (`../preview/shell.js`, `highlight.js`, `examples.js` and `style.css`), which stays build-free and dependency-free.
 
-Deployed with the preview at [inkandswitch.github.io/downpour/editor/](https://inkandswitch.github.io/downpour/editor/). To run it locally:
+Deployed with the preview at [inkandswitch.github.io/downpour/collab/](https://inkandswitch.github.io/downpour/collab/). To run it locally:
 
 ```console
 $ nix run .#editor        # from the repo root: http://localhost:5173 (PORT=… to change)
@@ -103,6 +103,7 @@ $ nix run .#ci-editor
 
 ## Known problems
 
+- **Shared origin on GitHub Pages.** The deployed editor keeps the browser's signing key and offline documents in IndexedDB on `inkandswitch.github.io`, which every Ink & Switch Pages project shares. It will move to its own domain.
 - **Two tabs, one identity at a time.** Only the tab holding the storage lock keeps an offline copy. Others sync live only, and the header says so.
 - **Presence is per tab.** Two tabs in one browser are two people.
 - **Tests need the public server.** A local Subduction server in CI would make them hermetic.
