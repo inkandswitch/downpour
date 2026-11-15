@@ -43,10 +43,11 @@ server.subscribe((state) => {
   connection.className = name;
   connection.textContent = state.error ? `${name}: ${state.error}` : name;
 });
+const signer = ownsStorage ? await createWebCryptoSigner() : createMemorySigner();
 const backend = new SubductionBackend({
   storage: ownsStorage ? new IndexedDBSubductionStorageAdapter() : new DummySubductionStorageAdapter(),
   network: [server],
-  signer: ownsStorage ? await createWebCryptoSigner() : createMemorySigner(),
+  signer,
 });
 const repo = new Repo({ backend });
 
@@ -75,6 +76,7 @@ connection.title = ownsStorage
   ? "This tab keeps a copy for offline use"
   : "Another tab keeps the offline copy; this one syncs live only";
 window.ownsStorage = ownsStorage;
+window.peerId = signer.peerId(); // this tab's identity on the network
 
 // Whether the sync server has everything this tab has: its latest heads
 // (sent as it takes changes in) match this copy's
