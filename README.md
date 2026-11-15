@@ -217,6 +217,13 @@ Add `notation="rain"` or `notation="certflow"` to draw a source in the other not
 
 It fires `rain-reach` and `rain-fallout` events, and the SVG's `data-*` hooks are documented in `rain_diagram_core::svg` for anyone wiring their own.
 
+## Editing together
+
+[The collaborative editor](https://inkandswitch.github.io/downpour/collab/) is the preview for several people at once: open it, share the link it puts in the address bar, and edit the same diagram as text or as a picture. Everyone sees the others' names and carets, undo takes back only your own edits, and it works offline, syncing when the connection is back. The source lives in an Automerge document synced over [Subduction](https://github.com/inkandswitch/subduction); see [`javascript/editor/`](javascript/editor/) for how it fits together, and for `mountEditor`, which puts the same editor on any page with an Automerge document handle. [`javascript/patchwork/`](javascript/patchwork/) wraps it as a [Patchwork](https://patchwork.inkandswitch.com) tool.
+
+> [!NOTE]
+> A prototype. On GitHub Pages it shares its browser storage with every `inkandswitch.github.io` site; it will move to its own domain.
+
 ## Development
 
 ```console
