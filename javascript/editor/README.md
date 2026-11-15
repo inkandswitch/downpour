@@ -13,7 +13,7 @@ $ nix run .#editor        # from the repo root: http://localhost:5173 (PORT=… 
 
 It installs the JS dependencies if needed, builds the component's Wasm, and starts Vite.
 
-Open the page, then open its URL (with the `#automerge:…` it adds) in another browser. `?sync=wss://…` picks a different Subduction server.
+Open the page, then open its URL (with the `#automerge:…` it adds) in another browser. `?sync=wss://…` picks a different Subduction server. `#source=…` (URL-encoded text) starts a new shared document with that text, which is how the preview's _Collaborate_ button hands its diagram over; the URL then becomes the document's link. Locally, the preview's dev server sends `/collab/` to this one (`nix run .#editor`, or `EDITOR_PORT`).
 
 ## What it does
 

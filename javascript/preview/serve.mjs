@@ -13,11 +13,14 @@
 //   - The whole javascript/ directory is served, with / redirecting to
 //     /preview/, so the preview imports the component by the same relative
 //     path as on disk and runs exactly what the npm package ships.
+//   - /collab/ (the Collaborate button) goes to the collaborative editor's
+//     own dev server, `nix run .#editor` (EDITOR_PORT, default 5173); the
+//     browser carries the #source=… along
 //   - Like their infinite-reload fix, a "change" only counts if the file's
 //     mtime actually moved. Some platforms (Linux inotify) report
 //     metadata-only changes too.
 //
-// Usage: node javascript/preview/serve.mjs   (env: PORT, default 8080)
+// Usage: node javascript/preview/serve.mjs   (env: PORT, default 8080; EDITOR_PORT, default 5173)
 
 import { spawn } from "node:child_process"
 import * as FS from "node:fs"
@@ -176,6 +179,12 @@ const server = HTTP.createServer((req, res) => {
 
   if (url === "/") {
     res.writeHead(302, { ...NO_CACHE, Location: "/preview/" }).end()
+    return
+  }
+
+  if (url === "/collab/") {
+    const host = (req.headers.host ?? "localhost").replace(/:\d+$/, "")
+    res.writeHead(302, { ...NO_CACHE, Location: `http://${host}:${process.env.EDITOR_PORT ?? 5173}/` }).end()
     return
   }
 

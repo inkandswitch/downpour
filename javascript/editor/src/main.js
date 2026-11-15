@@ -51,8 +51,10 @@ const backend = new SubductionBackend({
 });
 const repo = new Repo({ backend });
 
-// The document named in the URL's hash, or a new one put there
+// The document named in the URL's hash, or a new one put there: with the
+// text given as `#source=…` (the preview's Collaborate button), or a starter
 const hash = location.hash.slice(1);
+const given = new URLSearchParams(hash).get("source");
 // A document nobody has sent yet (just made elsewhere, or the server is
 // unreachable) is unavailable for now, not forever: keep looking, and say so
 const find = async (url) => {
@@ -67,8 +69,9 @@ const find = async (url) => {
     }
   }
 };
-const handle = isValidAutomergeUrl(hash) ? await find(hash) : await repo.create({ source: STARTER });
-// In place of the bare URL, not as a step back to it
+const handle = isValidAutomergeUrl(hash) ? await find(hash) : await repo.create({ source: given ?? STARTER });
+// In place of the bare URL (or the given text), not as a step back to it,
+// so reloading opens this document rather than making another
 if (!isValidAutomergeUrl(hash)) history.replaceState(null, "", `#${handle.url}`);
 // Another document's link pasted into this tab changes only the hash: load it
 addEventListener("hashchange", () => location.reload());

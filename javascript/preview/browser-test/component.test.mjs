@@ -183,6 +183,21 @@ describe("the preview's <rain-diagram>", () => {
     assert.ok(layer.principals > 0, "principals are coloured");
   });
 
+  test("Collaborate carries the current source to the collaborative editor", async () => {
+    await fresh();
+    await evaluate(() => {
+      const source = document.getElementById("source");
+      source.value += "\n(Alice)-[read(Doc)]->(Carol)    : Alice lets Carol read 👀\n";
+      source.dispatchEvent(new Event("input"));
+    });
+    const link = await evaluate(() => {
+      const url = new URL(document.getElementById("collaborate").href);
+      return { path: url.pathname, given: new URLSearchParams(url.hash.slice(1)).get("source") };
+    });
+    assert.equal(link.path, "/collab/");
+    assert.equal(link.given, await source());
+  });
+
   test("dragging a row down moves its statement", async () => {
     await fresh();
     const row = await centre('.event[data-event="2"] .hit');

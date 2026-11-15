@@ -14,7 +14,11 @@ const page = shell({
   prefix: "rain-preview",
   text: () => source.value,
   wasm: { diagnostics, renderSvg, renderText, toSiteJson },
-  onRender: ({ errorLine, colours }) => paintSource(errorLine, colours),
+  onRender: ({ errorLine, colours }) => {
+    paintSource(errorLine, colours);
+    // The collaborative editor makes a shared document from the text it's given
+    $("collaborate").href = `../collab/#source=${encodeURIComponent(source.value)}`;
+  },
 });
 
 const render = () => {

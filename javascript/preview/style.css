@@ -57,6 +57,20 @@
   font: 12px system-ui, sans-serif;
   cursor: pointer;
 }
+#collaborate {
+  margin-left: auto;
+  align-self: center;
+  padding: 3px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--fg);
+  font: 12px system-ui, sans-serif;
+  text-decoration: none;
+}
+#collaborate:hover { border-color: var(--muted); }
+#collaborate + #theme { margin-left: 0; }
+
 #theme button + button { border-left: 1px solid var(--border); }
 #theme button:hover { color: var(--fg); }
 #theme button[aria-pressed="true"] { background: var(--bg); color: var(--fg); font-weight: 600; }

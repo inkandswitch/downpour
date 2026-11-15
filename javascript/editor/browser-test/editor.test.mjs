@@ -128,6 +128,22 @@ test("pasting another document's link into the tab opens that document", async (
   other.close();
 });
 
+test("text given as #source= becomes a new shared document, and the link replaces it", async () => {
+  const text = "rain\ntitle From the preview\n\n(Alice)-[edit(Doc)]->(Bob) : given + kept 👑\n";
+  const page = await two.tab("B3");
+  await page.open(`${base}#source=${encodeURIComponent(text)}`);
+  const url = await page.until(ready, "the new document");
+  assert.notEqual(url, await a.evaluate("window.handle.url"));
+  assert.equal(await page.evaluate("window.handle.doc().source"), text);
+  assert.equal(await page.evaluate("location.hash"), `#${url}`);
+  // Reloading opens the same document, not another copy (once it has
+  // reached the server: this tab keeps it in memory only)
+  await page.until(`document.getElementById("sync").className === "synced"`, "the new document to sync");
+  await page.send("Page.reload");
+  assert.equal(await page.until(ready, "the reload"), url);
+  page.close();
+});
+
 test("no page errors", async () => {
   await sleep(200);
   assert.deepEqual([...a.errors, ...b.errors], []);
