@@ -5,7 +5,7 @@
 
 A collaborative editor for rain and certflow diagrams. The source text lives in an Automerge document, synced with automerge-repo v3 over [Subduction](https://github.com/inkandswitch/subduction). The text is edited in CodeMirror and the picture in an editable [`<rain-diagram>`](../rain-diagram/), side by side. It shares its page with the single-user [preview](../preview/) (`../preview/shell.js`, `highlight.js`, `examples.js` and `style.css`), which stays build-free and dependency-free.
 
-Deployed with the preview at [inkandswitch.github.io/downpour/collab/](https://inkandswitch.github.io/downpour/collab/). To run it locally:
+Deployed with the preview at [inkandswitch.github.io/rain/collab/](https://inkandswitch.github.io/rain/collab/). To run it locally:
 
 ```console
 $ nix run .#editor        # from the repo root: http://localhost:5173 (PORT=… to change)

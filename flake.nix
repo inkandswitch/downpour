@@ -163,7 +163,7 @@
               cp "$root/javascript/preview/$file" "$out/preview/"
             done
             # The editor bundles the component, so it takes the same release
-            # build. A relative base serves it from any path (/downpour/collab/)
+            # build. A relative base serves it from any path (/rain/collab/)
             rm -rf "$root/javascript/rain-diagram/pkg"
             cp -r "$out/rain-diagram/pkg" "$root/javascript/rain-diagram/"
             (cd "$root" && pnpm install --frozen-lockfile)
@@ -180,7 +180,7 @@
         };
 
         # The `rain-diagram` CLI and the `mdbook-rain-diagram` preprocessor:
-        # `nix run github:inkandswitch/downpour -- render doc.rain`
+        # `nix run github:inkandswitch/rain -- render doc.rain`
         rain-diagram = pkgs.rustPlatform.buildRustPackage {
           pname = "rain-diagram";
           inherit ((builtins.fromTOML (builtins.readFile ./rust/rain_diagram_cli/Cargo.toml)).package) version;

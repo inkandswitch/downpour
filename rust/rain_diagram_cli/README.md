@@ -44,7 +44,7 @@ The fence names the notation, so a block can leave out the `rain` or `certflow` 
 ## Installing
 
 ```console
-$ nix run github:inkandswitch/downpour -- render doc.rain     # the CLI, without installing
-$ nix profile install github:inkandswitch/downpour            # both binaries
+$ nix run github:inkandswitch/rain -- render doc.rain     # the CLI, without installing
+$ nix profile install github:inkandswitch/rain            # both binaries
 $ cargo install --path rust/rain_diagram_cli                  # from a checkout
 ```
